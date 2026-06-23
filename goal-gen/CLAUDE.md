@@ -48,11 +48,12 @@ tests/                # unit + integration + evals/ (vitest + fast-check; prompt
 - **Eval-driven:** keep `tests/evals/` (goal→expected-plan pairs); run before/after planner or prompt changes.
 
 ## Commands (fill in as the repo is scaffolded)
-- Install: `TBD` (e.g. `pnpm install`)
-- Dev: `TBD` (frontend `vite`, backend watch)
-- Test: `TBD` (`vitest`; planner properties via `fast-check`)
-- Evals: `TBD` (`vitest` over `tests/evals/`; extractor prompt eval via `promptfoo`)
-- Lint/format: `TBD`
+- Install: `npm install`
+- Dev: `TBD` (frontend `vite`, backend watch — not scaffolded yet)
+- Test: `npm test` (`vitest run`; planner properties via `fast-check`)
+- Evals: `npm run eval` (all) · `npm run eval:planner` (planner gate) — `vitest` over `tests/evals/`; extractor prompt eval via `promptfoo` (M0 part 2)
+- Typecheck: `npm run typecheck` (`tsc --noEmit`, strict)
+- Lint/format: `TBD` (not configured yet)
 
 ## Host
 Runs on a dedicated **Proxmox LXC or VM** with Claude Code logged in once (v1); per-run worktrees (collision-avoidance, not a sandbox); **single-admin login**, reachable only on your own network/Tailscale — no LAN-wide or public exposure. A VM is cleaner if you'll run per-run containers at M2 (nesting in an unprivileged LXC needs extra config). See `docs/prd.md` §11.
