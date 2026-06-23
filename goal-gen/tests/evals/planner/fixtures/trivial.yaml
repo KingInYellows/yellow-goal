@@ -1,0 +1,51 @@
+# Trivial tier — 1–2 action plans; baseline correctness of effect application.
+- id: trivial-single
+  tier: trivial
+  goalText: "Do the one thing"
+  goalState: { done: true }
+  actions:
+    - { id: do, cost: 1, effects: { done: true } }
+  expect: { hasPlan: true, costUpperBound: 1 }
+
+- id: trivial-two-chain
+  tier: trivial
+  goalText: "B after A"
+  goalState: { b: true }
+  actions:
+    - { id: a, cost: 1, effects: { a: true } }
+    - { id: b, cost: 1, preconditions: { a: true }, effects: { b: true } }
+  expect: { hasPlan: true, costUpperBound: 2, requiredOrder: [[a, b]] }
+
+- id: trivial-already-satisfied
+  tier: trivial
+  goalText: "Goal already met — expect an empty plan"
+  initialState: { done: true }
+  goalState: { done: true }
+  actions:
+    - { id: do, cost: 1, effects: { done: true } }
+  expect: { hasPlan: true, costUpperBound: 0 }
+
+- id: trivial-clone
+  tier: trivial
+  goalText: "Clone the repo"
+  goalState: { repo_cloned: true }
+  actions:
+    - { id: clone, cost: 1, effects: { repo_cloned: true } }
+  expect: { hasPlan: true, costUpperBound: 1 }
+
+- id: trivial-analyze
+  tier: trivial
+  goalText: "Analyze the repo"
+  goalState: { code_analyzed: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+  expect: { hasPlan: true, costUpperBound: 1 }
+
+- id: trivial-distractor
+  tier: trivial
+  goalText: "Reach A; ignore an irrelevant action"
+  goalState: { a: true }
+  actions:
+    - { id: make_a, cost: 2, effects: { a: true } }
+    - { id: irrelevant, cost: 1, effects: { z: true } }
+  expect: { hasPlan: true, costUpperBound: 2 }

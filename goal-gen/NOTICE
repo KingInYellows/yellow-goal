@@ -1,0 +1,46 @@
+# NOTICE
+
+GOAL Generator — © 2026 KingInYellow. Private; license TBD (revisit open-sourcing later;
+see docs/decisions/0001-use-madr-for-decisions.md and doc 08 §5).
+
+This project is built fresh. Its DESIGN — and, where lifted, SOME UI components and the A*
+planner approach — derives from the open-source `goal_ui` project behind goal.ruv.io, used
+under the MIT License (see docs/decisions/0003-vendor-goal-ui.md).
+
+## Third-party attributions
+
+### goal_ui (ruvnet) — MIT
+- Upstream: the ruvnet "goal" project (source behind goal.ruv.io; `v3/goal_ui`). Confirm the
+  exact repository URL, commit, and copyright line from `../docs/03-goal-ruv-io-analysis.md`
+  and the upstream LICENSE before vendoring.
+- Used for: the A* GOAP planner approach and — where lifted — plan-tree / state-card /
+  config-panel UI components.
+- Obligation (MIT): when you vendor any goal_ui source, keep its file headers intact and copy
+  its exact LICENSE text + copyright line below, replacing the placeholder.
+
+  ----------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) <YEAR> <COPYRIGHT HOLDER — verify from upstream LICENSE>
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+  ----------------------------------------------------------------------
+
+As of this writing NO goal_ui source is vendored — the planner eval harness, types, and oracle
+are original. Update this file the moment you lift any upstream code.

@@ -1,0 +1,23 @@
+{
+  "name": "goal-gen",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted GOAL generator — see docs/prd.md. This is the initial scaffold (eval harness first, per ADR-0013).",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "eval": "vitest run tests/evals",
+    "eval:planner": "vitest run tests/evals/planner",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.0",
+    "fast-check": "^3.23.0",
+    "js-yaml": "^4.1.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0",
+    "zod": "^3.24.0"
+  }
+}

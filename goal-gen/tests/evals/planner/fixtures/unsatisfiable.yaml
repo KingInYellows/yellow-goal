@@ -1,0 +1,66 @@
+# Unsatisfiable tier — the planner must return a clean "no plan" (null), never an invalid plan.
+- id: unsat-missing-producer
+  tier: unsatisfiable
+  goalText: "Goal predicate has no producer"
+  goalState: { impossible: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+  expect: { hasPlan: false }
+
+- id: unsat-empty-pool
+  tier: unsatisfiable
+  goalText: "No actions at all"
+  goalState: { x: true }
+  actions: []
+  expect: { hasPlan: false }
+
+- id: unsat-precondition-deadlock
+  tier: unsatisfiable
+  goalText: "The only enabler is never producible"
+  goalState: { b: true }
+  actions:
+    - { id: a, cost: 1, preconditions: { needs_b: true }, effects: { a: true } }
+    - { id: b, cost: 1, preconditions: { a: true }, effects: { b: true } }
+  expect: { hasPlan: false }
+
+- id: unsat-circular
+  tier: unsatisfiable
+  goalText: "Circular prerequisites (y needs q, q needs y)"
+  goalState: { y: true }
+  actions:
+    - { id: make_y, cost: 1, preconditions: { q: true }, effects: { y: true } }
+    - { id: make_q, cost: 1, preconditions: { y: true }, effects: { q: true } }
+  expect: { hasPlan: false }
+
+- id: unsat-partial-goal
+  tier: unsatisfiable
+  goalText: "One goal predicate is reachable, the other is not"
+  goalState: { a: true, impossible: true }
+  actions:
+    - { id: make_a, cost: 1, effects: { a: true } }
+  expect: { hasPlan: false }
+
+- id: unsat-missing-build
+  tier: unsatisfiable
+  goalText: "Deploy needs a build that nothing produces"
+  goalState: { deployed: true }
+  actions:
+    - { id: deploy, cost: 3, preconditions: { build_pass: true }, effects: { deployed: true } }
+  expect: { hasPlan: false }
+
+- id: unsat-wrong-value
+  tier: unsatisfiable
+  goalText: "Numeric predicate never reaches the required value"
+  goalState: { count: 5 }
+  actions:
+    - { id: set_three, cost: 1, effects: { count: 3 } }
+  expect: { hasPlan: false }
+
+- id: unsat-self-dependency
+  tier: unsatisfiable
+  goalText: "The only producer requires its own effect"
+  goalState: { g: true }
+  actions:
+    - { id: g_act, cost: 1, preconditions: { g: true }, effects: { g: true } }
+  expect: { hasPlan: false }

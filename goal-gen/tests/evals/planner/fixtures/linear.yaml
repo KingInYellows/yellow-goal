@@ -1,0 +1,111 @@
+# Linear tier — single chains; precondition-chain ordering correctness.
+- id: linear-analyze-change-test
+  tier: linear
+  goalText: "Make the test suite pass"
+  goalState: { tests_pass: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 6
+    requiredOrder: [[analyze, change], [change, write_tests], [write_tests, run_tests]]
+
+- id: linear-clone-install-build
+  tier: linear
+  goalText: "Build the project"
+  goalState: { build_pass: true }
+  actions:
+    - { id: clone, cost: 1, effects: { repo_cloned: true } }
+    - { id: install, cost: 2, preconditions: { repo_cloned: true }, effects: { deps_installed: true } }
+    - { id: build, cost: 2, preconditions: { deps_installed: true }, effects: { build_pass: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 5
+    requiredOrder: [[clone, install], [install, build]]
+
+- id: linear-ship-pr
+  tier: linear
+  goalText: "Open a PR with passing tests"
+  goalState: { pr_open: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+    - { id: open_pr, cost: 1, preconditions: { tests_pass: true }, effects: { pr_open: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 7
+    requiredOrder: [[run_tests, open_pr]]
+
+- id: linear-deploy
+  tier: linear
+  goalText: "Deploy the service"
+  goalState: { deployed: true }
+  actions:
+    - { id: clone, cost: 1, effects: { repo_cloned: true } }
+    - { id: install, cost: 2, preconditions: { repo_cloned: true }, effects: { deps_installed: true } }
+    - { id: build, cost: 2, preconditions: { deps_installed: true }, effects: { build_pass: true } }
+    - { id: deploy, cost: 3, preconditions: { build_pass: true }, effects: { deployed: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 8
+    requiredOrder: [[clone, install], [install, build], [build, deploy]]
+
+- id: linear-docs
+  tier: linear
+  goalText: "Update docs after a change"
+  goalState: { docs_updated: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: update_docs, cost: 1, preconditions: { code_changed: true }, effects: { docs_updated: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 4
+    requiredOrder: [[change, update_docs]]
+
+- id: linear-review
+  tier: linear
+  goalText: "Get the PR reviewed"
+  goalState: { reviewed: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+    - { id: open_pr, cost: 1, preconditions: { tests_pass: true }, effects: { pr_open: true } }
+    - { id: review, cost: 1, preconditions: { pr_open: true }, effects: { reviewed: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 8
+    requiredOrder: [[open_pr, review]]
+
+- id: linear-migrate
+  tier: linear
+  goalText: "Run the DB migration"
+  goalState: { db_migrated: true }
+  actions:
+    - { id: clone, cost: 1, effects: { repo_cloned: true } }
+    - { id: install, cost: 2, preconditions: { repo_cloned: true }, effects: { deps_installed: true } }
+    - { id: migrate, cost: 2, preconditions: { deps_installed: true }, effects: { db_migrated: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 5
+    requiredOrder: [[install, migrate]]
+
+- id: linear-lint
+  tier: linear
+  goalText: "Lint passes"
+  goalState: { lint_pass: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: lint, cost: 1, preconditions: { code_changed: true }, effects: { lint_pass: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 4
+    requiredOrder: [[change, lint]]

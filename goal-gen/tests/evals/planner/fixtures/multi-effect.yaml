@@ -1,0 +1,60 @@
+# Multi-effect tier — actions with >1 effect. The unmet-predicate heuristic is NOT
+# admissible here (an action can satisfy several goal predicates at once), so a correct
+# planner must use BFS mode (or accept non-optimal) to meet these cost bounds. ADR-0004.
+- id: multi-effect-single-covers-two
+  tier: multi-effect
+  goalText: "One action satisfies both goal predicates"
+  goalState: { a: true, b: true }
+  actions:
+    - { id: combo, cost: 1, effects: { a: true, b: true } }
+  expect: { hasPlan: true, costUpperBound: 1 }
+
+- id: multi-effect-vs-two-singles
+  tier: multi-effect
+  goalText: "Two cheap singles beat one expensive combo"
+  goalState: { a: true, b: true }
+  actions:
+    - { id: combo, cost: 3, effects: { a: true, b: true } }
+    - { id: make_a, cost: 1, effects: { a: true } }
+    - { id: make_b, cost: 1, effects: { b: true } }
+  expect: { hasPlan: true, costUpperBound: 2 }
+
+- id: multi-effect-prereq
+  tier: multi-effect
+  goalText: "A prep step enables a single action that satisfies two predicates"
+  goalState: { built: true, linted: true }
+  actions:
+    - { id: prep, cost: 1, effects: { ready: true } }
+    - { id: build_and_lint, cost: 2, preconditions: { ready: true }, effects: { built: true, linted: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 3
+    requiredOrder: [[prep, build_and_lint]]
+
+- id: multi-effect-three-combo
+  tier: multi-effect
+  goalText: "One combo (cost 2) beats three singles (cost 3)"
+  goalState: { a: true, b: true, c: true }
+  actions:
+    - { id: combo, cost: 2, effects: { a: true, b: true, c: true } }
+    - { id: make_a, cost: 1, effects: { a: true } }
+    - { id: make_b, cost: 1, effects: { b: true } }
+    - { id: make_c, cost: 1, effects: { c: true } }
+  expect: { hasPlan: true, costUpperBound: 2 }
+
+- id: multi-effect-partial-overlap
+  tier: multi-effect
+  goalText: "A two-effect action plus a single covers three predicates"
+  goalState: { a: true, b: true, c: true }
+  actions:
+    - { id: make_ab, cost: 2, effects: { a: true, b: true } }
+    - { id: make_c, cost: 1, effects: { c: true } }
+  expect: { hasPlan: true, costUpperBound: 3 }
+
+- id: multi-effect-side-effect-irrelevant
+  tier: multi-effect
+  goalText: "Action has an extra effect not in the goal"
+  goalState: { deployed: true }
+  actions:
+    - { id: deploy_all, cost: 3, effects: { built: true, deployed: true } }
+  expect: { hasPlan: true, costUpperBound: 3 }

@@ -1,0 +1,69 @@
+# Parallel tier — fully independent branches; the dependency graph must show NO edges
+# between branches (they could run concurrently at M2). v1 still serializes them.
+- id: parallel-two-independent
+  tier: parallel
+  goalText: "Reach A and B (independent)"
+  goalState: { a: true, b: true }
+  actions:
+    - { id: make_a, cost: 1, effects: { a: true } }
+    - { id: make_b, cost: 1, effects: { b: true } }
+  expect: { hasPlan: true, costUpperBound: 2 }
+
+- id: parallel-three-independent
+  tier: parallel
+  goalText: "Reach A, B, and C (independent)"
+  goalState: { a: true, b: true, c: true }
+  actions:
+    - { id: make_a, cost: 1, effects: { a: true } }
+    - { id: make_b, cost: 1, effects: { b: true } }
+    - { id: make_c, cost: 1, effects: { c: true } }
+  expect: { hasPlan: true, costUpperBound: 3 }
+
+- id: parallel-two-chains
+  tier: parallel
+  goalText: "Two independent two-step chains"
+  goalState: { x2: true, y2: true }
+  actions:
+    - { id: x1, cost: 1, effects: { x1: true } }
+    - { id: x2, cost: 1, preconditions: { x1: true }, effects: { x2: true } }
+    - { id: y1, cost: 1, effects: { y1: true } }
+    - { id: y2, cost: 1, preconditions: { y1: true }, effects: { y2: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 4
+    requiredOrder: [[x1, x2], [y1, y2]]
+
+- id: parallel-two-repos
+  tier: parallel
+  goalText: "Migrate two repos independently"
+  goalState: { r1_migrated: true, r2_migrated: true }
+  actions:
+    - { id: clone_r1, cost: 1, effects: { r1_cloned: true } }
+    - { id: migrate_r1, cost: 2, preconditions: { r1_cloned: true }, effects: { r1_migrated: true } }
+    - { id: clone_r2, cost: 1, effects: { r2_cloned: true } }
+    - { id: migrate_r2, cost: 2, preconditions: { r2_cloned: true }, effects: { r2_migrated: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 6
+    requiredOrder: [[clone_r1, migrate_r1], [clone_r2, migrate_r2]]
+
+- id: parallel-independent-plus-distractor
+  tier: parallel
+  goalText: "Reach A and B; ignore a distractor"
+  goalState: { a: true, b: true }
+  actions:
+    - { id: make_a, cost: 1, effects: { a: true } }
+    - { id: make_b, cost: 1, effects: { b: true } }
+    - { id: distractor, cost: 1, effects: { z: true } }
+  expect: { hasPlan: true, costUpperBound: 2 }
+
+- id: parallel-four-independent
+  tier: parallel
+  goalText: "Reach A, B, C, and D (independent)"
+  goalState: { a: true, b: true, c: true, d: true }
+  actions:
+    - { id: make_a, cost: 1, effects: { a: true } }
+    - { id: make_b, cost: 1, effects: { b: true } }
+    - { id: make_c, cost: 1, effects: { c: true } }
+    - { id: make_d, cost: 1, effects: { d: true } }
+  expect: { hasPlan: true, costUpperBound: 4 }

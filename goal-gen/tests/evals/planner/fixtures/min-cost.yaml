@@ -1,0 +1,70 @@
+# Min-cost tier — two or more ways to reach the goal; the planner must pick the cheapest.
+# costUpperBound is set to the TRUE optimum so a sub-optimal plan fails the bound.
+- id: min-cost-two-paths
+  tier: min-cost
+  goalText: "Cheap vs expensive single step"
+  goalState: { x: true }
+  actions:
+    - { id: cheap, cost: 1, effects: { x: true } }
+    - { id: expensive, cost: 5, effects: { x: true } }
+  expect: { hasPlan: true, costUpperBound: 1 }
+
+- id: min-cost-chain-vs-direct
+  tier: min-cost
+  goalText: "A two-step chain (cost 2) beats one direct step (cost 3)"
+  goalState: { y: true }
+  actions:
+    - { id: direct, cost: 3, effects: { y: true } }
+    - { id: a, cost: 1, effects: { a: true } }
+    - { id: b, cost: 1, preconditions: { a: true }, effects: { y: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 2
+    requiredOrder: [[a, b]]
+
+- id: min-cost-cheaper-longer
+  tier: min-cost
+  goalText: "A long cheap chain (cost 3) beats one big step (cost 10)"
+  goalState: { z: true }
+  actions:
+    - { id: big, cost: 10, effects: { z: true } }
+    - { id: s1, cost: 1, effects: { s1: true } }
+    - { id: s2, cost: 1, preconditions: { s1: true }, effects: { s2: true } }
+    - { id: s3, cost: 1, preconditions: { s2: true }, effects: { z: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 3
+    requiredOrder: [[s1, s2], [s2, s3]]
+
+- id: min-cost-shared-prefix
+  tier: min-cost
+  goalText: "Shared prefix, then the cheaper finisher"
+  goalState: { g: true }
+  actions:
+    - { id: common, cost: 1, effects: { c: true } }
+    - { id: cheap_fin, cost: 1, preconditions: { c: true }, effects: { g: true } }
+    - { id: exp_fin, cost: 4, preconditions: { c: true }, effects: { g: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 2
+    requiredOrder: [[common, cheap_fin]]
+
+- id: min-cost-three-producers
+  tier: min-cost
+  goalText: "Pick the cheapest of three producers"
+  goalState: { x: true }
+  actions:
+    - { id: p2, cost: 2, effects: { x: true } }
+    - { id: p3, cost: 3, effects: { x: true } }
+    - { id: p1, cost: 1, effects: { x: true } }
+  expect: { hasPlan: true, costUpperBound: 1 }
+
+- id: min-cost-avoid-redundant
+  tier: min-cost
+  goalText: "A single step (cost 2) beats a redundant two-step chain (cost 3)"
+  goalState: { a: true }
+  actions:
+    - { id: make_a, cost: 2, effects: { a: true } }
+    - { id: l1, cost: 1, effects: { l1: true } }
+    - { id: l2, cost: 2, preconditions: { l1: true }, effects: { a: true } }
+  expect: { hasPlan: true, costUpperBound: 2 }

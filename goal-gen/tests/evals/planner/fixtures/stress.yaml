@@ -1,0 +1,78 @@
+# Stress tier — large pools / many predicates; node-cap + termination behavior.
+- id: stress-long-chain-12
+  tier: stress
+  goalText: "A 12-step dependency chain"
+  goalState: { f11: true }
+  actions:
+    - { id: a0, cost: 1, effects: { f0: true } }
+    - { id: a1, cost: 1, preconditions: { f0: true }, effects: { f1: true } }
+    - { id: a2, cost: 1, preconditions: { f1: true }, effects: { f2: true } }
+    - { id: a3, cost: 1, preconditions: { f2: true }, effects: { f3: true } }
+    - { id: a4, cost: 1, preconditions: { f3: true }, effects: { f4: true } }
+    - { id: a5, cost: 1, preconditions: { f4: true }, effects: { f5: true } }
+    - { id: a6, cost: 1, preconditions: { f5: true }, effects: { f6: true } }
+    - { id: a7, cost: 1, preconditions: { f6: true }, effects: { f7: true } }
+    - { id: a8, cost: 1, preconditions: { f7: true }, effects: { f8: true } }
+    - { id: a9, cost: 1, preconditions: { f8: true }, effects: { f9: true } }
+    - { id: a10, cost: 1, preconditions: { f9: true }, effects: { f10: true } }
+    - { id: a11, cost: 1, preconditions: { f10: true }, effects: { f11: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 12
+    requiredOrder: [[a0, a1], [a5, a6], [a10, a11]]
+
+- id: stress-wide-10-independent
+  tier: stress
+  goalText: "Ten independent goal predicates"
+  goalState: { f0: true, f1: true, f2: true, f3: true, f4: true, f5: true, f6: true, f7: true, f8: true, f9: true }
+  actions:
+    - { id: m0, cost: 1, effects: { f0: true } }
+    - { id: m1, cost: 1, effects: { f1: true } }
+    - { id: m2, cost: 1, effects: { f2: true } }
+    - { id: m3, cost: 1, effects: { f3: true } }
+    - { id: m4, cost: 1, effects: { f4: true } }
+    - { id: m5, cost: 1, effects: { f5: true } }
+    - { id: m6, cost: 1, effects: { f6: true } }
+    - { id: m7, cost: 1, effects: { f7: true } }
+    - { id: m8, cost: 1, effects: { f8: true } }
+    - { id: m9, cost: 1, effects: { f9: true } }
+  expect: { hasPlan: true, costUpperBound: 10 }
+
+- id: stress-many-distractors
+  tier: stress
+  goalText: "One cheap target hidden among many distractors"
+  goalState: { target: true }
+  actions:
+    - { id: hit, cost: 1, effects: { target: true } }
+    - { id: d0, cost: 1, effects: { g0: true } }
+    - { id: d1, cost: 1, effects: { g1: true } }
+    - { id: d2, cost: 1, effects: { g2: true } }
+    - { id: d3, cost: 1, effects: { g3: true } }
+    - { id: d4, cost: 1, effects: { g4: true } }
+    - { id: d5, cost: 1, effects: { g5: true } }
+    - { id: d6, cost: 1, effects: { g6: true } }
+    - { id: d7, cost: 1, effects: { g7: true } }
+    - { id: d8, cost: 1, effects: { g8: true } }
+    - { id: d9, cost: 1, effects: { g9: true } }
+    - { id: d10, cost: 1, effects: { g10: true } }
+    - { id: d11, cost: 1, effects: { g11: true } }
+  expect: { hasPlan: true, costUpperBound: 1 }
+
+- id: stress-deep-two-branch-join
+  tier: stress
+  goalText: "Two length-4 chains joining at a final action"
+  goalState: { goal: true }
+  actions:
+    - { id: a1, cost: 1, effects: { a1: true } }
+    - { id: a2, cost: 1, preconditions: { a1: true }, effects: { a2: true } }
+    - { id: a3, cost: 1, preconditions: { a2: true }, effects: { a3: true } }
+    - { id: a4, cost: 1, preconditions: { a3: true }, effects: { a4: true } }
+    - { id: b1, cost: 1, effects: { b1: true } }
+    - { id: b2, cost: 1, preconditions: { b1: true }, effects: { b2: true } }
+    - { id: b3, cost: 1, preconditions: { b2: true }, effects: { b3: true } }
+    - { id: b4, cost: 1, preconditions: { b3: true }, effects: { b4: true } }
+    - { id: finish, cost: 1, preconditions: { a4: true, b4: true }, effects: { goal: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 9
+    requiredOrder: [[a1, a2], [a3, a4], [b1, b2], [b3, b4], [a4, finish], [b4, finish]]

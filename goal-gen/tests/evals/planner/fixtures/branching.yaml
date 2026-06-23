@@ -1,0 +1,129 @@
+# Branching tier — independent prerequisite branches joining at a final action.
+# Many valid interleavings ⇒ assert the causal partial order, never an exact sequence.
+- id: branching-pr-tests-and-lint
+  tier: branching
+  goalText: "Open a PR that needs passing tests AND lint"
+  goalState: { pr_open: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+    - { id: lint, cost: 1, preconditions: { code_changed: true }, effects: { lint_pass: true } }
+    - { id: open_pr, cost: 1, preconditions: { tests_pass: true, lint_pass: true }, effects: { pr_open: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 8
+    requiredOrder: [[change, write_tests], [write_tests, run_tests], [change, lint], [run_tests, open_pr], [lint, open_pr]]
+
+- id: branching-pr-tests-and-build
+  tier: branching
+  goalText: "PR needs passing tests AND a successful build (two independent chains)"
+  goalState: { pr_open: true }
+  actions:
+    - { id: clone, cost: 1, effects: { repo_cloned: true } }
+    - { id: install, cost: 2, preconditions: { repo_cloned: true }, effects: { deps_installed: true } }
+    - { id: build, cost: 2, preconditions: { deps_installed: true }, effects: { build_pass: true } }
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+    - { id: open_pr, cost: 1, preconditions: { tests_pass: true, build_pass: true }, effects: { pr_open: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 12
+    requiredOrder: [[clone, install], [install, build], [change, write_tests], [write_tests, run_tests], [build, open_pr], [run_tests, open_pr]]
+
+- id: branching-release-tests-lint-docs
+  tier: branching
+  goalText: "Release PR needs tests, lint, and docs (three branches)"
+  goalState: { pr_open: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+    - { id: lint, cost: 1, preconditions: { code_changed: true }, effects: { lint_pass: true } }
+    - { id: update_docs, cost: 1, preconditions: { code_changed: true }, effects: { docs_updated: true } }
+    - { id: open_pr, cost: 1, preconditions: { tests_pass: true, lint_pass: true, docs_updated: true }, effects: { pr_open: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 9
+    requiredOrder: [[run_tests, open_pr], [lint, open_pr], [update_docs, open_pr]]
+
+- id: branching-deploy-build-and-migrate
+  tier: branching
+  goalText: "Deploy needs a build AND a DB migration (both off install)"
+  goalState: { deployed: true }
+  actions:
+    - { id: clone, cost: 1, effects: { repo_cloned: true } }
+    - { id: install, cost: 2, preconditions: { repo_cloned: true }, effects: { deps_installed: true } }
+    - { id: build, cost: 2, preconditions: { deps_installed: true }, effects: { build_pass: true } }
+    - { id: migrate, cost: 2, preconditions: { deps_installed: true }, effects: { db_migrated: true } }
+    - { id: deploy, cost: 3, preconditions: { build_pass: true, db_migrated: true }, effects: { deployed: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 10
+    requiredOrder: [[install, build], [install, migrate], [build, deploy], [migrate, deploy]]
+
+- id: branching-pr-review
+  tier: branching
+  goalText: "PR (tests + lint) then a review"
+  goalState: { reviewed: true }
+  actions:
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+    - { id: lint, cost: 1, preconditions: { code_changed: true }, effects: { lint_pass: true } }
+    - { id: open_pr, cost: 1, preconditions: { tests_pass: true, lint_pass: true }, effects: { pr_open: true } }
+    - { id: review, cost: 1, preconditions: { pr_open: true }, effects: { reviewed: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 9
+    requiredOrder: [[run_tests, open_pr], [lint, open_pr], [open_pr, review]]
+
+- id: branching-build-test-deploy
+  tier: branching
+  goalText: "Deploy needs a build AND passing tests"
+  goalState: { deployed: true }
+  actions:
+    - { id: clone, cost: 1, effects: { repo_cloned: true } }
+    - { id: install, cost: 2, preconditions: { repo_cloned: true }, effects: { deps_installed: true } }
+    - { id: build, cost: 2, preconditions: { deps_installed: true }, effects: { build_pass: true } }
+    - { id: analyze, cost: 1, effects: { code_analyzed: true } }
+    - { id: change, cost: 2, preconditions: { code_analyzed: true }, effects: { code_changed: true } }
+    - { id: write_tests, cost: 2, preconditions: { code_changed: true }, effects: { tests_written: true } }
+    - { id: run_tests, cost: 1, preconditions: { tests_written: true }, effects: { tests_pass: true } }
+    - { id: deploy, cost: 3, preconditions: { build_pass: true, tests_pass: true }, effects: { deployed: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 14
+    requiredOrder: [[install, build], [change, write_tests], [write_tests, run_tests], [build, deploy], [run_tests, deploy]]
+
+- id: branching-two-chain-join
+  tier: branching
+  goalText: "Z needs P and Q (independent single steps)"
+  goalState: { z: true }
+  actions:
+    - { id: make_p, cost: 1, effects: { p: true } }
+    - { id: make_q, cost: 1, effects: { q: true } }
+    - { id: make_z, cost: 1, preconditions: { p: true, q: true }, effects: { z: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 3
+    requiredOrder: [[make_p, make_z], [make_q, make_z]]
+
+- id: branching-three-way-join
+  tier: branching
+  goalText: "Z needs P, Q, and R (independent single steps)"
+  goalState: { z: true }
+  actions:
+    - { id: make_p, cost: 1, effects: { p: true } }
+    - { id: make_q, cost: 1, effects: { q: true } }
+    - { id: make_r, cost: 1, effects: { r: true } }
+    - { id: make_z, cost: 1, preconditions: { p: true, q: true, r: true }, effects: { z: true } }
+  expect:
+    hasPlan: true
+    costUpperBound: 4
+    requiredOrder: [[make_p, make_z], [make_q, make_z], [make_r, make_z]]
