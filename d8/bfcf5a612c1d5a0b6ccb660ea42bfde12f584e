@@ -1,0 +1,49 @@
+goal-gen/tests/spikes/executor-spike-findings.md
+  s_7b4bd5eb390ca2::t_c2e5584c49aea7 1-301
+goal-gen/tests/spikes/executor-spike.ts
+  s_7b4bd5eb390ca2::t_d3281e6e34cb65 245,249-251,257
+  s_7b4bd5eb390ca2::t_64fa049a66ef2f 50-56,58-59,61
+  s_7b4bd5eb390ca2::t_b0ff0339b0d7ff 333
+  s_7b4bd5eb390ca2::t_4039508d8fce76 308-311
+  s_7b4bd5eb390ca2::t_12699162c831f1 198,200-203,207
+  s_7b4bd5eb390ca2::t_50e485b1b52dce 1-21,26-49,70-129,141-142,150,152,156,158-169,171-189,193-194,196-197,199,204,206,208-209,211-244,246-248,252-256,258-262,264-267,269-272,276-278,282,284-292,294-296,298-300,302-304,313,316-323,326-330,335-336,342-344,349-350,352-358,375,385
+  s_7b4bd5eb390ca2::t_346134c922fcb6 378-384
+  s_7b4bd5eb390ca2::t_a27062407e0297 143-149
+  s_7b4bd5eb390ca2::t_47b803eaf2a464 22-25,57,60,62-69,130-140,151,153-155,157,170,190-192,195,205,210,263,268,273-275,279-281,283,293,297,301,305-307,312,314-315,324-325,331-332,334,337-341,345-348,351,359-374,376-377,386-387
+goal-gen/docs/brainstorms/2026-06-23-next-work-item-brainstorm.md
+  s_2f27d317bf46a0::t_f1a5fe5ddf8632 1-104
+goal-gen/plans/executor-de-risk-spike.md
+  s_7b4bd5eb390ca2::t_92e77cf492039a 165-174,181
+  s_7b4bd5eb390ca2::t_b170fbe16f59f7 94-102
+  s_7b4bd5eb390ca2::t_5bd3565cac3a73 213-221
+  s_7b4bd5eb390ca2::t_ac1e67c2350721 280-308
+  s_7b4bd5eb390ca2::t_244a3d1228cd2c 404-413
+  s_7b4bd5eb390ca2::t_066a6e0099191d 1-93,103-146,160-164,182-186,197-212,222-279,309-403,414-432
+  s_7b4bd5eb390ca2::t_3b1acce9fccd08 175-180
+  s_7b4bd5eb390ca2::t_956976520cef42 187-196
+  s_7b4bd5eb390ca2::t_c952da40fdc83c 147-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "d8bfcf5a612c1d5a0b6ccb660ea42bfde12f584e",
+  "prompts": {},
+  "sessions": {
+    "s_2f27d317bf46a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c12e81fb-fbc2-4eb1-a787-902c86a214a0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_7b4bd5eb390ca2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "52cc5ae6-f7d5-4df9-83ee-d6fd7cd4e41d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
