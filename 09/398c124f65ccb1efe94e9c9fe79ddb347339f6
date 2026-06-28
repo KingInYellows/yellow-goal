@@ -1,0 +1,74 @@
+goal-gen/tests/spikes/executor-spike-findings.md
+  s_7b4bd5eb390ca2::t_a8dce1ede94ecc 61-63
+  s_7b4bd5eb390ca2::t_c2e5584c49aea7 1-60,64-287,291-305
+  s_7b4bd5eb390ca2::t_47ad23f722e707 288-290
+goal-gen/tests/spikes/executor-spike.ts
+  s_16ec97b21a7c03::t_5ccd3362b68a0b 369-403
+  s_7b4bd5eb390ca2::t_50e485b1b52dce 1-21,26-35,43-55,76-116,118,121-136,148-149,157,159,163,165-176,178-196,200-201,203-204,206,211,213,215-216,218-251,253-255,259-260,272-273,275-279,285-286,288-291,295-297,306,308-316,318-320,322-324,326-328,340,343-350,356,359-362,367-368,409-411,416-417,419-425,442,452
+  s_7b4bd5eb390ca2::t_64fa049a66ef2f 56-62,64-65,67
+  s_16ec97b21a7c03::t_cca99d3d594c5e 36-42
+  s_7b4bd5eb390ca2::t_9d4e54130e1a0a 352-355,357-358
+  s_16ec97b21a7c03::t_1784c741e741e4 261-271
+  s_16ec97b21a7c03::t_4d2dfa82c0124e 298-303
+  s_7b4bd5eb390ca2::t_b0ff0339b0d7ff 365
+  s_7b4bd5eb390ca2::t_95925186084804 336-338
+  s_7b4bd5eb390ca2::t_a7c48a01c80288 117,119-120
+  s_7b4bd5eb390ca2::t_d3281e6e34cb65 252,256-258,274
+  s_7b4bd5eb390ca2::t_4039508d8fce76 332-335
+  s_7b4bd5eb390ca2::t_47b803eaf2a464 22-25,63,66,68-75,137-147,158,160-162,164,177,197-199,202,212,217,280,287,292-294,304-305,307,317,321,325,329-331,339,341-342,351,363-364,366,404-408,412-415,418,426-441,443-444,453-454
+  s_16ec97b21a7c03::t_a4ac6abea44334 281-284
+  s_7b4bd5eb390ca2::t_346134c922fcb6 445-451
+  s_7b4bd5eb390ca2::t_a27062407e0297 150-156
+  s_7b4bd5eb390ca2::t_12699162c831f1 205,207-210,214
+goal-gen/plans/executor-de-risk-spike.md
+  s_7b4bd5eb390ca2::t_b170fbe16f59f7 94-102
+  s_7b4bd5eb390ca2::t_956976520cef42 189-198
+  s_7b4bd5eb390ca2::t_92e77cf492039a 166-175,182
+  s_7b4bd5eb390ca2::t_ac1e67c2350721 282-310
+  s_7b4bd5eb390ca2::t_244a3d1228cd2c 406-415
+  s_7b4bd5eb390ca2::t_c952da40fdc83c 147-159
+  s_7b4bd5eb390ca2::t_5bd3565cac3a73 215-223
+  s_7b4bd5eb390ca2::t_cc21794ec71b13 160-162
+  s_7b4bd5eb390ca2::t_3b1acce9fccd08 176-181
+  s_7b4bd5eb390ca2::t_9cef51ab7fd383 184-186
+  s_7b4bd5eb390ca2::t_3ffb04a2cf2fdb 343
+  s_7b4bd5eb390ca2::t_31551779082159 63
+  s_7b4bd5eb390ca2::t_44c0d533ee7ca0 432
+  s_7b4bd5eb390ca2::t_644ea96bed95f3 433
+  s_7b4bd5eb390ca2::t_066a6e0099191d 1-62,64-93,103-146,163-165,183,187-188,199-214,224-281,311-342,345-405,416-431,434
+  s_7b4bd5eb390ca2::t_8d08527495ff4a 344
+goal-gen/docs/brainstorms/2026-06-23-next-work-item-brainstorm.md
+  s_2f27d317bf46a0::t_f1a5fe5ddf8632 1-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "09398c124f65ccb1efe94e9c9fe79ddb347339f6",
+  "prompts": {},
+  "sessions": {
+    "s_16ec97b21a7c03": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14527c32-2ba5-4d91-86eb-4eb022846910",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_2f27d317bf46a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c12e81fb-fbc2-4eb1-a787-902c86a214a0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_7b4bd5eb390ca2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "52cc5ae6-f7d5-4df9-83ee-d6fd7cd4e41d",
+        "model": "unknown"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
