@@ -1,0 +1,36 @@
+.graphite.yml
+  s_2f27d317bf46a0::t_14cd31ddb4b3e9 1-18
+goal-gen/.gitignore
+  s_7b4bd5eb390ca2::t_1181b46aacb0bc 37-43
+  s_2f27d317bf46a0::t_797674c27217e1 33-36
+.github/pull_request_template.md
+  s_2f27d317bf46a0::t_afd6c78c2ca549 1-15
+goal-gen/CLAUDE.md
+  s_2f27d317bf46a0::t_5d245c75c26c60 29-30
+  s_2f27d317bf46a0::t_249852b948498b 21
+  s_2f27d317bf46a0::t_3393179300cbf9 52,55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "f23595902bb70a2c797407857ece59809c029c0b",
+  "prompts": {},
+  "sessions": {
+    "s_2f27d317bf46a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c12e81fb-fbc2-4eb1-a787-902c86a214a0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_7b4bd5eb390ca2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "52cc5ae6-f7d5-4df9-83ee-d6fd7cd4e41d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
