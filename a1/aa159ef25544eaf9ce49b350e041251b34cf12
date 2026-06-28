@@ -1,0 +1,61 @@
+goal-gen/plans/executor-de-risk-spike.md
+  s_7b4bd5eb390ca2::t_956976520cef42 189-198
+  s_7b4bd5eb390ca2::t_44c0d533ee7ca0 432
+  s_7b4bd5eb390ca2::t_644ea96bed95f3 433
+  s_7b4bd5eb390ca2::t_8d08527495ff4a 344
+  s_7b4bd5eb390ca2::t_92e77cf492039a 166-175,182
+  s_7b4bd5eb390ca2::t_066a6e0099191d 1-62,64-93,103-146,163-165,183,187-188,199-214,224-281,311-342,345-405,416-431,434
+  s_7b4bd5eb390ca2::t_b170fbe16f59f7 94-102
+  s_7b4bd5eb390ca2::t_ac1e67c2350721 282-310
+  s_7b4bd5eb390ca2::t_3b1acce9fccd08 176-181
+  s_7b4bd5eb390ca2::t_3ffb04a2cf2fdb 343
+  s_7b4bd5eb390ca2::t_244a3d1228cd2c 406-415
+  s_7b4bd5eb390ca2::t_5bd3565cac3a73 215-223
+  s_7b4bd5eb390ca2::t_9cef51ab7fd383 184-186
+  s_7b4bd5eb390ca2::t_c952da40fdc83c 147-159
+  s_7b4bd5eb390ca2::t_cc21794ec71b13 160-162
+  s_7b4bd5eb390ca2::t_31551779082159 63
+goal-gen/tests/spikes/executor-spike-findings.md
+  s_7b4bd5eb390ca2::t_a8dce1ede94ecc 61-63
+  s_7b4bd5eb390ca2::t_c2e5584c49aea7 1-60,64-287,291-305
+  s_7b4bd5eb390ca2::t_47ad23f722e707 288-290
+goal-gen/docs/brainstorms/2026-06-23-next-work-item-brainstorm.md
+  s_2f27d317bf46a0::t_f1a5fe5ddf8632 1-104
+goal-gen/tests/spikes/executor-spike.ts
+  s_7b4bd5eb390ca2::t_4039508d8fce76 309-312
+  s_7b4bd5eb390ca2::t_9d4e54130e1a0a 329-332,334-335
+  s_7b4bd5eb390ca2::t_a27062407e0297 144-150
+  s_7b4bd5eb390ca2::t_64fa049a66ef2f 50-56,58-59,61
+  s_7b4bd5eb390ca2::t_d3281e6e34cb65 246,250-252,258
+  s_7b4bd5eb390ca2::t_a7c48a01c80288 111,113-114
+  s_7b4bd5eb390ca2::t_95925186084804 313-315
+  s_7b4bd5eb390ca2::t_346134c922fcb6 387-393
+  s_7b4bd5eb390ca2::t_50e485b1b52dce 1-21,26-49,70-110,112,115-130,142-143,151,153,157,159-170,172-190,194-195,197-198,200,205,207,209-210,212-245,247-249,253-257,259-263,265-268,270-273,277-279,283,285-293,295-297,299-301,303-305,317,320-327,333,336-339,344-345,351-353,358-359,361-367,384,394
+  s_7b4bd5eb390ca2::t_47b803eaf2a464 22-25,57,60,62-69,131-141,152,154-156,158,171,191-193,196,206,211,264,269,274-276,280-282,284,294,298,302,306-308,316,318-319,328,340-341,343,346-350,354-357,360,368-383,385-386,395-396
+  s_7b4bd5eb390ca2::t_b0ff0339b0d7ff 342
+  s_7b4bd5eb390ca2::t_12699162c831f1 199,201-204,208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "a1aa159ef25544eaf9ce49b350e041251b34cf12",
+  "prompts": {},
+  "sessions": {
+    "s_2f27d317bf46a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c12e81fb-fbc2-4eb1-a787-902c86a214a0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_7b4bd5eb390ca2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "52cc5ae6-f7d5-4df9-83ee-d6fd7cd4e41d",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
