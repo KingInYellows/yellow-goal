@@ -30,3 +30,14 @@ pnpm-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# ruvector vector storage (per-developer)
+.ruvector/
+ruvector.db
+
+# Local agent / tooling state (per-developer; not shared)
+.claude/agent-memory/
+.claude/composio-usage.json
+.claude/*.local.md
+mempalace.yaml
+entities.json

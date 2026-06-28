@@ -1,0 +1,21 @@
+# Repo-root .gitignore for the yellow-goal tree.
+# The main project lives in goal-gen/ (which has its own .gitignore). These
+# patterns catch per-developer agent/tooling state that may be generated at the
+# REPO ROOT when a tool runs from yellow-goal/ rather than goal-gen/ — none of
+# these are ever legitimately tracked. Patterns are intentionally specific so
+# they never shadow tracked content like goal-gen/.claude/specs/.
+
+# ruvector vector storage (per-developer)
+.ruvector/
+ruvector.db
+
+# Local agent / tooling state (per-developer; not shared)
+.claude/agent-memory/
+.claude/composio-usage.json
+.claude/*.local.md
+mempalace.yaml
+entities.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

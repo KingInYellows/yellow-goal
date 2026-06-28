@@ -18,13 +18,15 @@ A self-hosted app: plain-English goal → LLM-extracted action graph → determi
 
 ## Repo layout
 ```
-CLAUDE.md · AGENTS.md · .mcp.json
+CLAUDE.md · AGENTS.md
 .claude/specs/        # component contracts (read before implementing a component)
 docs/                 # prd.md (source of truth) + decisions/ (ADRs, MADR) + design notes
 backend/src/          # api/ planner/ extractors/ executors/ db/ mcp/
 frontend/src/         # components/ pages/ lib/ (plan tree, dashboard, realtime)
 tests/                # unit + integration + evals/ (vitest + fast-check; promptfoo for extractor)
 ```
+
+**Repo root gotcha:** this project lives in `goal-gen/`, a *subdirectory* of the git repo rooted at the parent `yellow-goal/` (`git rev-parse --show-toplevel` → `yellow-goal`). Run `git`/`gt` from anywhere in the tree, but note: repo-level config (`.graphite.yml`, PR template) sits at the `yellow-goal` root, while project-local config (`.gitignore`, `.ruvector/`, `.claude/*.local.md`) lives in `goal-gen/`. Tools that probe `show-toplevel` for project files will look one level too high.
 
 ## Core invariants (do not violate)
 1. **The planner is deterministic.** A\* over symbolic state; no LLM inside the planner. The LLM only *authors* the action graph (in the extractor) and *executes* steps (in executors). Replanning re-runs the deterministic planner; when the existing pool can't reach the goal, the extractor re-authors **additional** actions (append-only, bounded) — the *decision* to re-extract is deterministic (no-plan / N failures).
@@ -47,10 +49,10 @@ tests/                # unit + integration + evals/ (vitest + fast-check; prompt
 - Track work with the task list; one component spec = one work stream.
 - **Eval-driven:** keep `tests/evals/` (goal→expected-plan pairs); run before/after planner or prompt changes.
 
-## Commands (fill in as the repo is scaffolded)
+## Commands (M0 planner scaffolded; frontend/lint still TBD)
 - Install: `npm install`
 - Dev: `TBD` (frontend `vite`, backend watch — not scaffolded yet)
-- Test: `npm test` (`vitest run`; planner properties via `fast-check`)
+- Test: `npm test` (`vitest run`) · `npm run test:watch` (watch mode); planner properties via `fast-check`
 - Evals: `npm run eval` (all) · `npm run eval:planner` (planner gate) — `vitest` over `tests/evals/`; extractor prompt eval via `promptfoo` (M0 part 2)
 - Typecheck: `npm run typecheck` (`tsc --noEmit`, strict)
 - Lint/format: `TBD` (not configured yet)
