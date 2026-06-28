@@ -1,0 +1,31 @@
+goal-gen/backend/src/planner/plan.ts
+  s_16ec97b21a7c03::t_8c638b86e94e14 156-157
+  s_16ec97b21a7c03::t_ea5ba88fde3878 6
+  s_16ec97b21a7c03::t_0fd0e6819b03ef 94-104
+  s_16ec97b21a7c03::t_a74784ebfcd953 4-5
+  s_16ec97b21a7c03::t_61374ba67f4935 7
+  s_16ec97b21a7c03::t_2c4c2234a137c6 91-93
+  s_16ec97b21a7c03::t_6b1c68554a69ab 105-107,153-155
+  s_16ec97b21a7c03::t_77ddea85de3df5 158-160
+  s_16ec97b21a7c03::t_6160502d9eb5b0 9-19,21,23,32,34,36,40-90,108-152,161-303,305-399
+goal-gen/CLAUDE.md
+  s_16ec97b21a7c03::t_95913ba8b7cbb3 51-56
+goal-gen/.claude/specs/planner.md
+  s_16ec97b21a7c03::t_e616aa58ddb24a 46-47,51-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "526120cd541317421af7ed0963b2d944eb6c754b",
+  "prompts": {},
+  "sessions": {
+    "s_16ec97b21a7c03": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14527c32-2ba5-4d91-86eb-4eb022846910",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
