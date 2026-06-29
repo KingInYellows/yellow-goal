@@ -9,13 +9,15 @@
     "test:watch": "vitest",
     "eval": "vitest run tests/evals",
     "eval:planner": "vitest run tests/evals/planner",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "runner": "tsx backend/src/runner.ts"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.0",
     "fast-check": "^3.23.0",
     "js-yaml": "^4.1.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^4.1.0",
     "zod": "^3.24.0"
