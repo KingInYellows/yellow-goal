@@ -318,4 +318,4 @@ tests in #4); only the real-`claude` integration probe stands alone as #5.
 - [x] 2. agent/feat/m1-claude-executor (completed 2026-06-29)
 - [x] 3. agent/feat/m1-llm-extractor (completed 2026-06-29)
 - [x] 4. agent/feat/m1-orchestrator-loop (completed 2026-06-29)
-- [ ] 5. agent/test/m1-runner-e2e
+- [x] 5. agent/test/m1-runner-e2e (probe committed 2026-06-29; one-time real-`claude` run is operator-gated)
