@@ -1,0 +1,23 @@
+goal-gen/tests/integration/runner.probe.ts
+  s_0738f37ef72a16::t_3b32662838cad4 1-86,92-115,119-160
+  s_0738f37ef72a16::t_5461192b1cd51d 116-118
+  s_0738f37ef72a16::t_f3811e5afb8b14 87-91
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_e0611fa9f4a8b5 321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "f6abec8767988d1d8ce04bf9721b0fadd2d3e788",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
