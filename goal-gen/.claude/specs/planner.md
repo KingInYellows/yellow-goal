@@ -41,17 +41,17 @@ interface Plan { id: string; goalSpecId: string; steps: PlanStep[]; totalCost: n
 
 ## Behavior
 - **Search:** forward (progressive) A\* over `WorldState`. Node = `{state, actions[], g}`; edge = an action whose preconditions hold in `state`; successor applies `effects`.
-- **g(n):** sum of action `cost`. **h(n):** count of unmet `goalState` predicates. **f = g + h.** Open list = priority queue by `f`; closed set keyed by a stable serialization of `state`.
+- **g(n):** sum of action `cost`. **h(n):** in `astar` mode, the count of unmet `goalState` predicates **× the pool's minimum action cost** (the min-cost scaling keeps the heuristic admissible even for fractional costs); in `bfs` mode, `0`. **f = g + h.** Open list = priority queue by `f`; closed set keyed by a stable serialization of `state`.
 - **Goal test:** all `goalState` predicates satisfied (`h === 0`).
-- **Optimality:** the unmet-predicate heuristic is admissible iff each action satisfies ≤1 new goal predicate; document the chosen mode. Provide a `mode: 'astar' | 'bfs'` flag — BFS guarantees shortest when actions have multi-effects.
-- **Dependency graph:** derive `dependsOn` from precondition/effect chains so the orchestrator can parallelize independent steps.
-- **Replan:** `plan(currentState, goalSpec, {replanOf})` recomputes from the new state; returns a new `Plan` linked via `replanOf`. The planner only orders the pool it's given: when re-planning returns no plan, the **orchestrator** may re-invoke the extractor to *append* new actions (see `orchestrator.md`, `goal-extractor.md`) and call `plan` again over the expanded pool — the planner itself stays LLM-free.
+- **Optimality:** the unmet-predicate heuristic is admissible iff each action satisfies ≤1 new goal predicate; document the chosen mode. Provide a `mode: 'astar' | 'bfs'` flag where `bfs` runs **uniform-cost search (h = 0)** — guaranteed least-cost even when actions carry multiple effects. **Default (`plan()` with no `mode`): auto-select** — use `bfs` when any action sets ≥2 goal predicates to their goal values (the inadmissibility condition), otherwise `astar` (h = unmet-predicate count × the pool's minimum action cost, which keeps it admissible even for fractional costs). Both return a minimum-cost plan and differ only in search efficiency; each heuristic is consistent under its selection condition, so the first goal node popped is optimal. (Implemented in `plan.ts`.)
+- **Dependency graph:** derive `dependsOn` from precondition/effect chains so the orchestrator can parallelize independent steps. Each step depends on the **latest preceding step that establishes each of its preconditions** (a precondition met by the initial state adds no edge); all edges point strictly backward, so the graph is acyclic and consistent with the step order.
+- **Replan:** `plan(goalSpec, { replanOf })` — with the current world state supplied as `goalSpec.initialState` — recomputes from the new state; returns a new `Plan` linked via `replanOf`. The planner only orders the pool it's given: when re-planning returns no plan, the **orchestrator** may re-invoke the extractor to *append* new actions (see `orchestrator.md`, `goal-extractor.md`) and call `plan` again over the expanded pool — the planner itself stays LLM-free.
 
 ## Error / edge cases
-- Unsatisfiable goal → return `{ plan: null, reason }` (UI shows "no plan"); never throw.
-- Cyclic precondition/effect definitions → detect and reject with a clear error.
-- Action with empty/missing `verify` → reject at intake (invariant).
-- Cap search: max nodes expanded / max plan length (configurable) to bound worst case.
+- Unsatisfiable goal (no producer, precondition deadlock, cyclic prerequisites, wrong value, partially-reachable goal…) → return `null` (UI shows "no plan"); never throw. Forward search just exhausts the open list, so cyclic prerequisites need no special-casing — they simply never reach the goal.
+- Malformed action — empty/missing `verify`, `cost ≤ 0`, or a **duplicate id** in the pool — is rejected at intake with a clear *thrown* error (invariant). This is distinct from the `null` no-plan result, which is reserved for a well-formed but unsatisfiable goal.
+- Cap search: `maxNodes` (configurable) bounds the worst case; exceeding it returns `null`.
+- **Single-occurrence assumption:** the extractor authors *monotonic*-effect action graphs (a fact, once set, stays set), so an optimal plan never needs to *reuse* an action, and `PlanStep`/`dependsOn` identify steps by `actionId`. Non-monotonic/consumable effects — where an optimal plan legitimately repeats an action — would need per-occurrence step instance ids across `PlanStep` and the `simulate` oracle; that is a deliberate future data-model change behind its own ADR, not an M0 concern.
 
 ## Acceptance criteria
 - Deterministic: same input ⇒ identical plan.

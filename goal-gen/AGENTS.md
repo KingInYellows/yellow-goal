@@ -6,10 +6,10 @@ Codex-compatible repo instructions (mirror of `CLAUDE.md`). If both are present,
 Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction → deterministic A\* GOAP plan → orchestrator dispatches actions to headless coding-agent CLIs → ground-truth verify → replanning → live view. TypeScript end-to-end; Postgres/pgvector; **local, single-operator**, self-hosted on a Proxmox LXC or VM. **v1 = M1: Claude Code (`claude -p`) only, serial**; Codex + Antigravity + parallelism + full dashboard are M2 fast-follow. Product spec: `docs/prd.md`. Component contracts: `.claude/specs/`.
 
 ## Build / test (fill in as scaffolded)
-- Install: `TBD`
-- Dev: `TBD`
-- Test: `TBD` · Evals: `TBD`
-- Lint/format: `TBD`
+- Install: `npm install`
+- Dev: `TBD` (not scaffolded yet)
+- Test: `npm test` · Evals: `npm run eval` (all) / `npm run eval:planner` (planner gate) · Typecheck: `npm run typecheck`
+- Lint/format: `TBD` (not configured yet)
 Always run tests + the eval set before declaring a planner or prompt change done.
 
 ## Hard rules
