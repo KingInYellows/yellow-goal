@@ -1,0 +1,32 @@
+goal-gen/backend/src/runner.ts
+  s_0738f37ef72a16::t_df88ae5dbacae0 3,5-9,11,14-16,18-20,27-30,32,36,39-43,45-46,48-49,59
+goal-gen/tests/orchestrator/orchestrator.test.ts
+  s_0738f37ef72a16::t_18873dae1532b7 1-220
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_0c8c0e2409d5fe 320
+goal-gen/backend/src/executors/shell-verifier.ts
+  s_0738f37ef72a16::t_8a64d052b95661 1-48,50-53
+  s_0738f37ef72a16::t_e9f501816aac36 49
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_0738f37ef72a16::t_2947bab5d16bf3 197
+  s_0738f37ef72a16::t_6279cd5011bc7c 196,199
+  s_0738f37ef72a16::t_f1c6fcc6902313 399-406
+  s_0738f37ef72a16::t_2a827c4de26ca6 409-417
+  s_0738f37ef72a16::t_8b91f90fa4d6f2 1-195,198,200-398,407-408,418-467
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "311cf9b52a105923effe50ce4c95ff50873cbdc4",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
