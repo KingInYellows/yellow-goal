@@ -1,0 +1,23 @@
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_0738f37ef72a16::t_c5ef47d099a95a 1-306
+goal-gen/backend/src/executors/worktree.ts
+  s_0738f37ef72a16::t_bf10fadee787ee 1-118
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_33cba307e646c3 318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "06407b268e47128b0520d46e02ef95ef9a5c428d",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
