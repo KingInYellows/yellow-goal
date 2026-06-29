@@ -1,0 +1,28 @@
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_f73c3a224f724f 319
+goal-gen/backend/src/extractors/llm-extractor.ts
+  s_0738f37ef72a16::t_e08138b3fa1ed5 142-143
+  s_0738f37ef72a16::t_3bd1f3ae661c50 1-141,144-253
+goal-gen/tests/extractor/repair.test.ts
+  s_0738f37ef72a16::t_0c5ea0e7e9d1c3 1-108
+goal-gen/backend/src/extractors/schema.ts
+  s_0738f37ef72a16::t_b6b7cacca92423 1-76
+goal-gen/backend/src/extractors/prompts.ts
+  s_0738f37ef72a16::t_10030a5165c198 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "35dd5d367fcbf1503e0dbd3a17d3b33493228663",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
