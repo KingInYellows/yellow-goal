@@ -1,0 +1,18 @@
+# gt-workflow convention file — read by smart-submit, gt-stack-plan, gt-amend, gt-setup
+# This is NOT a Graphite CLI feature. It is a gt-workflow plugin convention.
+# Docs: https://github.com/KingInYellows/yellow-plugins/tree/main/plugins/gt-workflow
+
+submit:
+  draft: false
+  merge_when_ready: false
+  restack_before: true
+
+audit:
+  agents: 3
+  skip_on_draft: false
+
+branch:
+  prefix: "agent/"
+
+pr_template:
+  create: true

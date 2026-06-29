@@ -8,7 +8,7 @@ Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction �
 ## Build / test (fill in as scaffolded)
 - Install: `npm install`
 - Dev: `TBD` (not scaffolded yet)
-- Test: `npm test` · Evals: `npm run eval` (all) / `npm run eval:planner` (planner gate) · Typecheck: `npm run typecheck`
+- Test: `npm test` · `npm run test:watch` (watch mode) · Evals: `npm run eval` (all) / `npm run eval:planner` (planner gate) · Typecheck: `npm run typecheck`
 - Lint/format: `TBD` (not configured yet)
 Always run tests + the eval set before declaring a planner or prompt change done.
 
