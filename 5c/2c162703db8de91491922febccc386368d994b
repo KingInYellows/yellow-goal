@@ -1,0 +1,29 @@
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_51b8bbb4fb9639::t_0e9728bcb09168 261-262,264-266
+  s_51b8bbb4fb9639::t_8734c53d9f66f8 20
+  s_51b8bbb4fb9639::t_9347c776988604 151,165-196
+  s_51b8bbb4fb9639::t_c31047bbf7b2af 207-241
+  s_51b8bbb4fb9639::t_30b3b8a03ca56c 81-97,105-106,121-122
+goal-gen/backend/src/executors/worktree.ts
+  s_51b8bbb4fb9639::t_986001dc9d6de3 16,18
+  s_51b8bbb4fb9639::t_cb9f784bcf430e 15
+  s_51b8bbb4fb9639::t_6b9e9fc4776407 39
+  s_51b8bbb4fb9639::t_9592fc6e200fc2 108,110-116
+  s_51b8bbb4fb9639::t_95edf1d8176e1e 40-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "5c2c162703db8de91491922febccc386368d994b",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
