@@ -57,7 +57,13 @@ export const ActionSchema = z.object({
   verify: verifySchema,
 });
 
-export const ActionArraySchema = z.array(ActionSchema);
+/** Upper bound on actions the extractor may return in a single pass.
+ * A model returning more than this almost certainly hallucinated padding;
+ * failing here surfaces a clear zod issue that the repair round can relay. */
+export const MAX_ACTIONS = 50;
+export const ActionArraySchema = z.array(ActionSchema).max(MAX_ACTIONS, {
+  message: `action list must not exceed ${MAX_ACTIONS} actions — trim or split the goal`,
+});
 
 export const GoalSpecSchema = z.object({
   goalText: z.string(),

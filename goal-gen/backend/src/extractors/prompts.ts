@@ -63,10 +63,19 @@ const RULES = `Rules:
 - Prefer completionPolicy "verify-only" when the verify checks are unambiguous.
 - Be deterministic: same goal => same GoalSpec.`;
 
+/**
+ * Escape XML metacharacters in untrusted free-text before interpolating into XML-delimited prompt
+ * sections. Prevents delimiter-breakout injection (e.g. a goalText containing `</goal>` closing the
+ * tag early). Order matters: escape `&` first to avoid double-escaping.
+ */
+function escapeXml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /** Build the first-pass extraction prompt for a goal. */
 export function extractionPrompt(req: ExtractRequest): string {
   const constraints = req.config?.constraints?.length
-    ? `\nOperator constraints (honor these):\n${req.config.constraints.map((c) => `- ${c}`).join('\n')}`
+    ? `\nOperator constraints (honor these):\n${req.config.constraints.map((c) => `- ${escapeXml(c)}`).join('\n')}`
     : '';
   const depth = req.config?.depth ? `\nRequested depth: ${req.config.depth}.` : '';
   return [
@@ -82,7 +91,7 @@ export function extractionPrompt(req: ExtractRequest): string {
     FEW_SHOT,
     '',
     `Now extract a GoalSpec for this goal:${depth}${constraints}`,
-    `<goal>${req.goalText}</goal>`,
+    `<goal>${escapeXml(req.goalText)}</goal>`,
   ].join('\n');
 }
 
@@ -112,7 +121,27 @@ export function expandPrompt(
   failureEvidence: FailureEvidence,
   existingPool: Action[],
 ): string {
-  const existingIds = existingPool.map((a) => a.id);
+  // Summarise existing actions so the model can author genuinely NEW, non-duplicate actions that are
+  // grounded in what already exists (id, human name, and the verify command that is already covered).
+  const existingActionSummary = existingPool.map((a) => ({
+    id: a.id,
+    name: a.name,
+    verifyCommand: a.verify.command,
+  }));
+
+  // Cap untrusted shell output (verifyStdout / verifyStderr) before interpolation — these come
+  // directly from command execution and can be arbitrarily large or contain adversarial content.
+  const MAX_SHELL_OUTPUT = 2000;
+  const cappedEvidence: FailureEvidence = {
+    ...failureEvidence,
+    ...(failureEvidence.verifyStdout !== undefined && {
+      verifyStdout: failureEvidence.verifyStdout.slice(0, MAX_SHELL_OUTPUT),
+    }),
+    ...(failureEvidence.verifyStderr !== undefined && {
+      verifyStderr: failureEvidence.verifyStderr.slice(0, MAX_SHELL_OUTPUT),
+    }),
+  };
+
   return [
     'You previously authored a GoalSpec for the goal below, but executing it FAILED and the',
     'deterministic planner can no longer reach the goal with the existing actions. Author ADDITIONAL',
@@ -123,14 +152,15 @@ export function expandPrompt(
     'end with `]`. No prose, no code fences.',
     '',
     'Rules:',
-    '- Each new action id MUST differ from every existing id (listed below).',
-    '- Ground each new action in the REAL failure evidence — add the action that fixes the observed',
-    '  failure (e.g. a missing dependency => an install step; a failing command => its prerequisite).',
+    '- Each new action id MUST differ from every existing id in the pool (see existing actions below).',
+    '- Do NOT duplicate what an existing action already does — author actions that cover genuinely new',
+    '  ground (e.g. a missing dependency => an install step; a failing command => its prerequisite).',
+    '- Ground each new action in the REAL failure evidence.',
     '- Every new action MUST have a non-empty verify.',
     '',
     `Goal: ${goalText}`,
     `Current world state: ${JSON.stringify(currentState)}`,
-    `Existing action ids: ${JSON.stringify(existingIds)}`,
-    `Failure evidence: ${JSON.stringify(failureEvidence)}`,
+    `Existing actions (id / name / verify command): ${JSON.stringify(existingActionSummary)}`,
+    `Failure evidence: ${JSON.stringify(cappedEvidence)}`,
   ].join('\n');
 }

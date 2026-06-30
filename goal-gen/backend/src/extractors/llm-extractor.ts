@@ -38,6 +38,8 @@ export interface LlmClient {
 
 const EXTRACT_TIMEOUT_MS = 120_000;
 const SIGKILL_GRACE_MS = 5_000;
+/** Max chars of a failed LLM response fed back into the repair prompt to avoid blowing context. */
+const REPAIR_CONTEXT_MAX_CHARS = 8_000;
 
 interface RawSpawn {
   stdout: string;
@@ -49,7 +51,13 @@ interface RawSpawn {
 
 function spawnClaudeText(argv: readonly string[], timeoutMs: number): Promise<RawSpawn> {
   return new Promise((resolve) => {
-    const child = spawn('claude', [...argv], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn('claude', [...argv], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      resolve({ stdout: '', stderr: '', code: null, killed: false, spawnError: (e as Error).message });
+      return;
+    }
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout?.on('data', (d: Buffer) => out.push(d));
@@ -83,26 +91,48 @@ interface MinimalEnvelope {
 
 /** Read just the fields the extractor needs from the `--output-format json` envelope. */
 function readEnvelope(stdout: string): MinimalEnvelope | null {
-  const parse = (text: string): unknown => {
+  const tryParse = (text: string): unknown => {
     try {
       return JSON.parse(text);
     } catch {
       return undefined;
     }
   };
-  let obj = parse(stdout);
-  if (obj === undefined) {
-    const start = stdout.indexOf('{');
-    const end = stdout.lastIndexOf('}');
-    if (start >= 0 && end > start) obj = parse(stdout.slice(start, end + 1));
-  }
-  if (typeof obj !== 'object' || obj === null) return null;
-  const o = obj as Record<string, unknown>;
-  return {
-    result: typeof o['result'] === 'string' ? o['result'] : '',
-    costUsd: typeof o['total_cost_usd'] === 'number' ? o['total_cost_usd'] : 0,
-    isError: o['is_error'] === true,
+
+  const toEnvelope = (obj: unknown): MinimalEnvelope | null => {
+    if (typeof obj !== 'object' || obj === null) return null;
+    const o = obj as Record<string, unknown>;
+    return {
+      result: typeof o['result'] === 'string' ? o['result'] : '',
+      costUsd: typeof o['total_cost_usd'] === 'number' ? o['total_cost_usd'] : 0,
+      isError: o['is_error'] === true,
+    };
   };
+
+  // Fast path: try the whole stdout as a single JSON object.
+  const direct = tryParse(stdout.trim());
+  if (direct !== undefined) return toEnvelope(direct);
+
+  // NDJSON / mixed-output: try each non-empty line; prefer the first line that parses to an object
+  // with a 'result' key (the Claude SDK envelope), fall back to the last object-shaped line.
+  let lastObj: unknown;
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parsed = tryParse(trimmed);
+    if (typeof parsed === 'object' && parsed !== null) {
+      if ('result' in (parsed as Record<string, unknown>)) return toEnvelope(parsed);
+      lastObj = parsed;
+    }
+  }
+  if (lastObj !== undefined) return toEnvelope(lastObj);
+
+  // Last resort: scan for the first balanced top-level {...} block.
+  const start = stdout.indexOf('{');
+  const end = stdout.lastIndexOf('}');
+  if (start >= 0 && end > start) return toEnvelope(tryParse(stdout.slice(start, end + 1)));
+
+  return null;
 }
 
 export interface ClaudeLlmClientOptions {
@@ -169,6 +199,12 @@ export function parseJson(text: string): { ok: true; value: unknown } | { ok: fa
   }
 }
 
+/** Truncate oversized LLM output before feeding it into the repair prompt (prevents context blowout). */
+function capForRepair(text: string): string {
+  if (text.length <= REPAIR_CONTEXT_MAX_CHARS) return text;
+  return text.slice(0, REPAIR_CONTEXT_MAX_CHARS) + `\n… [truncated ${text.length - REPAIR_CONTEXT_MAX_CHARS} chars]`;
+}
+
 type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function tryParseGoalSpec(text: string): ParseResult<GoalSpec> {
@@ -230,8 +266,8 @@ export class LlmExtractorImpl implements LlmExtractor {
       this.emit({ ev: 'extract.measure', firstTry: true, repairNeeded: false, success: true });
       return firstParse.value;
     }
-    // one bounded repair round
-    const repaired = await this.client.complete(repairPrompt(first.text, firstParse.error));
+    // one bounded repair round (cap previous output so an oversized response doesn't blow repair context)
+    const repaired = await this.client.complete(repairPrompt(capForRepair(first.text), firstParse.error));
     const repairParse = tryParseGoalSpec(repaired.text);
     this.emit({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: repairParse.ok });
     if (repairParse.ok) return repairParse.value;
@@ -251,7 +287,7 @@ export class LlmExtractorImpl implements LlmExtractor {
     const first = await this.client.complete(expandPrompt(goalText, currentState, failureEvidence, existingPool));
     let parse = tryParseActions(first.text);
     if (!parse.ok) {
-      const repaired = await this.client.complete(repairPrompt(first.text, parse.error));
+      const repaired = await this.client.complete(repairPrompt(capForRepair(first.text), parse.error));
       parse = tryParseActions(repaired.text);
     }
     if (!parse.ok) {
@@ -261,6 +297,12 @@ export class LlmExtractorImpl implements LlmExtractor {
       });
     }
     const deduped = dedupeIds(parse.value, existingPool);
+    if (deduped.length === 0) {
+      this.emit({ ev: 'expand.measure', success: false, added: 0 });
+      throw new ExtractionError('expand returned zero new actions — cannot extend the action pool', {
+        rawFirst: first.text.slice(0, 2000),
+      });
+    }
     this.emit({ ev: 'expand.measure', success: true, added: deduped.length });
     return deduped;
   }
