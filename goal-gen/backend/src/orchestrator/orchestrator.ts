@@ -208,6 +208,27 @@ export class Orchestrator {
         continue;
       }
 
+      // A verify pass applies the action's `successPredicate` to currentState, which can be NARROWER
+      // than the action's declared `effects` — so a downstream planned step's preconditions may no
+      // longer hold in the ground-truth currentState. Re-plan from currentState rather than
+      // dispatching a step with unmet preconditions. A fresh plan only expands actions applicable
+      // from the start state, so the next step is guaranteed dispatchable (no replan loop).
+      if (!satisfies(state.currentState, action.preconditions)) {
+        this.emit({ ev: 'plan.stale', actionId: action.id, reason: 'preconditions unmet by ground-truth state' });
+        const r = this.safePlan(state);
+        if (r.threw) {
+          const o = await this.reextract(state, withValidation({ actionId: action.id }, r.error));
+          if (o.kind === 'terminal') return o.summary;
+          plan = o.plan;
+          continue;
+        }
+        if (r.plan === null || this.nextStep(r.plan, state) === undefined) {
+          return this.summary(state, 'failed', 'planned step preconditions unmet by ground-truth state and no replan possible');
+        }
+        plan = r.plan;
+        continue;
+      }
+
       // Budget check BEFORE dispatch (plan task 4.3).
       if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
         return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached`);

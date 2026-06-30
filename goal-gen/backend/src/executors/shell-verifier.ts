@@ -23,6 +23,12 @@ export class ShellVerifier implements Verifier {
 
   run(command: string, ctx: RunContext): Promise<VerifyResult> {
     return new Promise((resolve) => {
+      // Already-cancelled before we start: an 'abort' listener would never fire for an event that
+      // already happened, so honour cancellation up front and never launch the verify command.
+      if (ctx.signal.aborted) {
+        resolve({ exitCode: 124 /* cancelled */, stdout: '', stderr: 'verify cancelled before start (signal already aborted)' });
+        return;
+      }
       // `detached: true` places the child in its own process group so we can
       // kill the full tree (group kill via negative pid) on timeout or abort —
       // not just the immediate shell child (POSIX SIGKILL to -pgid).
