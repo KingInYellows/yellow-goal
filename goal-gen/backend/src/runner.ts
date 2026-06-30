@@ -26,8 +26,14 @@ function log(event: Record<string, unknown>): void {
 
 /** Run the real M1 loop for one goal and return its structured summary. */
 async function run(args: string[]): Promise<RunSummary> {
-  const autoConfirm = args.includes('--yes') || args.includes('-y');
-  const goalText = args.filter((a) => a !== '--yes' && a !== '-y').join(' ').trim();
+  // Only consume leading '--yes'/'-y' flags; stop flag parsing at the first non-flag argument so a
+  // goal that happens to contain those literals is preserved verbatim.
+  let flagCount = 0;
+  while (flagCount < args.length && (args[flagCount] === '--yes' || args[flagCount] === '-y')) {
+    flagCount++;
+  }
+  const autoConfirm = flagCount > 0;
+  const goalText = args.slice(flagCount).join(' ').trim();
   if (goalText === '') {
     log({ ev: 'error', message: 'usage: npx tsx backend/src/runner.ts [--yes] "<goal>"' });
     return { status: 'failed', goalText: '', costUsd: 0, replans: 0, reextractions: 0, actions: [], reason: 'no goal text provided' };
@@ -45,8 +51,16 @@ async function run(args: string[]): Promise<RunSummary> {
   const verifier = new ShellVerifier();
   const confirm: DodConfirmer | undefined = autoConfirm ? async () => true : undefined;
 
-  const orchestrator = new Orchestrator({ extractor, executor, verifier, config, onEvent: log, confirm });
-  return orchestrator.run({ goalText });
+  const ac = new AbortController();
+  const abort = () => ac.abort();
+  process.once('SIGINT', abort);
+  process.once('SIGTERM', abort);
+
+  const orchestrator = new Orchestrator({ extractor, executor, verifier, config, onEvent: log, confirm, signal: ac.signal });
+  return orchestrator.run({ goalText }).finally(() => {
+    process.off('SIGINT', abort);
+    process.off('SIGTERM', abort);
+  });
 }
 
 // Auto-run only when invoked as the entry script (so tests can import without side effects).

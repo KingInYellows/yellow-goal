@@ -92,15 +92,20 @@ export interface ExtractRequest {
  * authors *additional* actions (append-only) grounded in real failure evidence when re-planning
  * over the existing pool yields no plan. The LLM only authors here — everything downstream is
  * deterministic (CLAUDE.md invariant #1).
+ *
+ * Both methods return their LLM spend alongside the authored data so the orchestrator can fold
+ * extractor cost into `accumulatedCostUsd` and the run summary's `costUsd` (includes repair rounds).
  */
 export interface LlmExtractor {
-  extract(req: ExtractRequest): Promise<GoalSpec>;
+  /** `signal` propagates run cancellation (SIGINT/SIGTERM) into the underlying `claude -p` child. */
+  extract(req: ExtractRequest, signal?: AbortSignal): Promise<{ goalSpec: GoalSpec; costUsd: number }>;
   expand(
     goalText: string,
     currentState: WorldState,
     failureEvidence: FailureEvidence,
     existingPool: Action[],
-  ): Promise<Action[]>;
+    signal?: AbortSignal,
+  ): Promise<{ actions: Action[]; costUsd: number }>;
 }
 
 // ─── Failure evidence + guardrails (orchestrator.md, plan "Key types") ────────────────────────

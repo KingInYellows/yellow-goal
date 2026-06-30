@@ -44,8 +44,10 @@ export interface DodInfo {
   plannedSequence: string[];
 }
 
-/** Operator confirmation of the DoD. Production reads stdin; tests inject a deterministic answer. */
-export type DodConfirmer = (dod: DodInfo) => Promise<boolean>;
+/** Operator confirmation of the DoD. Production reads stdin; tests inject a deterministic answer.
+ *  `signal` is the run's AbortSignal (SIGINT/SIGTERM) — a confirmer waiting on input (e.g. stdin)
+ *  must race against it so kill control stops promptly at confirmation prompts too (PR #10 review P2). */
+export type DodConfirmer = (dod: DodInfo, signal: AbortSignal) => Promise<boolean>;
 
 /** Provides a fresh per-action worktree. Production = `createWorktree`; tests inject a stub. */
 export type WorktreeProvider = (opts: CreateWorktreeOptions) => Promise<WorktreeHandle>;
@@ -68,8 +70,31 @@ interface RunState {
   goalSpec: GoalSpec;
   currentState: WorldState;
   pool: Action[];
-  completed: Set<string>;
+  /** Completions per actionId, COUNTED not boolean: the planner may legitimately re-emit the same
+   *  pool action at more than one plan step (e.g. an intervening step undoes its effect), so a
+   *  Set<actionId> would mark every later occurrence "done" after the first pass. `nextStep` walks
+   *  `plan.steps` matching each step's ORDINAL occurrence of its actionId against this count, so a
+   *  later repeat of an already-passed action is still dispatched (PR #8 review P2).
+   *
+   *  KNOWN LIMITATION (PR #9 review, chatgpt-codex-connector): these counts accumulate over the whole
+   *  run, not scoped to the currently active plan. A forced replan whose new plan re-requires an
+   *  action whose prior completion was invalidated by an intervening ground-truth change (e.g. a later
+   *  step's successPredicate cleared what an earlier plan's pass had established) can be skipped as
+   *  already-done. An attempted fix that reset this map whenever `nextStep` saw a different `plan.id`
+   *  was reverted here after it regressed the "livelock guard (forced-replan streak)" test: the reset
+   *  fired on the very first forced replan (a content-hash-scoped `plan.id` changes whenever
+   *  `currentState` advances, which happens on every real dispatch, not just on the invalidation case
+   *  this was meant to catch), causing an already-passed action to be redispatched. A correct fix needs
+   *  to distinguish "this plan is new because ground truth invalidated a completion" from "this plan is
+   *  new because currentState legitimately advanced" — left open pending a proper design decision. */
+  completed: Map<string, number>;
+  /** Action ids the operator has confirmed (initial DoD + every re-confirm). A replan that surfaces
+   *  an id NOT in here must be re-confirmed before its verify.command runs (PR #8 review P1). */
+  confirmed: Set<string>;
   replans: number;
+  /** Consecutive forced replans (plan exhausted / step stale) with NO action dispatched in between.
+   *  Reset on every dispatch; bounded by maxReplans to break no-progress loops (livelock guard). */
+  replanStreak: number;
   reextractions: number;
   accumulatedCostUsd: number;
   failures: Map<string, FailureRecord[]>;
@@ -113,22 +138,50 @@ export class Orchestrator {
   async run(req: ExtractRequest): Promise<RunSummary> {
     // --- EXTRACT ---
     let goalSpec: GoalSpec;
+    let extractCostUsd = 0;
     try {
-      goalSpec = await this.extractor.extract(req);
+      const extracted = await this.extractor.extract(req, this.signal);
+      goalSpec = extracted.goalSpec;
+      extractCostUsd = extracted.costUsd;
     } catch (e) {
       const message = (e as Error).message;
-      this.emit({ ev: 'extract.failed', message });
-      return bareSummary(req.goalText, 'failed', `extraction failed: ${message}`);
+      // Mirrors reextract()'s expand()-failure accounting below: a failed completion + repair round
+      // still spends money, which ExtractionError carries on `detail.costUsd` when the extractor knows
+      // it (see llm-extractor.ts extract()). Fold it in so the failure/cancel summary's costUsd stays
+      // accurate instead of silently reporting 0 spend via bareSummary().
+      const detail = (e as { detail?: Record<string, unknown> }).detail;
+      const failedCostUsd = detail !== undefined && typeof detail.costUsd === 'number' ? detail.costUsd : 0;
+      this.emit({ ev: 'extract.failed', message, costUsd: failedCostUsd });
+      // Item 3 (Ctrl-C consistency): an abort during extraction must surface as 'cancelled', the same
+      // terminal status the main loop returns for every other abort path — not 'failed'.
+      if (this.signal.aborted) return bareSummary(req.goalText, 'cancelled', 'aborted during extraction', failedCostUsd);
+      return bareSummary(req.goalText, 'failed', `extraction failed: ${message}`, failedCostUsd);
+    }
+    // PR #8 review P2: the extractor schema permits `cost <= 0` and duplicate ids (both are deferred
+    // to the planner's validateIntake throw, see extractors/schema.ts) — but re-extraction is
+    // APPEND-ONLY, so a poisoned INITIAL action can never be removed once it's in the pool and would
+    // make every safePlan() throw for the rest of the run, burning the re-extraction cap with no way
+    // to recover. Quarantine those entries before they ever enter `state.pool`, the same way the
+    // re-extraction ladder already filters `expand()`'s output (see `reextract()`'s `validNew`).
+    const sanitized = sanitizeInitialPool(goalSpec.actions);
+    if (sanitized.droppedCost > 0 || sanitized.droppedDuplicate > 0) {
+      this.emit({
+        ev: 'extract.dropped',
+        droppedCost: sanitized.droppedCost,
+        droppedDuplicate: sanitized.droppedDuplicate,
+      });
     }
     const state: RunState = {
       goalText: req.goalText,
       goalSpec,
       currentState: { ...goalSpec.initialState },
-      pool: [...goalSpec.actions],
-      completed: new Set(),
+      pool: sanitized.valid,
+      completed: new Map(),
+      confirmed: new Set(),
       replans: 0,
+      replanStreak: 0,
       reextractions: 0,
-      accumulatedCostUsd: 0,
+      accumulatedCostUsd: extractCostUsd,
       failures: new Map(),
       outcomes: new Map(),
       runId: `run-${++this.runCounter}`,
@@ -149,11 +202,12 @@ export class Orchestrator {
     }
 
     // --- CONFIRM DoD ---
-    const confirmed = await this.confirm(this.buildDod(state, plan));
+    const confirmed = await this.confirm(this.buildDod(state, plan), this.signal);
     if (!confirmed) {
       this.emit({ ev: 'dod.cancelled' });
       return this.summary(state, 'cancelled', 'cancelled at DoD confirmation');
     }
+    for (const s of plan.steps) state.confirmed.add(s.actionId);
     this.emit({ ev: 'dod.confirmed', sequence: plan.steps.map((s) => s.actionId) });
 
     // --- MAIN LOOP (serial) ---
@@ -161,41 +215,39 @@ export class Orchestrator {
       // Item 3: check AbortSignal at the top of every iteration so SIGINT/abort stops promptly.
       if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted');
 
+      // PR #8 review P2: check the budget cap before the satisfies() branch below. Extraction cost is
+      // accumulated before this loop ever runs, so without this check an extraction/repair spend that
+      // alone exceeds maxBudgetUsd would slip through as 'succeeded' whenever the extracted initial
+      // state already happens to satisfy the goal (per-action budget checks at dispatch time never run).
+      if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
+        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded`);
+      }
+
       if (satisfies(state.currentState, state.goalSpec.goalState)) {
         // Item 4: sign-off gate — when the policy requires operator acceptance, prompt before
         // declaring success. On rejection, fall through to replan/re-extraction.
         const policy = state.goalSpec.completionPolicy;
         if (policy === 'verify+signoff' || policy === 'operator-defined') {
-          const accepted = await this.confirm(this.buildDod(state, plan));
+          const accepted = await this.confirm(this.buildDod(state, plan), this.signal);
           if (accepted) return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
+          // Rejection AFTER goalState is already satisfied: re-planning here is incoherent — the
+          // deterministic planner from a satisfied state returns a zero-step plan, so the loop would
+          // spin (re-prompting sign-off forever) with no actions able to change the outcome. Return a
+          // non-succeeded terminal; the operator can re-run with adjusted goalState/verify criteria.
           this.emit({ ev: 'signoff.rejected' });
-          // Rejection after goalState satisfied: re-enter the replan ladder so the operator can
-          // guide the run toward a different outcome rather than returning a non-succeeded terminal.
-          const ro = await this.replanLadder(state, '(signoff-rejected)', { actionId: '(signoff-rejected)' });
-          if (ro.kind === 'terminal') return ro.summary;
-          plan = ro.plan;
-          continue;
+          return this.summary(state, 'cancelled', 'operator rejected sign-off after goalState satisfied');
         }
         return this.summary(state, 'succeeded', 'goalState satisfied');
       }
 
       const step = this.nextStep(plan, state);
       if (step === undefined) {
-        // Current plan exhausted but goal unmet — recompute from the real current state.
-        const r = this.safePlan(state);
-        if (r.threw) {
-          // A malformed pool reached here (e.g. an expand-added bad action) must route to
-          // re-extraction like every other plan() throw site (design decision #3), not crash.
-          this.emit({ ev: 'plan.threw', message: r.error.message });
-          const o = await this.reextract(state, withValidation({ actionId: '(plan-exhausted)' }, r.error));
-          if (o.kind === 'terminal') return o.summary;
-          plan = o.plan;
-          continue;
-        }
-        if (r.plan === null || this.nextStep(r.plan, state) === undefined) {
-          return this.summary(state, 'failed', 'plan exhausted but goalState unmet and no further progress possible');
-        }
-        plan = r.plan;
+        // Current plan exhausted but goal unmet — recompute from the real current state. forcedReplan
+        // bounds the no-progress streak (a re-plan that keeps surfacing a step the ground-truth state
+        // can never satisfy is a loop) and still escalates a malformed pool to re-extraction (#3).
+        const o = await this.forcedReplan(state, { actionId: '(plan-exhausted)' }, 'plan exhausted but goalState unmet and no further progress possible');
+        if (o.kind === 'terminal') return o.summary;
+        plan = o.plan;
         continue;
       }
 
@@ -210,23 +262,29 @@ export class Orchestrator {
 
       // A verify pass applies the action's `successPredicate` to currentState, which can be NARROWER
       // than the action's declared `effects` — so a downstream planned step's preconditions may no
-      // longer hold in the ground-truth currentState. Re-plan from currentState rather than
-      // dispatching a step with unmet preconditions. A fresh plan only expands actions applicable
-      // from the start state, so the next step is guaranteed dispatchable (no replan loop).
+      // longer hold in the ground-truth currentState. Re-plan from currentState rather than dispatching
+      // a step with unmet preconditions. If a narrow successPredicate keeps the re-planned step stale,
+      // the planner (blind to which ids are already completed) can re-emit it every iteration; forcedReplan
+      // bounds that no-progress streak so the loop terminates (wall-clock is deferred in v1).
       if (!satisfies(state.currentState, action.preconditions)) {
         this.emit({ ev: 'plan.stale', actionId: action.id, reason: 'preconditions unmet by ground-truth state' });
-        const r = this.safePlan(state);
-        if (r.threw) {
-          const o = await this.reextract(state, withValidation({ actionId: action.id }, r.error));
-          if (o.kind === 'terminal') return o.summary;
-          plan = o.plan;
-          continue;
-        }
-        if (r.plan === null || this.nextStep(r.plan, state) === undefined) {
-          return this.summary(state, 'failed', 'planned step preconditions unmet by ground-truth state and no replan possible');
-        }
-        plan = r.plan;
+        const o = await this.forcedReplan(state, { actionId: action.id }, 'planned step preconditions unmet by ground-truth state and no replan possible');
+        if (o.kind === 'terminal') return o.summary;
+        plan = o.plan;
         continue;
+      }
+
+      // PR #8 review P1: a same-pool replan can surface an action that was in the LLM-authored pool but
+      // omitted from the operator-confirmed plan. Never run an unconfirmed action's verify.command without
+      // showing it — re-confirm the DoD whenever the about-to-dispatch action was not previously confirmed.
+      if (!state.confirmed.has(action.id)) {
+        const okay = await this.confirm(this.buildDod(state, plan), this.signal);
+        if (!okay) {
+          this.emit({ ev: 'dod.cancelled', reason: 'replan introduced unconfirmed action(s)', actionId: action.id });
+          return this.summary(state, 'cancelled', 'cancelled at re-confirmation of replan-introduced actions');
+        }
+        for (const s of plan.steps) state.confirmed.add(s.actionId);
+        this.emit({ ev: 'dod.reconfirmed', reason: 'replan introduced unconfirmed action(s)', actionId: action.id });
       }
 
       // Budget check BEFORE dispatch (plan task 4.3).
@@ -235,17 +293,21 @@ export class Orchestrator {
       }
 
       const result = await this.executeStep(state, action, plan.id);
+      // A real dispatch happened → reset the forced-replan no-progress streak (livelock guard).
+      state.replanStreak = 0;
       // Item 3: check signal again after an await that may have taken a long time.
       if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted after step');
       if (result.kind === 'budget') {
         return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached mid-action`);
       }
-      // Item 6: enforce budget AFTER each action's cost is accumulated (not only pre-dispatch).
-      if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached post-action`);
+      // Item 6: enforce budget AFTER each action's cost is accumulated (not only pre-dispatch). Use
+      // `>` so an action that spent EXACTLY to the cap still completes — it succeeded within budget,
+      // and the next iteration's pre-dispatch `>=` check stops further work before overspending.
+      if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
+        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded post-action`);
       }
       if (result.kind === 'passed') {
-        state.completed.add(action.id);
+        state.completed.set(action.id, (state.completed.get(action.id) ?? 0) + 1);
         const update = passUpdate(action);
         state.currentState = mergeState(state.currentState, update);
         this.recordOutcome(state, action.id, 'succeeded', result.attempts, result.costUsd);
@@ -328,7 +390,11 @@ export class Orchestrator {
           };
         }
       } finally {
-        await handle.cleanup();
+        try {
+          await handle.cleanup();
+        } catch (cleanupErr) {
+          this.emit({ ev: 'cleanup.error', actionId: action.id, message: (cleanupErr as Error).message });
+        }
       }
     }
     return { kind: 'failed', attempts, costUsd: stepCost, evidence: lastEvidence };
@@ -336,9 +402,11 @@ export class Orchestrator {
 
   // ── Planning / replan ladder ───────────────────────────────────────────────────────────────--
 
-  /** Plan over the CURRENT pool from the CURRENT state, catching the planner's intake throw (#3). */
-  private safePlan(state: RunState): SafePlanResult {
-    const goalSpec: GoalSpec = { ...state.goalSpec, initialState: state.currentState, actions: state.pool };
+  /** Plan over the CURRENT pool from the CURRENT state, catching the planner's intake throw (#3).
+   *  `poolOverride` lets a caller plan over a subset of `state.pool` (e.g. quarantining a known-failed
+   *  action for a single recovery attempt) without mutating the append-only pool itself. */
+  private safePlan(state: RunState, poolOverride?: Action[]): SafePlanResult {
+    const goalSpec: GoalSpec = { ...state.goalSpec, initialState: state.currentState, actions: poolOverride ?? state.pool };
     try {
       return { threw: false, plan: runPlanner(goalSpec, {}) };
     } catch (e) {
@@ -358,18 +426,55 @@ export class Orchestrator {
   }
 
   /**
+   * Forced replan after a plan is exhausted or a planned step has gone stale (its preconditions no
+   * longer hold in the ground-truth state). Distinct from the post-failure ladder: there was no action
+   * failure, just a state/plan mismatch. Bounds the no-progress streak — a narrow successPredicate can
+   * make the re-planned step perpetually stale, and the planner (blind to which ids are already
+   * completed) keeps re-emitting it, so without a cap this spins forever (wall-clock is deferred in v1).
+   * On streak exhaustion, escalate to re-extraction (new actions may unblock the goal), itself bounded
+   * by maxReextractions. A `plan()` throw still routes straight to re-extraction (design decision #3).
+   */
+  private async forcedReplan(state: RunState, evidence: FailureEvidence, failReason: string): Promise<PlanOutcome> {
+    if (state.replanStreak >= this.config.maxReplans) {
+      this.emit({ ev: 'replan.loop', replanStreak: state.replanStreak, forActionId: evidence.actionId });
+      return this.reextract(state, {
+        ...evidence,
+        verifyStderr: `${state.replanStreak} consecutive replans made no progress (loop); escalating to re-extraction`,
+      });
+    }
+    const r = this.safePlan(state);
+    if (r.threw) {
+      this.emit({ ev: 'plan.threw', message: r.error.message });
+      return this.reextract(state, withValidation(evidence, r.error));
+    }
+    if (r.plan === null || this.nextStep(r.plan, state) === undefined) {
+      // A no-plan (or a plan with no dispatchable next step) is, like the streak-exhaustion branch
+      // above and the rest of the ladder (obtainPlan / replanLadder), a trigger to escalate to bounded
+      // re-extraction — NOT an immediate terminal failure. The existing pool may simply be missing an
+      // action; reextract() is itself capped by maxReextractions + the budget guard, so this cannot spin.
+      this.emit({ ev: 'replan.exhausted', forActionId: evidence.actionId, failReason });
+      return this.reextract(state, { ...evidence, verifyStderr: failReason });
+    }
+    state.replanStreak++;
+    this.emit({ ev: 'replanned', forced: true, replanStreak: state.replanStreak });
+    return { kind: 'plan', plan: r.plan };
+  }
+
+  /**
    * Post-failure ladder (plan task 4.4): try a re-plan over the existing pool (counts a replan); if
    * the same subgoal has failed too often, the replan cap is hit, or there's no plan, escalate to
    * re-extraction. A `plan()` throw routes straight to re-extraction with the validation error.
    */
   private async replanLadder(state: RunState, failedActionId: string, evidence: FailureEvidence): Promise<PlanOutcome> {
-    const sameFails = state.failures.get(failedActionId)?.length ?? 0;
     // Item 7: CLAUDE.md loop-detection = "same action fails the SAME way twice". Compare
     // the last two FailureRecords' normalized signatures before treating as a loop.
     const failHistory = state.failures.get(failedActionId) ?? [];
-    const isLoop = failHistory.length >= 2 &&
-      failHistory[failHistory.length - 1]!.verifyExitCode === failHistory[failHistory.length - 2]!.verifyExitCode &&
-      failHistory[failHistory.length - 1]!.verifyStderr.slice(0, 200) === failHistory[failHistory.length - 2]!.verifyStderr.slice(0, 200);
+    const sameFails = failHistory.length;
+    const last = failHistory[failHistory.length - 1];
+    const prev = failHistory[failHistory.length - 2];
+    const isLoop = last !== undefined && prev !== undefined &&
+      last.verifyExitCode === prev.verifyExitCode &&
+      last.verifyStderr.slice(0, 200) === prev.verifyStderr.slice(0, 200);
     if (!isLoop && sameFails < this.config.maxSameSubgoalFailures && state.replans < this.config.maxReplans) {
       const r = this.safePlan(state);
       if (r.threw) {
@@ -393,18 +498,64 @@ export class Orchestrator {
         summary: this.summary(state, 'failed', `re-extraction cap (${this.config.maxReextractions}) reached; goal unreachable`),
       };
     }
+    // PR #8 review P2: re-extraction calls `claude -p` (real spend). Refuse to START one once the budget
+    // is already exhausted — the main loop's pre-dispatch check is too late to bound a recursive
+    // re-extraction's spend (this path can append, plan, and recurse before any executor dispatch).
+    if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
+      return { kind: 'terminal', summary: this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before re-extraction`) };
+    }
     state.reextractions++;
     this.emit({ ev: 'reextract', reextractions: state.reextractions, forActionId: evidence.actionId });
-    let newActions: Action[];
+    let expanded: { actions: Action[]; costUsd: number };
     try {
-      newActions = await this.extractor.expand(state.goalText, state.currentState, evidence, state.pool);
+      expanded = await this.extractor.expand(state.goalText, state.currentState, evidence, state.pool, this.signal);
     } catch (e) {
+      // PR #8 review P2: expand() only returns costUsd on success — a failed completion + repair
+      // round still spends money, which ExtractionError now carries on `detail.costUsd`. Fold it in
+      // here (mirroring the success-path accounting below) so a malformed expansion's spend is never
+      // silently dropped from the run's budget accounting, even though this path always terminates
+      // 'failed' (not 'budget-exhausted') — the expand() failure is the actual reason, regardless of
+      // whether the folded cost happens to tip the run over the cap.
+      const detail = (e as { detail?: Record<string, unknown> }).detail;
+      const failedCostUsd = detail !== undefined && typeof detail.costUsd === 'number' ? detail.costUsd : 0;
+      state.accumulatedCostUsd += failedCostUsd;
       return { kind: 'terminal', summary: this.summary(state, 'failed', `expand failed: ${(e as Error).message}`) };
     }
-    state.pool = [...state.pool, ...newActions];
-    this.emit({ ev: 'reextract.added', added: newActions.length, poolSize: state.pool.length });
+    // PR #8 review P2: account the spend immediately and stop if this expansion pushed the run over the
+    // cap (`>` so spending EXACTLY to the cap still proceeds, mirroring the executor budget rule).
+    state.accumulatedCostUsd += expanded.costUsd;
+    if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
+      return { kind: 'terminal', summary: this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by re-extraction`) };
+    }
+    // Validate expanded actions BEFORE appending so a malformed one cannot permanently poison the
+    // pool (append-only) and make every subsequent plan() throw. The extractor schema enforces
+    // structure + non-empty verify, and expand() already de-dups ids against the pool; the remaining
+    // poison vector is `cost <= 0` (the schema defers cost>0 to the planner by design decision #3).
+    // Drop those here; if nothing usable survives, the re-extraction made no progress.
+    const validNew = expanded.actions.filter((a) => a.cost > 0);
+    const dropped = expanded.actions.length - validNew.length;
+    if (dropped > 0) this.emit({ ev: 'reextract.dropped', dropped, reason: 'cost <= 0' });
+    // Append only the valid actions. If nothing usable was added, we do NOT short-circuit here: the
+    // following safePlan() will either find no plan or re-throw on the still-malformed pool, and the
+    // re-extraction cap bounds the loop — same path as any other no-progress re-extraction.
+    state.pool = [...state.pool, ...validNew];
+    this.emit({ ev: 'reextract.added', added: validNew.length, poolSize: state.pool.length });
 
-    const r = this.safePlan(state);
+    // Review P2 (chatgpt-codex-connector): if this re-extraction was triggered by a real verify
+    // failure (not a placeholder reason like plan-exhausted), the failed action is still sitting in
+    // `state.pool` and may still look like the planner's cheapest path to the goal even though it can
+    // never pass verify again — the planner has no notion of ground-truth failure. Quarantine it from
+    // THIS recovery attempt only (never mutate the append-only pool) so the just-added actions get a
+    // real chance to be selected; fall back to planning over the full pool if excluding it makes the
+    // goal unreachable (the failed action may be the only path — same outcome as before this fix).
+    const failedId = evidence.actionId;
+    const quarantineFailed = state.outcomes.get(failedId)?.status === 'failed';
+    let r = quarantineFailed
+      ? this.safePlan(state, state.pool.filter((a) => a.id !== failedId))
+      : this.safePlan(state);
+    if (quarantineFailed && (r.threw || r.plan === null)) {
+      r = this.safePlan(state);
+    }
     if (r.threw) {
       this.emit({ ev: 'plan.threw', message: r.error.message });
       // Item 9: pass the UPDATED validation error (not the original evidence) so each recursive
@@ -413,22 +564,52 @@ export class Orchestrator {
       return this.reextract(state, updatedEvidence); // bounded by the cap above
     }
     if (r.plan === null) {
-      return { kind: 'terminal', summary: this.summary(state, 'failed', 'no plan even after re-extraction') };
+      // PR #8 review P2: this expansion added actions but the augmented pool still can't reach the goal.
+      // Don't give up while re-extraction budget remains — keep following the bounded ladder (a later
+      // round may add the missing setup action). The cap + budget guard above terminate the loop.
+      return this.reextract(state, {
+        ...evidence,
+        verifyStderr: 'augmented pool still cannot reach goalState; another bounded expansion may add the missing action',
+      });
     }
-    // Item 5: re-confirm DoD for newly-added actions before executing them.
-    const reconfirmed = await this.confirm(this.buildDod(state, r.plan));
+    // Item 5: re-confirm DoD for newly-added actions before executing them, and remember the confirmed
+    // ids so the main-loop dispatch gate (PR #8 P1) does not re-prompt for them.
+    const reconfirmed = await this.confirm(this.buildDod(state, r.plan), this.signal);
     if (!reconfirmed) {
       this.emit({ ev: 'dod.cancelled', reason: 're-extracted actions not accepted' });
       return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'cancelled at re-extracted DoD confirmation') };
     }
+    for (const s of r.plan.steps) state.confirmed.add(s.actionId);
+    // A successful re-extraction is a progress event (new actions were added). Reset the forced-replan
+    // streak so the returned plan gets a fresh maxReplans budget before the next escalation — otherwise
+    // a re-extracted plan whose first step is still stale would inherit the exhausted counter and
+    // re-escalate immediately, burning the next re-extraction slot with no breathing room.
+    state.replanStreak = 0;
     this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions });
     return { kind: 'plan', plan: r.plan };
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
+  /**
+   * First not-yet-done step, tracked by ORDINAL OCCURRENCE per actionId rather than a single
+   * actionId flag: the planner may legitimately re-emit the same pool action at more than one plan
+   * step (e.g. an intervening step undoes its effect — non-monotonic plans like
+   * [set-x, set-y-and-clear-x, set-x] are valid optimal plans). Walk `plan.steps` in order counting
+   * how many times each actionId has been SEEN so far in this walk; the first step whose seen-count
+   * (before incrementing) is not yet covered by `state.completed`'s count for that actionId is the
+   * next one to dispatch (PR #8 review P2). See the KNOWN LIMITATION note on `RunState.completed`
+   * regarding run-scoped (not plan-scoped) counts.
+   */
   private nextStep(plan: Plan, state: RunState): PlanStep | undefined {
-    return plan.steps.find((s) => !state.completed.has(s.actionId));
+    const seenSoFar = new Map<string, number>();
+    for (const s of plan.steps) {
+      const occurrence = seenSoFar.get(s.actionId) ?? 0;
+      seenSoFar.set(s.actionId, occurrence + 1);
+      const doneCount = state.completed.get(s.actionId) ?? 0;
+      if (occurrence >= doneCount) return s;
+    }
+    return undefined;
   }
 
   private buildDod(state: RunState, plan: Plan): DodInfo {
@@ -436,7 +617,10 @@ export class Orchestrator {
     const policy: CompletionPolicy =
       state.goalSpec.completionPolicy === 'operator-defined' ? 'verify+signoff' : state.goalSpec.completionPolicy;
     return {
-      goalText: state.goalSpec.goalText,
+      // Use the operator-provided goalText (state.goalText, set verbatim from req.goalText), not
+      // state.goalSpec.goalText — the extractor is not required to echo the operator's text exactly,
+      // so the latter can show a paraphrased/incorrect goal at the DoD gate and re-confirmations.
+      goalText: state.goalText,
       goalState: state.goalSpec.goalState,
       completionPolicy: policy,
       actions: plan.steps.map((s) => {
@@ -523,13 +707,46 @@ function withValidation(evidence: FailureEvidence, error: Error): FailureEvidenc
   return { ...evidence, verifyStderr: `planner intake error: ${error.message}` };
 }
 
-/** Summary for a failure that happens before any RunState exists (e.g. extraction itself failed). */
-function bareSummary(goalText: string, status: RunStatus, reason: string): RunSummary {
-  return { status, goalText, costUsd: 0, replans: 0, reextractions: 0, actions: [], reason };
+/**
+ * Drop `cost <= 0` actions and de-dup ids (keep the first occurrence) from the extractor's INITIAL
+ * action list before it ever becomes `state.pool` (PR #8 review P2). The extractor schema enforces
+ * structure + non-empty verify but, by design, defers `cost > 0` and pool-wide unique ids to the
+ * planner's `validateIntake` throw — fine for re-extraction (append-only, filtered in `reextract()`),
+ * but fatal for the initial pool: a poisoned entry there can never be removed, so it would make every
+ * `safePlan()` throw for the rest of the run.
+ */
+function sanitizeInitialPool(actions: Action[]): { valid: Action[]; droppedCost: number; droppedDuplicate: number } {
+  const seen = new Set<string>();
+  const valid: Action[] = [];
+  let droppedCost = 0;
+  let droppedDuplicate = 0;
+  for (const a of actions) {
+    if (!(a.cost > 0)) {
+      droppedCost++;
+      continue;
+    }
+    if (seen.has(a.id)) {
+      droppedDuplicate++;
+      continue;
+    }
+    seen.add(a.id);
+    valid.push(a);
+  }
+  return { valid, droppedCost, droppedDuplicate };
 }
 
-/** Default confirm-DoD gate: pretty-print the DoD to stdout, read one y/n line from stdin. */
-export const stdinConfirm: DodConfirmer = async (dod) => {
+/** Summary for a failure that happens before any RunState exists (e.g. extraction itself failed).
+ *  `costUsd` defaults to 0 but callers pass through any spend an ExtractionError carried on
+ *  `detail.costUsd` so budget accounting stays accurate even when extraction itself fails. */
+function bareSummary(goalText: string, status: RunStatus, reason: string, costUsd = 0): RunSummary {
+  return { status, goalText, costUsd, replans: 0, reextractions: 0, actions: [], reason };
+}
+
+/** Default confirm-DoD gate: pretty-print the DoD to stdout, read one y/n line from stdin.
+ *  Races the prompt against `signal` (SIGINT/SIGTERM) so an abort while waiting on stdin stops the
+ *  prompt immediately instead of leaving the run stuck until the operator types something (PR #10
+ *  review P2) — treated the same as a rejected confirmation ('cancelled', not a hang or a throw). */
+export const stdinConfirm: DodConfirmer = async (dod, signal) => {
   const { createInterface } = await import('node:readline/promises');
   const lines = [
     '',
@@ -547,10 +764,14 @@ export const stdinConfirm: DodConfirmer = async (dod) => {
     '',
   ];
   process.stdout.write(`${lines.join('\n')}\n`);
+  if (signal.aborted) return false;
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = await rl.question('Proceed? [y/N] ');
+    const answer = await rl.question('Proceed? [y/N] ', { signal });
     return /^y(es)?$/i.test(answer.trim());
+  } catch (e) {
+    if (signal.aborted) return false; // aborted mid-prompt (SIGINT/SIGTERM) — treat as declined, not a crash
+    throw e;
   } finally {
     rl.close();
   }

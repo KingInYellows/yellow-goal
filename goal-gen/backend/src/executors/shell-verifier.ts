@@ -32,13 +32,22 @@ export class ShellVerifier implements Verifier {
       // `detached: true` places the child in its own process group so we can
       // kill the full tree (group kill via negative pid) on timeout or abort —
       // not just the immediate shell child (POSIX SIGKILL to -pgid).
-      const child = spawn(command, {
-        cwd: ctx.worktreePath,
-        env: process.env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: true,
-        detached: true,
-      });
+      // Wrap spawn so a synchronous throw (bad cwd, etc.) resolves as a verify FAILURE
+      // instead of escaping as an unhandled exception — never throws, per the Verifier contract.
+      let child: ReturnType<typeof spawn>;
+      try {
+        child = spawn(command, {
+          cwd: ctx.worktreePath,
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true,
+          detached: true,
+        });
+      } catch (spawnErr) {
+        const message = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+        resolve({ exitCode: 127 /* command not found */, stdout: '', stderr: `verify spawn error: ${message}` });
+        return;
+      }
       // Prevent the child from keeping our event loop alive if we kill it early.
       child.unref();
 
@@ -49,11 +58,12 @@ export class ShellVerifier implements Verifier {
 
       /** Kill the full process group: SIGTERM first, then SIGKILL after grace. */
       const killGroup = (): void => {
-        if (child.pid == null) return;
-        try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already gone */ }
+        const pgid = child.pid;
+        if (pgid == null) return;
+        if (sigkillTimer) return; // already terminating — don't re-send SIGTERM or arm a second SIGKILL timer
+        try { process.kill(-pgid, 'SIGTERM'); } catch { /* already gone */ }
         sigkillTimer = setTimeout(() => {
-          if (child.pid == null) return;
-          try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+          try { process.kill(-pgid, 'SIGKILL'); } catch { /* already gone */ }
         }, SIGKILL_GRACE_MS);
       };
 
@@ -72,14 +82,19 @@ export class ShellVerifier implements Verifier {
       };
       ctx.signal.addEventListener('abort', onAbort);
 
-      const finish = (exitCode: number): void => {
+      let settled = false;
+      const finish = (exitCode: number, extraStderr?: string): void => {
+        if (settled) return; // 'error' and 'close' can both fire (e.g. ENOENT); honour the first result only
+        settled = true;
         clearTimeout(timer);
         if (sigkillTimer) clearTimeout(sigkillTimer);
         ctx.signal.removeEventListener('abort', onAbort);
-        resolve({ exitCode, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
+        const stderr = Buffer.concat(err).toString('utf8') + (extraStderr ?? '');
+        resolve({ exitCode, stdout: Buffer.concat(out).toString('utf8'), stderr });
       };
       // ENOENT / shell launch failure → a non-zero exit so verify FAILS (never a silent pass).
-      child.on('error', () => finish(127 /* command not found */));
+      // Surface the OS error reason — otherwise the 'error' event's message is lost from the evidence.
+      child.on('error', (e: Error) => finish(127 /* command not found */, `verify spawn error: ${e.message}`));
       child.on('close', (code) => finish(killed ? 124 /* timeout */ : (code ?? -1)));
     });
   }

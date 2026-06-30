@@ -76,11 +76,11 @@ describe('extractor repair round', () => {
   it('succeeds on the first try, fixing fences + a trailing comma via the parse fallback', async () => {
     const fenced = '```json\n' + JSON.stringify(VALID_GOALSPEC).replace(/}$/, ',}') + '\n```';
     const { extractor, client, events } = makeExtractor([fenced]);
-    const spec = await extractor.extract({ goalText: 'create a file' });
+    const { goalSpec: spec } = await extractor.extract({ goalText: 'create a file' });
     expect(client.calls).toBe(1); // no repair needed
     expect(spec.actions).toHaveLength(1);
     expect(plan(spec)).not.toBeNull(); // the extracted spec is actually plannable
-    expect(events).toContainEqual({ ev: 'extract.measure', firstTry: true, repairNeeded: false, success: true });
+    expect(events).toContainEqual({ ev: 'extract.measure', firstTry: true, repairNeeded: false, success: true, costUsd: 0 });
   });
 
   it('repairs a zod-invalid first response (missing completionPolicy) on the second call', async () => {
@@ -89,10 +89,10 @@ describe('extractor repair round', () => {
       JSON.stringify(missingPolicy), // parseable JSON but fails the schema
       JSON.stringify(VALID_GOALSPEC), // repaired
     ]);
-    const spec = await extractor.extract({ goalText: 'create a file' });
+    const { goalSpec: spec } = await extractor.extract({ goalText: 'create a file' });
     expect(client.calls).toBe(2); // exactly one repair round
     expect(spec.completionPolicy).toBe('verify-only');
-    expect(events).toContainEqual({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: true });
+    expect(events).toContainEqual({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: true, costUsd: 0 });
   });
 
   it('throws a structured ExtractionError when repair also fails', async () => {
@@ -101,7 +101,7 @@ describe('extractor repair round', () => {
     const { extractor, client, events } = makeExtractor([bad, bad]);
     await expect(extractor.extract({ goalText: 'create a file' })).rejects.toBeInstanceOf(ExtractionError);
     expect(client.calls).toBe(2); // first + exactly one repair, then give up
-    expect(events).toContainEqual({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: false });
+    expect(events).toContainEqual({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: false, costUsd: 0 });
   });
 
   it('rejects a response with an empty verify (the load-bearing refinement)', async () => {
@@ -140,21 +140,21 @@ const act = (id: string): Action => ({
 describe('extractor expand() — repair round + dedup guard (acceptance #6)', () => {
   it('parses a JSON action array on the first try', async () => {
     const { extractor, client } = makeExtractor([JSON.stringify([act('install')])]);
-    const added = await extractor.expand('goal', {}, { actionId: 'x' }, []);
+    const { actions: added } = await extractor.expand('goal', {}, { actionId: 'x' }, []);
     expect(client.calls).toBe(1);
     expect(added.map((a) => a.id)).toEqual(['install']);
   });
 
   it('repairs an invalid first response on the second call', async () => {
     const { extractor, client } = makeExtractor(['not json at all', JSON.stringify([act('install')])]);
-    const added = await extractor.expand('goal', {}, { actionId: 'x' }, []);
+    const { actions: added } = await extractor.expand('goal', {}, { actionId: 'x' }, []);
     expect(client.calls).toBe(2);
     expect(added).toHaveLength(1);
   });
 
   it('renames a new action whose id collides with the existing pool', async () => {
     const { extractor } = makeExtractor([JSON.stringify([act('install')])]);
-    const added = await extractor.expand('goal', {}, { actionId: 'x' }, [act('install')]);
+    const { actions: added } = await extractor.expand('goal', {}, { actionId: 'x' }, [act('install')]);
     expect(added[0]?.id).toMatch(/^install-ext\d+$/); // disjoint from the existing pool
   });
 });
