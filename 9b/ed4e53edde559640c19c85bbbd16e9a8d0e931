@@ -1,0 +1,25 @@
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_51b8bbb4fb9639::t_35c842e9ac6f9e 389-392,394-404
+  s_51b8bbb4fb9639::t_1f2857912d6a96 161-163,165-178
+  s_51b8bbb4fb9639::t_69b5da384ffae1 217-218,222-224
+  s_51b8bbb4fb9639::t_96f2869ab12283 225,259-271
+  s_51b8bbb4fb9639::t_ef93b41d2bbf8d 346-352
+goal-gen/backend/src/executors/shell-verifier.ts
+  s_51b8bbb4fb9639::t_88abc9b9c41b4d 26-28,34,36-38,43-53,56,59,61-68,72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "9bed4e53edde559640c19c85bbbd16e9a8d0e931",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
