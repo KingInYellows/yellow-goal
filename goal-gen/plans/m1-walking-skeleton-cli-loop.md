@@ -311,3 +311,11 @@ tests in #4); only the real-`claude` integration probe stands alone as #5.
 - **Scope:** tests/integration/runner.probe.ts
 - **Tasks:** 5.3, 5.4
 - **Depends on:** #4
+
+## Stack Progress
+<!-- Updated by workflows:work. Do not edit manually. -->
+- [x] 1. agent/feat/m1-runner-foundation (completed 2026-06-29)
+- [ ] 2. agent/feat/m1-claude-executor
+- [ ] 3. agent/feat/m1-llm-extractor
+- [ ] 4. agent/feat/m1-orchestrator-loop
+- [ ] 5. agent/test/m1-runner-e2e
