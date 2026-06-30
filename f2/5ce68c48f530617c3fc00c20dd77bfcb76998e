@@ -1,0 +1,22 @@
+goal-gen/backend/src/extractors/llm-extractor.ts
+  s_51b8bbb4fb9639::t_a5ae1d6a7b2dc0 263-264,270-272
+  s_51b8bbb4fb9639::t_42017eed8258a0 289-290,293
+goal-gen/backend/src/extractors/prompts.ts
+  s_51b8bbb4fb9639::t_b6570d108896f5 98-104,106-111,119-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "f25ce68c48f530617c3fc00c20dd77bfcb76998e",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
