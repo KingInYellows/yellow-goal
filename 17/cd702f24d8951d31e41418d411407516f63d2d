@@ -1,0 +1,34 @@
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_51b8bbb4fb9639::t_b3993df1c23f85 171-174,176
+  s_51b8bbb4fb9639::t_f603d044456ca7 407-414,418-419
+  s_4254c74ddcf97a::t_0524fa505686ca 370-375
+  s_51b8bbb4fb9639::t_fa4972280186e8 415-417
+  s_51b8bbb4fb9639::t_37fa0a5353ea35 242-246
+goal-gen/backend/src/executors/shell-verifier.ts
+  s_4254c74ddcf97a::t_74d705fe6518b9 52-55,57
+  s_4254c74ddcf97a::t_ef596772041b98 76-79,83-84,87-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "17cd702f24d8951d31e41418d411407516f63d2d",
+  "prompts": {},
+  "sessions": {
+    "s_4254c74ddcf97a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b662580-92b8-47c4-ae21-ab8b62158db0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
