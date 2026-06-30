@@ -23,26 +23,53 @@ export class ShellVerifier implements Verifier {
 
   run(command: string, ctx: RunContext): Promise<VerifyResult> {
     return new Promise((resolve) => {
+      // `detached: true` places the child in its own process group so we can
+      // kill the full tree (group kill via negative pid) on timeout or abort —
+      // not just the immediate shell child (POSIX SIGKILL to -pgid).
       const child = spawn(command, {
         cwd: ctx.worktreePath,
         env: process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: true,
+        detached: true,
       });
+      // Prevent the child from keeping our event loop alive if we kill it early.
+      child.unref();
+
       const out: Buffer[] = [];
       const err: Buffer[] = [];
       child.stdout?.on('data', (d: Buffer) => out.push(d));
       child.stderr?.on('data', (d: Buffer) => err.push(d));
+
+      /** Kill the full process group: SIGTERM first, then SIGKILL after grace. */
+      const killGroup = (): void => {
+        if (child.pid == null) return;
+        try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already gone */ }
+        sigkillTimer = setTimeout(() => {
+          if (child.pid == null) return;
+          try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+        }, SIGKILL_GRACE_MS);
+      };
+
       let killed = false;
       let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+
       const timer = setTimeout(() => {
         killed = true;
-        child.kill('SIGTERM');
-        sigkillTimer = setTimeout(() => child.kill('SIGKILL'), SIGKILL_GRACE_MS);
+        killGroup();
       }, this.timeoutMs);
+
+      // Propagate orchestrator abort to the verify child so it doesn't become orphaned.
+      const onAbort = (): void => {
+        killed = true;
+        killGroup();
+      };
+      ctx.signal.addEventListener('abort', onAbort);
+
       const finish = (exitCode: number): void => {
         clearTimeout(timer);
         if (sigkillTimer) clearTimeout(sigkillTimer);
+        ctx.signal.removeEventListener('abort', onAbort);
         resolve({ exitCode, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
       };
       // ENOENT / shell launch failure → a non-zero exit so verify FAILS (never a silent pass).

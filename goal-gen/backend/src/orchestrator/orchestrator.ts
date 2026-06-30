@@ -158,7 +158,24 @@ export class Orchestrator {
 
     // --- MAIN LOOP (serial) ---
     for (;;) {
+      // Item 3: check AbortSignal at the top of every iteration so SIGINT/abort stops promptly.
+      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted');
+
       if (satisfies(state.currentState, state.goalSpec.goalState)) {
+        // Item 4: sign-off gate — when the policy requires operator acceptance, prompt before
+        // declaring success. On rejection, fall through to replan/re-extraction.
+        const policy = state.goalSpec.completionPolicy;
+        if (policy === 'verify+signoff' || policy === 'operator-defined') {
+          const accepted = await this.confirm(this.buildDod(state, plan));
+          if (accepted) return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
+          this.emit({ ev: 'signoff.rejected' });
+          // Rejection after goalState satisfied: re-enter the replan ladder so the operator can
+          // guide the run toward a different outcome rather than returning a non-succeeded terminal.
+          const ro = await this.replanLadder(state, '(signoff-rejected)', { actionId: '(signoff-rejected)' });
+          if (ro.kind === 'terminal') return ro.summary;
+          plan = ro.plan;
+          continue;
+        }
         return this.summary(state, 'succeeded', 'goalState satisfied');
       }
 
@@ -197,8 +214,14 @@ export class Orchestrator {
       }
 
       const result = await this.executeStep(state, action, plan.id);
+      // Item 3: check signal again after an await that may have taken a long time.
+      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted after step');
       if (result.kind === 'budget') {
         return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached mid-action`);
+      }
+      // Item 6: enforce budget AFTER each action's cost is accumulated (not only pre-dispatch).
+      if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
+        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached post-action`);
       }
       if (result.kind === 'passed') {
         state.completed.add(action.id);
@@ -233,8 +256,19 @@ export class Orchestrator {
       attempts++;
       // Sanitize the LLM-authored id into a safe ref component; the `run-…-<attempts>` framing
       // already prevents a leading `-`/`.` or `.lock` suffix, so collapsing `..` runs is enough.
-      const safeId = action.id.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '_');
-      const handle = await this.worktreeProvider({ branch: `${state.runId}-${safeId}-${attempts}` });
+      // Item 8: truncate to 200 chars so a long action.id can't overflow git's ref limit.
+      const safeId = action.id.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '_').slice(0, 200);
+      // Item 1: worktreeProvider throw (disk full / git init fail) must become a structured failure,
+      // not escape executeStep and crash run(). Wrap it and surface as a failed StepResult.
+      let handle: WorktreeHandle;
+      try {
+        handle = await this.worktreeProvider({ branch: `${state.runId}-${safeId}-${attempts}` });
+      } catch (e) {
+        lastEvidence = { ...lastEvidence, verifyStderr: `worktree provision failed: ${(e as Error).message}` };
+        continue; // count as a failed attempt; retries will exhaust and return 'failed'
+      }
+      // Item 2: verify runs INSIDE the try block (before cleanup in finally) so the worktree
+      // is still present when the shell-verifier inspects executor file changes.
       try {
         const ctx: RunContext = {
           runId: state.runId,
@@ -309,7 +343,13 @@ export class Orchestrator {
    */
   private async replanLadder(state: RunState, failedActionId: string, evidence: FailureEvidence): Promise<PlanOutcome> {
     const sameFails = state.failures.get(failedActionId)?.length ?? 0;
-    if (sameFails < this.config.maxSameSubgoalFailures && state.replans < this.config.maxReplans) {
+    // Item 7: CLAUDE.md loop-detection = "same action fails the SAME way twice". Compare
+    // the last two FailureRecords' normalized signatures before treating as a loop.
+    const failHistory = state.failures.get(failedActionId) ?? [];
+    const isLoop = failHistory.length >= 2 &&
+      failHistory[failHistory.length - 1]!.verifyExitCode === failHistory[failHistory.length - 2]!.verifyExitCode &&
+      failHistory[failHistory.length - 1]!.verifyStderr.slice(0, 200) === failHistory[failHistory.length - 2]!.verifyStderr.slice(0, 200);
+    if (!isLoop && sameFails < this.config.maxSameSubgoalFailures && state.replans < this.config.maxReplans) {
       const r = this.safePlan(state);
       if (r.threw) {
         this.emit({ ev: 'plan.threw', message: r.error.message });
@@ -346,10 +386,22 @@ export class Orchestrator {
     const r = this.safePlan(state);
     if (r.threw) {
       this.emit({ ev: 'plan.threw', message: r.error.message });
-      return this.reextract(state, withValidation(evidence, r.error)); // bounded by the cap above
+      // Item 9: pass the UPDATED validation error (not the original evidence) so each recursive
+      // re-extraction sees the latest planner failure, not a stale earlier one.
+      const updatedEvidence = withValidation(evidence, r.error);
+      return this.reextract(state, updatedEvidence); // bounded by the cap above
     }
-    if (r.plan !== null) return { kind: 'plan', plan: r.plan };
-    return { kind: 'terminal', summary: this.summary(state, 'failed', 'no plan even after re-extraction') };
+    if (r.plan === null) {
+      return { kind: 'terminal', summary: this.summary(state, 'failed', 'no plan even after re-extraction') };
+    }
+    // Item 5: re-confirm DoD for newly-added actions before executing them.
+    const reconfirmed = await this.confirm(this.buildDod(state, r.plan));
+    if (!reconfirmed) {
+      this.emit({ ev: 'dod.cancelled', reason: 're-extracted actions not accepted' });
+      return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'cancelled at re-extracted DoD confirmation') };
+    }
+    this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions });
+    return { kind: 'plan', plan: r.plan };
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
