@@ -1,0 +1,23 @@
+goal-gen/tests/integration/runner.probe.ts
+  s_51b8bbb4fb9639::t_ebedd6fe199cc4 201-204
+  s_51b8bbb4fb9639::t_ae14b8eacf9494 48-52,56-57,59,61,63,66-72,74-80
+  s_51b8bbb4fb9639::t_f5fb544fa8c5e8 154-156,160-170
+  s_51b8bbb4fb9639::t_ef730143a5351d 60,62,64-65
+  s_51b8bbb4fb9639::t_d1fd6693be4cfb 85-86,89-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "2d83455f159e9f73beb15375c1f9871cfd6f97c0",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
