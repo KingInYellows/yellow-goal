@@ -1,0 +1,39 @@
+goal-gen/tests/orchestrator/orchestrator.test.ts
+  s_0738f37ef72a16::t_18873dae1532b7 1-101,116-234
+  s_0738f37ef72a16::t_f2d8d9ca71a4f2 102-115
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_0c8c0e2409d5fe 320
+goal-gen/backend/src/executors/shell-verifier.ts
+  s_0738f37ef72a16::t_8a64d052b95661 1-48,50-53
+  s_0738f37ef72a16::t_e9f501816aac36 49
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_0738f37ef72a16::t_3b8f489ae95ea8 199
+  s_0738f37ef72a16::t_2947bab5d16bf3 206
+  s_0738f37ef72a16::t_2591be7196712f 266-273
+  s_0738f37ef72a16::t_f1c6fcc6902313 416-423
+  s_0738f37ef72a16::t_2a48ab4e209f58 169-178
+  s_0738f37ef72a16::t_2a827c4de26ca6 426-434
+  s_0738f37ef72a16::t_b9695ea460fde0 246
+  s_0738f37ef72a16::t_870b5b6e3c24ef 234-237
+  s_0738f37ef72a16::t_6279cd5011bc7c 205,208
+  s_0738f37ef72a16::t_1ddc47d3d7e17b 224
+  s_0738f37ef72a16::t_8b91f90fa4d6f2 1-168,179-198,200-204,207,209-223,225-233,238-245,247-265,274-415,424-425,435-484
+goal-gen/backend/src/runner.ts
+  s_0738f37ef72a16::t_df88ae5dbacae0 3,5-9,11,14-16,18-20,27-30,32,36,39-43,45-46,48-49,59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "2439c145083caf567a727193b5a54c1c7557357f",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    }
+  }
+}
