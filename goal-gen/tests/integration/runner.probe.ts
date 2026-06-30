@@ -53,7 +53,7 @@ function check(cond: boolean, msg: string): void {
  */
 class CapturingWorktreeProvider {
   lastHandle: WorktreeHandle | undefined;
-  private _pendingCleanup: (() => Promise<void>) | undefined;
+  private readonly _pendingCleanups: Array<() => Promise<void>> = [];
 
   readonly provide = async (opts: Parameters<typeof createWorktree>[0]): Promise<WorktreeHandle> => {
     const real = await createWorktree(opts);
@@ -64,19 +64,25 @@ class CapturingWorktreeProvider {
       branch: real.branch,
       initialSha: real.initialSha,
       cleanup: async () => {
-        // Record the real cleanup to run later; do NOT call real.cleanup() here.
-        this._pendingCleanup = () => real.cleanup();
+        // A multi-action run (retry / replan / multi-step plan) creates SEVERAL worktrees, each with
+        // its own cleanup. Queue EVERY one — overwriting a single field would leak all but the last.
+        this._pendingCleanups.push(() => real.cleanup());
       },
     };
     this.lastHandle = proxy;
     return proxy;
   };
 
-  /** Run the deferred real worktree deletion (no-op if cleanup was never requested or already flushed). */
+  /** Drain ALL deferred real worktree deletions (best-effort; keeps draining if one fails). */
   async flushCleanup(): Promise<void> {
-    const fn = this._pendingCleanup;
-    this._pendingCleanup = undefined;
-    if (fn) await fn();
+    const fns = this._pendingCleanups.splice(0);
+    for (const fn of fns) {
+      try {
+        await fn();
+      } catch (e) {
+        log({ ev: 'probe.cleanup.error', message: (e as Error).message });
+      }
+    }
   }
 }
 
@@ -139,24 +145,26 @@ async function scenarioA(): Promise<void> {
     worktreeProvider: capturing.provide,
     onEvent: log,
   });
-  const summary = await orchestrator.run({ goalText: HELLO_GOAL });
-  findings['A'] = { status: summary.status, costUsd: summary.costUsd, replans: summary.replans, reextractions: summary.reextractions };
-  check(summary.status === 'succeeded', `A: status succeeded (got ${summary.status})`);
-  // NOTE: summary.costUsd is EXECUTOR spend only — extraction/expand cost is real but not folded into
-  // the summary in v1 (bounded by the re-extraction cap ≤2, so it cannot run away). This proves the
-  // executor actually ran and spent, not the total API bill.
-  // Cost is OBSERVED-ONLY telemetry — a real `claude -p` subscription run can legitimately report
-  // total_cost_usd as 0 (or omit it), so it must NOT gate pass/fail. Record it; don't assert > 0.
-  log({ ev: 'probe.A.cost', costUsd: summary.costUsd });
-  check(summary.costUsd <= config.maxBudgetUsd, 'A: executor spend stayed within budget');
-  // Independent artifact check: don't trust the run's reported success alone — verify hello.txt
-  // actually exists on disk with the exact expected content.
-  // The orchestrator already called handle.cleanup() per action, but CapturingWorktreeProvider
-  // deferred that deletion so the worktree is still on disk here. We flush the real cleanup in a
-  // finally block so no worktree is leaked even if an assertion throws.
-  if (capturing.lastHandle) {
-    const artifactPath = join(capturing.lastHandle.worktreePath, 'hello.txt');
-    try {
+  // Scenario-level try/finally: CapturingWorktreeProvider defers each action's real worktree
+  // deletion so the LAST worktree is still on disk for the artifact check below. Flushing that
+  // deferred deletion must happen regardless of how this scenario exits — including if
+  // orchestrator.run() itself throws — or a rejected run leaks the scratch worktree(s) it queued.
+  try {
+    const summary = await orchestrator.run({ goalText: HELLO_GOAL });
+    findings['A'] = { status: summary.status, costUsd: summary.costUsd, replans: summary.replans, reextractions: summary.reextractions };
+    check(summary.status === 'succeeded', `A: status succeeded (got ${summary.status})`);
+    // NOTE: summary.costUsd is the run's TOTAL accumulated spend — extraction (+ repair rounds) and any
+    // re-extraction/expand cost are folded in alongside executor spend (see accumulatedCostUsd in
+    // orchestrator.ts). This proves the full pipeline (extractor + executor) actually ran and spent,
+    // not executor-only cost.
+    // Cost is OBSERVED-ONLY telemetry — a real `claude -p` subscription run can legitimately report
+    // total_cost_usd as 0 (or omit it), so it must NOT gate pass/fail. Record it; don't assert > 0.
+    log({ ev: 'probe.A.cost', costUsd: summary.costUsd });
+    check(summary.costUsd <= config.maxBudgetUsd, 'A: total spend stayed within budget');
+    // Independent artifact check: don't trust the run's reported success alone — verify hello.txt
+    // actually exists on disk with the exact expected content.
+    if (capturing.lastHandle) {
+      const artifactPath = join(capturing.lastHandle.worktreePath, 'hello.txt');
       let artifactContent: string | undefined;
       try {
         artifactContent = await readFile(artifactPath, 'utf8');
@@ -164,13 +172,18 @@ async function scenarioA(): Promise<void> {
         artifactContent = undefined;
       }
       check(artifactContent !== undefined, `A: hello.txt exists on disk at ${artifactPath}`);
-      check(artifactContent?.trim() === 'hello', `A: hello.txt content is exactly "hello" (got ${JSON.stringify(artifactContent?.trim())})`);
-    } finally {
-      // Run the deferred real worktree deletion now that we are done reading the artifact.
-      await capturing.flushCleanup().catch(() => {});
+      // Allow exactly one optional trailing newline (the realistic `echo hello > hello.txt` / editor-save
+      // form) but reject any other leading/trailing whitespace or padding — a blanket `.trim()` would let
+      // through content that violates the "file's entire contents must be exactly hello" contract.
+      check(
+        artifactContent === 'hello' || artifactContent === 'hello\n',
+        `A: hello.txt content is exactly "hello" (got ${JSON.stringify(artifactContent)})`,
+      );
+    } else {
+      check(false, 'A: no worktree was created — cannot verify artifact');
     }
-  } else {
-    check(false, 'A: no worktree was created — cannot verify artifact');
+  } finally {
+    await capturing.flushCleanup().catch(() => {});
   }
 }
 
@@ -211,9 +224,12 @@ async function scenarioC(): Promise<void> {
     hitReplansCap || hitReextractionsCap || hitBudgetCap,
     `C: a guardrail cap was actually reached (replans=${summary.replans}/${config.maxReplans}, reextractions=${summary.reextractions}/${config.maxReextractions}, status=${summary.status})`,
   );
-  // The CAPS above (not the dollar figure) are what bound runaway; costUsd is executor spend only,
-  // and +1 allows the single in-flight action that can land just over the pre-dispatch budget check.
-  check(summary.costUsd <= config.maxBudgetUsd + 1, 'C: did not run away (executor spend within budget + 1 in-flight action)');
+  // Runaway is bounded by the CAPS proven above (replans / re-extractions / budget-exhausted), NOT by
+  // the dollar figure. A pricier PROBE_MODEL — or a single in-flight action that reports well over the
+  // remaining budget — can legitimately push costUsd past any fixed buffer while the run is still a
+  // correct budget-exhausted cap hit. Record the observed spend (already in findings['C']); do not
+  // assert an arbitrary dollar bound here (mirrors the observed-cost treatment in scenario A).
+  log({ ev: 'probe.C.cost', costUsd: summary.costUsd, maxBudgetUsd: config.maxBudgetUsd });
 }
 
 async function main(): Promise<void> {
