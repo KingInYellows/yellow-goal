@@ -1,0 +1,26 @@
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_51b8bbb4fb9639::t_58cb42bafa0841 321
+goal-gen/tests/integration/runner.probe.ts
+  s_51b8bbb4fb9639::t_4a0bc4d5039d3b 47-60
+  s_51b8bbb4fb9639::t_5e4df3ffc59003 165-167,170-178
+  s_51b8bbb4fb9639::t_9e30248043f3fc 21-22,26
+  s_51b8bbb4fb9639::t_c8e541710f29c8 91-96
+  s_51b8bbb4fb9639::t_2cf2926df15e36 192-193
+  s_51b8bbb4fb9639::t_f4effd67d7ea59 106-119,127-143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "73005a090e15e672d3d9f4a0e2af0baa006b3ae3",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
