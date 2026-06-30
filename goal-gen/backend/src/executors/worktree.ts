@@ -12,9 +12,10 @@
  * worktree.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import type { SpawnSyncReturns } from 'node:child_process';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 /** Git env fully isolated from the host — no global hooks / GPG signing / `includeIf` (spike §6). */
 export const GIT_ENV: NodeJS.ProcessEnv = {
@@ -35,7 +36,16 @@ export interface GitResult {
 
 /** Synchronous git in `cwd` with isolated config + a timeout. `status` is -1 when killed/timed out. */
 export function git(args: readonly string[], cwd: string): GitResult {
-  const r = spawnSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
+  let r: SpawnSyncReturns<string>;
+  try {
+    r = spawnSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
+  } catch (e) {
+    // spawnSync throws synchronously when the binary is missing (ENOENT) or the arg list
+    // exceeds the OS limit (E2BIG). Surface it as a non-zero result so callers never see an
+    // unhandled exception from a mere git invocation.
+    const msg = e instanceof Error ? e.message : String(e);
+    return { status: -1, stdout: '', stderr: msg };
+  }
   // On timeout/kill, status is null; surface r.error (e.g. ETIMEDOUT) so a caller never sees a silent "".
   const stderr = r.stderr ?? '';
   return { status: r.status ?? -1, stdout: r.stdout ?? '', stderr: r.error ? `${stderr}${r.error.message}`.trim() : stderr };
@@ -95,8 +105,15 @@ export async function createWorktree(opts: CreateWorktreeOptions = {}): Promise<
   try {
     gitOrThrow(['init', '-q'], root);
     git(['worktree', 'prune'], root); // crash backstop (no-op on a fresh repo; safe if root is reused)
+    const resolvedRoot = resolve(root);
     for (const [rel, content] of Object.entries(opts.seedFiles ?? {})) {
-      await writeFile(join(root, rel), content, 'utf8');
+      const target = resolve(root, rel);
+      // Reject path-traversal keys (e.g. "../escape") that resolve outside the scratch root.
+      if (!target.startsWith(resolvedRoot + sep)) {
+        throw new Error(`seedFiles key "${rel}" escapes the worktree root — path traversal rejected`);
+      }
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, content, 'utf8');
     }
     gitOrThrow(['add', '-A'], root); // worktree needs >=1 commit; --allow-empty covers the no-seed case
     gitOrThrow([...GIT_IDENT, 'commit', '-q', '--allow-empty', '-m', 'init'], root);

@@ -17,7 +17,7 @@ import { z } from 'zod';
 import { ACTION_TIMEOUT_MS, DEFAULT_MODEL, DEFAULT_NOISE_FILTER_PATHS } from '../orchestrator/guardrails';
 import type { Action, ExecutorKind } from '../planner/types';
 import type { AgentRun, AgentRunStatus, Executor, RunContext } from '../types';
-import { git } from './worktree';
+import { GIT_ENV, git } from './worktree';
 
 /** SIGKILL escalation grace after SIGTERM on cancel/timeout (plan task 2.5). */
 const SIGKILL_GRACE_MS = 5_000;
@@ -78,7 +78,23 @@ function spawnClaude(
   timeoutMs: number,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
-    const child = spawn('claude', [...argv], { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Fix 2: wrap spawn so a synchronous throw (bad cwd, ENOENT, etc.) resolves as spawn-error
+    // rather than rejecting or escaping as an unhandled exception.
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn('claude', [...argv], { cwd, env: GIT_ENV, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (spawnErr) {
+      resolve({
+        code: null,
+        signal: null,
+        stdout: '',
+        stderr: '',
+        killReason: 'spawn-error',
+        spawnErrorMessage: spawnErr instanceof Error ? spawnErr.message : String(spawnErr),
+      });
+      return;
+    }
+
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout?.on('data', (d: Buffer) => out.push(d));
@@ -86,6 +102,8 @@ function spawnClaude(
 
     let killReason: KillReason = 'none';
     let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+    // Fix 3: settled guard — 'error' and 'close' can both fire; first one wins.
+    let settled = false;
 
     const escalate = (reason: Exclude<KillReason, 'none' | 'spawn-error'>): void => {
       if (killReason !== 'none') return; // already terminating
@@ -100,6 +118,8 @@ function spawnClaude(
     else signal.addEventListener('abort', onAbort, { once: true });
 
     const finish = (res: SpawnResult): void => {
+      if (settled) return; // idempotent — 'error' + 'close' can both fire
+      settled = true;
       clearTimeout(timeoutTimer);
       if (sigkillTimer) clearTimeout(sigkillTimer);
       signal.removeEventListener('abort', onAbort);
@@ -128,7 +148,7 @@ function spawnClaude(
   });
 }
 
-/** JSON.parse the stdout; on failure, retry the outermost `{…}` block; null if still unparseable. */
+/** JSON.parse the stdout; on failure, retry fallback strategies; null if still unparseable. */
 function parseEnvelope(stdout: string): ResultEnvelope | null {
   const tryParse = (text: string): ResultEnvelope | null => {
     let parsed: unknown;
@@ -142,10 +162,38 @@ function parseEnvelope(stdout: string): ResultEnvelope | null {
   };
   const direct = tryParse(stdout);
   if (direct) return direct;
-  // Fallback: outermost brace block (claude may prepend a banner before the JSON envelope).
-  const start = stdout.indexOf('{');
-  const end = stdout.lastIndexOf('}');
-  if (start >= 0 && end > start) return tryParse(stdout.slice(start, end + 1));
+
+  // Fix 6: Fallback strategy — claude may prepend a banner or emit multiple JSON objects.
+  // First try the last non-empty line (the result envelope is typically the final line).
+  const lines = stdout.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (line.length > 0) {
+      const fromLine = tryParse(line);
+      if (fromLine) return fromLine;
+      break; // only try the last non-empty line before falling back to brace-scan
+    }
+  }
+
+  // Last resort: find the last balanced top-level {...} block in stdout.
+  // Scan backwards from the final '}' to find its matching '{', respecting nesting.
+  let end = stdout.lastIndexOf('}');
+  while (end >= 0) {
+    let depth = 0;
+    let start = -1;
+    for (let i = end; i >= 0; i--) {
+      if (stdout[i] === '}') depth++;
+      else if (stdout[i] === '{') {
+        depth--;
+        if (depth === 0) { start = i; break; }
+      }
+    }
+    if (start >= 0) {
+      const candidate = tryParse(stdout.slice(start, end + 1));
+      if (candidate) return candidate;
+    }
+    end = stdout.lastIndexOf('}', end - 1);
+  }
   return null;
 }
 
@@ -156,16 +204,41 @@ function classify(envelope: ResultEnvelope, exitCode: number | null): AgentRunSt
     : 'failed';
 }
 
-/** porcelain v1 path field, handling `R  old -> new` rename/copy entries (new path is meaningful). */
-function parsePorcelainPaths(porcelain: string): string[] {
-  return porcelain
-    .split('\n')
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const body = line.slice(3); // 2 status chars + 1 space, then the path
-      const arrow = body.indexOf(' -> ');
-      return arrow >= 0 ? body.slice(arrow + 4) : body;
-    });
+/**
+ * Fix 4: Parse NUL-delimited `git status --porcelain -z` output.
+ * With -z, entries are NUL-terminated (not newline), paths are never C-quoted, and rename entries
+ * are two NUL-separated tokens: `XY SP <old> NUL <new> NUL`. We want the destination (new) path
+ * for renames/copies, and the single path for all other entries.
+ *
+ * Layout per entry: [2-char XY][SP][path][NUL]
+ * For R/C (rename/copy): [2-char XY][SP][old-path][NUL][new-path][NUL]
+ */
+function parsePorcelainPaths(nulDelimited: string): string[] {
+  if (!nulDelimited) return [];
+  // Split on NUL; trailing NUL produces an empty last token — filter empties at the end.
+  const tokens = nulDelimited.split('\0');
+  const paths: string[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i]!;
+    if (token.length === 0) { i++; continue; }
+    // Each entry starts with 2 status chars + 1 space (total 3 chars) then the path.
+    const xy = token.slice(0, 2);
+    const path = token.slice(3);
+    const isRename = xy[0] === 'R' || xy[0] === 'C' || xy[1] === 'R' || xy[1] === 'C';
+    if (isRename) {
+      // Next token is the destination path.
+      const dest = tokens[i + 1];
+      if (dest && dest.length > 0) {
+        paths.push(dest);
+        i += 2;
+        continue;
+      }
+    }
+    paths.push(path);
+    i++;
+  }
+  return paths;
 }
 
 /** A path is noise if any noise entry equals it, prefixes it, or appears as one of its segments. */
@@ -185,9 +258,12 @@ interface OracleResult {
  * report unknown (`diffRef` undefined) rather than a false "clean". This does NOT gate pass/fail.
  */
 function activityOracle(worktreePath: string, initialSha: string, noise: readonly string[]): OracleResult {
-  const statusRes = git(['status', '--porcelain'], worktreePath);
+  // Fix 4: use -z (NUL-delimited) so paths with spaces/unicode are never C-quoted.
+  const statusRes = git(['status', '--porcelain', '-z'], worktreePath);
   const headRes = git(['rev-parse', 'HEAD'], worktreePath);
-  if (statusRes.status !== 0 || headRes.status !== 0) return { changed: false, diffRef: undefined };
+  // Fix 5: git failure must NOT return changed:false (false-clean). Return changed:true so the
+  // orchestrator treats it as unknown/changed rather than silently treating the run as clean.
+  if (statusRes.status !== 0 || headRes.status !== 0) return { changed: true, diffRef: undefined };
 
   const meaningful = parsePorcelainPaths(statusRes.stdout.trim()).filter((p) => !isNoise(p, noise));
   const headSha = headRes.stdout.trim();
