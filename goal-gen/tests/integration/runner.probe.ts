@@ -18,9 +18,12 @@
  * Preconditions (mirrors the spike): host `claude` logged in via subscription, run as NON-root
  * (`--permission-mode bypassPermissions` is blocked as root). Cost is OBSERVED, never asserted.
  */
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { ClaudeCodeExecutor } from '../../backend/src/executors/claude-code-executor';
 import { ShellVerifier } from '../../backend/src/executors/shell-verifier';
 import { createWorktree } from '../../backend/src/executors/worktree';
+import type { WorktreeHandle } from '../../backend/src/executors/worktree';
 import { ClaudeLlmClient, LlmExtractorImpl } from '../../backend/src/extractors/llm-extractor';
 import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
 import { Orchestrator } from '../../backend/src/orchestrator/orchestrator';
@@ -39,6 +42,20 @@ function log(event: Record<string, unknown>): void {
 function check(cond: boolean, msg: string): void {
   console.log(`${cond ? 'PASS' : 'FAIL'}: ${msg}`);
   if (!cond) failures++;
+}
+
+/**
+ * Worktree provider that delegates to `createWorktree` but records the last-created handle so the
+ * probe can inspect artifacts after the run completes. The handle is NOT auto-cleaned by the
+ * provider; the caller must call `lastHandle.cleanup()` when done.
+ */
+class CapturingWorktreeProvider {
+  lastHandle: WorktreeHandle | undefined;
+  readonly provide = async (opts: Parameters<typeof createWorktree>[0]): Promise<WorktreeHandle> => {
+    const handle = await createWorktree(opts);
+    this.lastHandle = handle;
+    return handle;
+  };
 }
 
 /** Wraps a real Verifier, returning a forced exit code for the first `failFirst` calls. */
@@ -71,7 +88,12 @@ function preflight(): void {
     throw new Error('--permission-mode bypassPermissions is blocked as root. Run as a non-root user (PROBE_ALLOW_ROOT=1 to override).');
   }
   if (process.env['ANTHROPIC_API_KEY']) {
-    log({ ev: 'preflight.note', message: 'ANTHROPIC_API_KEY is set — the executor will use API-key auth, not subscription.' });
+    // v1 must exercise the `claude -p` SUBSCRIPTION auth path. If an API key is set the executor
+    // silently uses it instead, masking whether subscription auth works at all. Fail fast.
+    throw new Error(
+      'ANTHROPIC_API_KEY is set — this probe MUST run under subscription auth (claude -p), not API-key auth. ' +
+      'Unset ANTHROPIC_API_KEY before running the probe.',
+    );
   }
 }
 
@@ -81,7 +103,20 @@ const HELLO_GOAL = 'Create a file named hello.txt in the current directory whose
 async function scenarioA(): Promise<void> {
   console.log('\n--- Scenario A: happy path (loop completes) ---');
   const config = defaultRunConfig({ model: MODEL, maxBudgetUsd: 5 });
-  const summary = await makeOrchestrator(config, new ShellVerifier()).run({ goalText: HELLO_GOAL });
+  // Use a capturing provider so we can independently verify the artifact on disk after the run.
+  // The worktree is cleaned up after each action; the provider records the LAST worktree path so
+  // we can inspect it before cleanup (the run is done at this point — cleanup is deferred below).
+  const capturing = new CapturingWorktreeProvider();
+  const orchestrator = new Orchestrator({
+    extractor: new LlmExtractorImpl(new ClaudeLlmClient({ model: MODEL }), { onEvent: log }),
+    executor: new ClaudeCodeExecutor({ model: MODEL, timeoutMs: config.actionTimeoutMs, noiseFilterPaths: config.noiseFilterPaths }),
+    verifier: new ShellVerifier(),
+    config,
+    confirm: async () => true,
+    worktreeProvider: capturing.provide,
+    onEvent: log,
+  });
+  const summary = await orchestrator.run({ goalText: HELLO_GOAL });
   findings['A'] = { status: summary.status, costUsd: summary.costUsd, replans: summary.replans, reextractions: summary.reextractions };
   check(summary.status === 'succeeded', `A: status succeeded (got ${summary.status})`);
   // NOTE: summary.costUsd is EXECUTOR spend only — extraction/expand cost is real but not folded into
@@ -89,6 +124,23 @@ async function scenarioA(): Promise<void> {
   // executor actually ran and spent, not the total API bill.
   check(summary.costUsd > 0, `A: executor spend observed (costUsd=${summary.costUsd})`);
   check(summary.costUsd <= config.maxBudgetUsd, 'A: executor spend stayed within budget');
+  // Independent artifact check: don't trust the run's reported success alone — verify hello.txt
+  // actually exists on disk with the exact expected content.
+  if (capturing.lastHandle) {
+    const artifactPath = join(capturing.lastHandle.worktreePath, 'hello.txt');
+    let artifactContent: string | undefined;
+    try {
+      artifactContent = await readFile(artifactPath, 'utf8');
+    } catch {
+      artifactContent = undefined;
+    }
+    check(artifactContent !== undefined, `A: hello.txt exists on disk at ${artifactPath}`);
+    check(artifactContent?.trim() === 'hello', `A: hello.txt content is exactly "hello" (got ${JSON.stringify(artifactContent?.trim())})`);
+    // Best-effort cleanup of the last worktree (the provider doesn't auto-clean it).
+    await capturing.lastHandle.cleanup().catch(() => {});
+  } else {
+    check(false, 'A: no worktree was created — cannot verify artifact');
+  }
 }
 
 /** B — replan recovery: a forced verify-fail exhausts retries, triggers a replan, then recovers. */
@@ -110,9 +162,20 @@ async function scenarioC(): Promise<void> {
   const verifier = new InjectedFailVerifier(Infinity, new ShellVerifier()); // never passes
   const summary = await makeOrchestrator(config, verifier).run({ goalText: HELLO_GOAL });
   findings['C'] = { status: summary.status, costUsd: summary.costUsd, replans: summary.replans, reextractions: summary.reextractions };
-  check(summary.status === 'failed' || summary.status === 'budget-exhausted', `C: terminated at a cap (got ${summary.status})`);
+  // Must be a cap-terminal status — 'succeeded' means the guardrail was never exercised.
+  const capStatuses: RunSummary['status'][] = ['failed', 'budget-exhausted'];
+  check(capStatuses.includes(summary.status), `C: terminated with a cap-related status, not 'succeeded' (got ${summary.status})`);
   check(summary.replans <= config.maxReplans, `C: replans within cap (${summary.replans} <= ${config.maxReplans})`);
   check(summary.reextractions <= config.maxReextractions, `C: re-extractions within cap (${summary.reextractions} <= ${config.maxReextractions})`);
+  // Prove a cap was actually reached — not merely that the run ended. At least one counter must
+  // have hit its configured limit, otherwise the run stopped for an unrelated reason.
+  const hitReplansCap = summary.replans >= config.maxReplans;
+  const hitReextractionsCap = summary.reextractions >= config.maxReextractions;
+  const hitBudgetCap = summary.status === 'budget-exhausted';
+  check(
+    hitReplansCap || hitReextractionsCap || hitBudgetCap,
+    `C: a guardrail cap was actually reached (replans=${summary.replans}/${config.maxReplans}, reextractions=${summary.reextractions}/${config.maxReextractions}, status=${summary.status})`,
+  );
   // The CAPS above (not the dollar figure) are what bound runaway; costUsd is executor spend only,
   // and +1 allows the single in-flight action that can land just over the pre-dispatch budget check.
   check(summary.costUsd <= config.maxBudgetUsd + 1, 'C: did not run away (executor spend within budget + 1 in-flight action)');
@@ -126,7 +189,8 @@ async function main(): Promise<void> {
   for (const name of SCENARIOS) {
     const fn = runners[name];
     if (!fn) {
-      console.log(`(skipping unknown scenario "${name}")`);
+      failures++;
+      console.log(`FAIL: unrecognized PROBE_SCENARIO "${name}" — valid values are: ${Object.keys(runners).join(', ')}`);
       continue;
     }
     try {
