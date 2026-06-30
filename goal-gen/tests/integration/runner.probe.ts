@@ -122,7 +122,9 @@ async function scenarioA(): Promise<void> {
   // NOTE: summary.costUsd is EXECUTOR spend only — extraction/expand cost is real but not folded into
   // the summary in v1 (bounded by the re-extraction cap ≤2, so it cannot run away). This proves the
   // executor actually ran and spent, not the total API bill.
-  check(summary.costUsd > 0, `A: executor spend observed (costUsd=${summary.costUsd})`);
+  // Cost is OBSERVED-ONLY telemetry — a real `claude -p` subscription run can legitimately report
+  // total_cost_usd as 0 (or omit it), so it must NOT gate pass/fail. Record it; don't assert > 0.
+  log({ ev: 'probe.A.cost', costUsd: summary.costUsd });
   check(summary.costUsd <= config.maxBudgetUsd, 'A: executor spend stayed within budget');
   // Independent artifact check: don't trust the run's reported success alone — verify hello.txt
   // actually exists on disk with the exact expected content.
