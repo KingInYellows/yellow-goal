@@ -45,27 +45,50 @@ function check(cond: boolean, msg: string): void {
 }
 
 /**
- * Worktree provider that delegates to `createWorktree` but records the last-created handle so the
- * probe can inspect artifacts after the run completes. The handle is NOT auto-cleaned by the
- * provider; the caller must call `lastHandle.cleanup()` when done.
+ * Worktree provider that delegates to `createWorktree` but intercepts cleanup on the last-created
+ * handle. When the orchestrator calls `handle.cleanup()` (in its per-action finally block), the
+ * real deletion is NOT executed — it is deferred so the probe can still read artifacts from disk
+ * after `orchestrator.run()` returns. Call `capturing.flushCleanup()` in a `finally` after
+ * reading the artifact to run the real deletion and avoid a worktree leak.
  */
 class CapturingWorktreeProvider {
   lastHandle: WorktreeHandle | undefined;
+  private _pendingCleanup: (() => Promise<void>) | undefined;
+
   readonly provide = async (opts: Parameters<typeof createWorktree>[0]): Promise<WorktreeHandle> => {
-    const handle = await createWorktree(opts);
-    this.lastHandle = handle;
-    return handle;
+    const real = await createWorktree(opts);
+    // Wrap with a proxy that mirrors all handle fields but defers cleanup instead of deleting immediately.
+    const proxy: WorktreeHandle = {
+      root: real.root,
+      worktreePath: real.worktreePath,
+      branch: real.branch,
+      initialSha: real.initialSha,
+      cleanup: async () => {
+        // Record the real cleanup to run later; do NOT call real.cleanup() here.
+        this._pendingCleanup = () => real.cleanup();
+      },
+    };
+    this.lastHandle = proxy;
+    return proxy;
   };
+
+  /** Run the deferred real worktree deletion (no-op if cleanup was never requested or already flushed). */
+  async flushCleanup(): Promise<void> {
+    const fn = this._pendingCleanup;
+    this._pendingCleanup = undefined;
+    if (fn) await fn();
+  }
 }
 
 /** Wraps a real Verifier, returning a forced exit code for the first `failFirst` calls. */
 class InjectedFailVerifier implements Verifier {
-  private calls = 0;
+  /** Total number of times `run()` has been called — readable by the probe for assertions. */
+  invocations = 0;
   constructor(private readonly failFirst: number, private readonly real: Verifier) {}
   async run(command: string, ctx: RunContext): Promise<VerifyResult> {
-    this.calls++;
-    if (this.failFirst === Infinity || this.calls <= this.failFirst) {
-      return { exitCode: 1, stdout: '', stderr: `[probe] injected verify-fail (call ${this.calls})` };
+    this.invocations++;
+    if (this.failFirst === Infinity || this.invocations <= this.failFirst) {
+      return { exitCode: 1, stdout: '', stderr: `[probe] injected verify-fail (call ${this.invocations})` };
     }
     return this.real.run(command, ctx);
   }
@@ -128,18 +151,24 @@ async function scenarioA(): Promise<void> {
   check(summary.costUsd <= config.maxBudgetUsd, 'A: executor spend stayed within budget');
   // Independent artifact check: don't trust the run's reported success alone — verify hello.txt
   // actually exists on disk with the exact expected content.
+  // The orchestrator already called handle.cleanup() per action, but CapturingWorktreeProvider
+  // deferred that deletion so the worktree is still on disk here. We flush the real cleanup in a
+  // finally block so no worktree is leaked even if an assertion throws.
   if (capturing.lastHandle) {
     const artifactPath = join(capturing.lastHandle.worktreePath, 'hello.txt');
-    let artifactContent: string | undefined;
     try {
-      artifactContent = await readFile(artifactPath, 'utf8');
-    } catch {
-      artifactContent = undefined;
+      let artifactContent: string | undefined;
+      try {
+        artifactContent = await readFile(artifactPath, 'utf8');
+      } catch {
+        artifactContent = undefined;
+      }
+      check(artifactContent !== undefined, `A: hello.txt exists on disk at ${artifactPath}`);
+      check(artifactContent?.trim() === 'hello', `A: hello.txt content is exactly "hello" (got ${JSON.stringify(artifactContent?.trim())})`);
+    } finally {
+      // Run the deferred real worktree deletion now that we are done reading the artifact.
+      await capturing.flushCleanup().catch(() => {});
     }
-    check(artifactContent !== undefined, `A: hello.txt exists on disk at ${artifactPath}`);
-    check(artifactContent?.trim() === 'hello', `A: hello.txt content is exactly "hello" (got ${JSON.stringify(artifactContent?.trim())})`);
-    // Best-effort cleanup of the last worktree (the provider doesn't auto-clean it).
-    await capturing.lastHandle.cleanup().catch(() => {});
   } else {
     check(false, 'A: no worktree was created — cannot verify artifact');
   }
@@ -169,6 +198,10 @@ async function scenarioC(): Promise<void> {
   check(capStatuses.includes(summary.status), `C: terminated with a cap-related status, not 'succeeded' (got ${summary.status})`);
   check(summary.replans <= config.maxReplans, `C: replans within cap (${summary.replans} <= ${config.maxReplans})`);
   check(summary.reextractions <= config.maxReextractions, `C: re-extractions within cap (${summary.reextractions} <= ${config.maxReextractions})`);
+  // Prove the failure path actually ran: the verifier must have been invoked at least once.
+  // A graph that is unplannable from the start could hit maxReextractions without any action or
+  // verifier executing — a cap-count check alone would still pass in that degenerate case.
+  check(verifier.invocations >= 1, `C: verifier was invoked at least once (invocations=${verifier.invocations}), proving the execute→verify path ran`);
   // Prove a cap was actually reached — not merely that the run ended. At least one counter must
   // have hit its configured limit, otherwise the run stopped for an unrelated reason.
   const hitReplansCap = summary.replans >= config.maxReplans;
