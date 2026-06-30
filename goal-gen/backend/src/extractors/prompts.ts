@@ -139,8 +139,9 @@ export function expandPrompt(
     verifyCommand: a.verify.command,
   }));
 
-  // Cap untrusted shell output (verifyStdout / verifyStderr) before interpolation — these come
-  // directly from command execution and can be arbitrarily large or contain adversarial content.
+  // Cap untrusted/large output (verifyStdout / verifyStderr / agentStderr) before interpolation —
+  // these come from command + agent execution and can be arbitrarily large (a verbose failed action
+  // can emit a huge agentStderr) or contain adversarial content.
   const MAX_SHELL_OUTPUT = 2000;
   const cappedEvidence: FailureEvidence = {
     ...failureEvidence,
@@ -149,6 +150,9 @@ export function expandPrompt(
     }),
     ...(failureEvidence.verifyStderr !== undefined && {
       verifyStderr: failureEvidence.verifyStderr.slice(0, MAX_SHELL_OUTPUT),
+    }),
+    ...(failureEvidence.agentStderr !== undefined && {
+      agentStderr: failureEvidence.agentStderr.slice(0, MAX_SHELL_OUTPUT),
     }),
   };
 
