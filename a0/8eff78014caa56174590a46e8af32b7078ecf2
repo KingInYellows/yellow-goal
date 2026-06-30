@@ -1,0 +1,29 @@
+docs/solutions/integration-issues/during-goap-re-extraction-append-only-action-autho.md.promote-done
+  s_96e24ee55e4321::t_a5d1b21cbb5fe4 1
+docs/solutions/integration-issues/the-llm-extractor-claude-p-is-non-deterministic.md.promote-done
+  s_96e24ee55e4321::t_7888486ac9c6c7 1
+docs/solutions/integration-issues/when-claude-p-returns-action-json-with-wrong-types.md.promote-done
+  s_96e24ee55e4321::t_2cad77b8617609 1
+docs/solutions/integration-issues/during-goap-re-extraction-append-only-action-autho.md
+  s_96e24ee55e4321::t_be097eca39820f 1-22
+docs/solutions/integration-issues/the-llm-extractor-claude-p-is-non-deterministic.md
+  s_96e24ee55e4321::t_289f4c13f274a9 1-22
+docs/solutions/integration-issues/when-claude-p-returns-action-json-with-wrong-types.md
+  s_96e24ee55e4321::t_a3216da5c1bfb2 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "a08eff78014caa56174590a46e8af32b7078ecf2",
+  "prompts": {},
+  "sessions": {
+    "s_96e24ee55e4321": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36a91b8f-3b7d-4b0d-b681-f7d30e89728b",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
