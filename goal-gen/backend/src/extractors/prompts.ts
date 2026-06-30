@@ -95,10 +95,20 @@ export function extractionPrompt(req: ExtractRequest): string {
   ].join('\n');
 }
 
-/** Re-prompt after a validation failure, feeding the model its own bad output + the zod issues. */
-export function repairPrompt(previousOutput: string, issues: string): string {
+/**
+ * Re-prompt after a validation failure. Includes the ORIGINAL request (goal + schema + instructions)
+ * so the repair call has the full target context even when the first response was prose, empty, or
+ * too truncated to preserve the required shape — otherwise the model has no basis for producing the
+ * required JSON and the load-bearing repair path can fail or return arbitrary schema-shaped data.
+ */
+export function repairPrompt(originalPrompt: string, previousOutput: string, issues: string): string {
   return [
-    'Your previous response was NOT valid. Here is exactly what you returned:',
+    'You must correct a previous response. Re-read the ORIGINAL request you have to satisfy:',
+    '<original-request>',
+    originalPrompt,
+    '</original-request>',
+    '',
+    'Your previous response to that request was NOT valid. Here is exactly what you returned:',
     '<previous>',
     previousOutput,
     '</previous>',
@@ -106,8 +116,8 @@ export function repairPrompt(previousOutput: string, issues: string): string {
     'It failed validation with these issues:',
     issues,
     '',
-    'Return a corrected response that fixes EVERY issue. Return ONLY the JSON (start with `{` or `[`,',
-    'end with `}` or `]`). No prose, no code fences.',
+    'Return a corrected response that satisfies the original request and fixes EVERY issue. Return ONLY',
+    'the JSON (start with `{` or `[`, end with `}` or `]`). No prose, no code fences.',
   ].join('\n');
 }
 

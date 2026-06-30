@@ -260,14 +260,16 @@ export class LlmExtractorImpl implements LlmExtractor {
   }
 
   async extract(req: ExtractRequest): Promise<GoalSpec> {
-    const first = await this.client.complete(extractionPrompt(req));
+    const prompt = extractionPrompt(req);
+    const first = await this.client.complete(prompt);
     const firstParse = tryParseGoalSpec(first.text);
     if (firstParse.ok) {
       this.emit({ ev: 'extract.measure', firstTry: true, repairNeeded: false, success: true });
       return firstParse.value;
     }
-    // one bounded repair round (cap previous output so an oversized response doesn't blow repair context)
-    const repaired = await this.client.complete(repairPrompt(capForRepair(first.text), firstParse.error));
+    // one bounded repair round (cap previous output so an oversized response doesn't blow repair
+    // context; pass the original prompt so the repair has the goal + schema even if `first` was junk)
+    const repaired = await this.client.complete(repairPrompt(prompt, capForRepair(first.text), firstParse.error));
     const repairParse = tryParseGoalSpec(repaired.text);
     this.emit({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: repairParse.ok });
     if (repairParse.ok) return repairParse.value;
@@ -284,10 +286,11 @@ export class LlmExtractorImpl implements LlmExtractor {
     failureEvidence: FailureEvidence,
     existingPool: Action[],
   ): Promise<Action[]> {
-    const first = await this.client.complete(expandPrompt(goalText, currentState, failureEvidence, existingPool));
+    const prompt = expandPrompt(goalText, currentState, failureEvidence, existingPool);
+    const first = await this.client.complete(prompt);
     let parse = tryParseActions(first.text);
     if (!parse.ok) {
-      const repaired = await this.client.complete(repairPrompt(capForRepair(first.text), parse.error));
+      const repaired = await this.client.complete(repairPrompt(prompt, capForRepair(first.text), parse.error));
       parse = tryParseActions(repaired.text);
     }
     if (!parse.ok) {
