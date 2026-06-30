@@ -1,0 +1,20 @@
+goal-gen/backend/src/extractors/prompts.ts
+  s_51b8bbb4fb9639::t_d7be575d619db7 142-144,154-155
+  s_51b8bbb4fb9639::t_81017cc720514f 156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "9437740070397d96082f4c5212b1b25021ea9f53",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
