@@ -1,0 +1,22 @@
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_51b8bbb4fb9639::t_fa4972280186e8 413-415
+  s_51b8bbb4fb9639::t_b3993df1c23f85 171-174,176
+  s_51b8bbb4fb9639::t_f603d044456ca7 405-412,416-417
+  s_51b8bbb4fb9639::t_37fa0a5353ea35 242-246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "7c641cd61d0f196faa636ed00187d93da71aaf03",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
