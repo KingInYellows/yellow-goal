@@ -1,0 +1,33 @@
+goal-gen/backend/src/types.ts
+  s_0738f37ef72a16::t_05532e75d6678c 1-167
+goal-gen/backend/src/extractors/stub-extractor.ts
+  s_0738f37ef72a16::t_6ead2104582c4b 1-48
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_cfdc8d4d324e0e 314-321
+goal-gen/package.json
+  s_0738f37ef72a16::t_57d454e84abd20 12-13,20
+goal-gen/backend/src/orchestrator/guardrails.ts
+  s_0738f37ef72a16::t_25ed0d34dfd4ff 1-41
+goal-gen/backend/src/executors/stub-executor.ts
+  s_0738f37ef72a16::t_e9a8558f60845e 1-110
+goal-gen/backend/src/runner.ts
+  s_0738f37ef72a16::t_1dba1dac7451f3 1-143
+goal-gen/package-lock.json
+  s_0738f37ef72a16::t_cde7e827cfb8f6 15,55-496,1021-1062,1656-1674
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "d91926bef94c6a644aed14cd30049265bef164c8",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

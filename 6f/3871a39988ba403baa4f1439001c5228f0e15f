@@ -1,0 +1,59 @@
+goal-gen/backend/src/extractors/llm-extractor.ts
+  s_0738f37ef72a16::t_3bd1f3ae661c50 1-40,43-53,61-93,95-100,110,136-166,169-172,175-179,181-182,200-201,208-210,208-210,214,217-220,218-220,224,226-262,265-269,273-288,291-292,294-302,309-312
+  s_0738f37ef72a16::t_c763cb289f74a8 167-168,180,183-201,211-213,221-223
+  s_0738f37ef72a16::t_e08138b3fa1ed5 173-174
+  s_0738f37ef72a16::t_c5bd2092613f7c 215-217
+  s_0738f37ef72a16::t_9eb78364261265 225
+  s_51b8bbb4fb9639::t_b115f9eab3974b 202-207
+  s_51b8bbb4fb9639::t_33a040c65a38a4 94,101-109,111-135
+  s_51b8bbb4fb9639::t_3c296e2eb559c3 303-308
+  s_51b8bbb4fb9639::t_bcb28ced8f3d06 41-42
+  s_51b8bbb4fb9639::t_efbde66533ccba 54-60
+  s_51b8bbb4fb9639::t_a5ae1d6a7b2dc0 263-264,270-272
+  s_51b8bbb4fb9639::t_42017eed8258a0 289-290,293
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_f73c3a224f724f 319
+goal-gen/backend/src/extractors/schema.ts
+  s_0738f37ef72a16::t_b6b7cacca92423 1-22,29-33,38-59,67-85
+  s_0738f37ef72a16::t_741c287f0f5485 23-28,34-37
+  s_51b8bbb4fb9639::t_167317cac78945 60-66
+goal-gen/tests/extractor/repair.test.ts
+  s_0738f37ef72a16::t_d2c8d61b1384a7 59-62,64-71
+  s_0738f37ef72a16::t_220234de401aca 76
+  s_0738f37ef72a16::t_8a2d92ed5489ab 11,14,18
+  s_0738f37ef72a16::t_295b3b4c33f771 72,113-169
+  s_0738f37ef72a16::t_0c5ea0e7e9d1c3 1-10,12-13,15-17,19-58,63,72-75,73-75,77-112,77-115,170
+goal-gen/backend/src/extractors/prompts.ts
+  s_0738f37ef72a16::t_bfc84e9e8982cc 59-60
+  s_0738f37ef72a16::t_10030a5165c198 1-22,24-58,61-65,75-77,79-93,95-97,105,112-118,121-133,159-168,173-176,179-180
+  s_0738f37ef72a16::t_1c614c67a97e83 23
+  s_51b8bbb4fb9639::t_5f316d1166775b 134-141,145-153,157-158,169-172,177-178
+  s_51b8bbb4fb9639::t_72d932a448e3f4 66-74,78,94
+  s_51b8bbb4fb9639::t_b6570d108896f5 98-104,106-111,119-120
+  s_51b8bbb4fb9639::t_d7be575d619db7 142-144,154-155
+  s_51b8bbb4fb9639::t_81017cc720514f 156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "6f3871a39988ba403baa4f1439001c5228f0e15f",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

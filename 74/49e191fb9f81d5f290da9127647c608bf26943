@@ -1,0 +1,45 @@
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_0738f37ef72a16::t_c5ef47d099a95a 1-19,21-24,28-80,98-104,107-120,123-150,152-164,197-206,242-260,263,267-325,328-386
+  s_0738f37ef72a16::t_ad8942a4e17af2 25-27
+  s_0738f37ef72a16::t_f397137b7dba68 326-327
+  s_51b8bbb4fb9639::t_0e9728bcb09168 261-262,264-266
+  s_51b8bbb4fb9639::t_8734c53d9f66f8 20
+  s_51b8bbb4fb9639::t_9347c776988604 151,165-196
+  s_51b8bbb4fb9639::t_c31047bbf7b2af 207-241
+  s_51b8bbb4fb9639::t_30b3b8a03ca56c 81-97,105-106,121-122
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_0738f37ef72a16::t_33cba307e646c3 318
+goal-gen/backend/src/executors/worktree.ts
+  s_0738f37ef72a16::t_7f179526111bca 27-29,37,49-51
+  s_0738f37ef72a16::t_74bfe7942a1891 87-91
+  s_0738f37ef72a16::t_bf10fadee787ee 1-14,17,19-26,30-36,38,52-86,92-107,109,117-141
+  s_51b8bbb4fb9639::t_986001dc9d6de3 16,18
+  s_51b8bbb4fb9639::t_cb9f784bcf430e 15
+  s_51b8bbb4fb9639::t_6b9e9fc4776407 39
+  s_51b8bbb4fb9639::t_9592fc6e200fc2 108,110-116
+  s_51b8bbb4fb9639::t_95edf1d8176e1e 40-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "7449e191fb9f81d5f290da9127647c608bf26943",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

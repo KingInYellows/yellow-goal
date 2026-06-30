@@ -1,0 +1,32 @@
+goal-gen/docs/brainstorms/2026-06-29-m1-walking-skeleton-cli-loop-brainstorm.md
+  s_16ec97b21a7c03::t_436044e575c3ca 1-82
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_16ec97b21a7c03::t_453b4488f535bb 1-133,135-151,155-270
+  s_16ec97b21a7c03::t_58dd43b8168c57 271-313
+  s_51b8bbb4fb9639::t_46cabe1a68aff8 152-154
+  s_51b8bbb4fb9639::t_26593c31a5cade 134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "28a01955a1e2105c3688677dc5b13144828d8df0",
+  "prompts": {},
+  "sessions": {
+    "s_16ec97b21a7c03": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "14527c32-2ba5-4d91-86eb-4eb022846910",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

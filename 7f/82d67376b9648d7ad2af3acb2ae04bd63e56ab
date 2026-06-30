@@ -1,0 +1,75 @@
+goal-gen/backend/src/extractors/llm-extractor.ts
+  s_4254c74ddcf97a::t_114ac621d4e688 290,293,297,301,308,313-314
+  s_4254c74ddcf97a::t_9389decc922da0 262,265,268-269,274,276-277
+goal-gen/backend/src/executors/shell-verifier.ts
+  s_4254c74ddcf97a::t_ef596772041b98 76-79,83-84,87-88
+  s_4254c74ddcf97a::t_74d705fe6518b9 52-55,57
+goal-gen/tests/orchestrator/orchestrator.test.ts
+  s_4254c74ddcf97a::t_8e156c2dc266d8 272-276
+  s_4254c74ddcf97a::t_663f82ffbfed1a 245-271,277-353
+  s_4254c74ddcf97a::t_54137bc57e2bd4 15
+  s_4254c74ddcf97a::t_10a4e6cff53046 55-56
+  s_4254c74ddcf97a::t_03538d7853402a 35-36,39-40,46-51,62
+goal-gen/backend/src/types.ts
+  s_4254c74ddcf97a::t_5861417cad0758 95-97,100,106
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_0738f37ef72a16::t_8b91f90fa4d6f2 463
+  s_4254c74ddcf97a::t_6b91da5733963c 122,124-126,142
+  s_4254c74ddcf97a::t_32a7e1615b834e 72-74,76-78
+  s_51b8bbb4fb9639::t_6d31b86933390a 238-239
+  s_4254c74ddcf97a::t_71fc09fe13baf6 343-347
+  s_51b8bbb4fb9639::t_fa4972280186e8 472-474
+  s_4254c74ddcf97a::t_7abad76d5c4f1b 195-200
+  s_4254c74ddcf97a::t_0524fa505686ca 415-420
+  s_51b8bbb4fb9639::t_b3993df1c23f85 183-186,188
+  s_4254c74ddcf97a::t_5a33cc4b96ff15 444-449,452,454,458-462,469-470,487-493,495-496,502
+  s_51b8bbb4fb9639::t_37fa0a5353ea35 253-257
+  s_51b8bbb4fb9639::t_f603d044456ca7 464-468,471,475-476
+  s_4254c74ddcf97a::t_cfc1f65aac2bf5 168
+  s_4254c74ddcf97a::t_29dfc5381e157e 377-405
+  s_4254c74ddcf97a::t_5e672eb319262b 138,140
+  s_4254c74ddcf97a::t_a62bf1efd069a1 215-218,221-223,227-237,246-247
+  s_4254c74ddcf97a::t_42bc691588f90b 503-507
+  s_4254c74ddcf97a::t_4869ce1418224a 376
+goal-gen/tests/extractor/repair.test.ts
+  s_4254c74ddcf97a::t_32b1e8c9514cc4 79,83,92,95
+  s_4254c74ddcf97a::t_3ae033073e706c 104
+  s_4254c74ddcf97a::t_a2efbab8538336 143,150,157
+goal-gen/backend/src/extractors/stub-extractor.ts
+  s_4254c74ddcf97a::t_00acbecc5b4c1d 17-20,27-28,36-37,43,54
+  s_4254c74ddcf97a::t_49001e5521b42a 40,51
+goal-gen/backend/src/runner.ts
+  s_4254c74ddcf97a::t_9b2a7097acb126 48-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "7f82d67376b9648d7ad2af3acb2ae04bd63e56ab",
+  "prompts": {},
+  "sessions": {
+    "s_0738f37ef72a16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f72d3045-de62-490b-ae88-4b293bbbafe1",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_4254c74ddcf97a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b662580-92b8-47c4-ae21-ab8b62158db0",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": null
+    },
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
