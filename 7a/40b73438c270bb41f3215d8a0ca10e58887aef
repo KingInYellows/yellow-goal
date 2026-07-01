@@ -1,0 +1,19 @@
+goal-gen/tests/integration/runner.probe.ts
+  s_51b8bbb4fb9639::t_818cd1623e17f4 125-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "7a40b73438c270bb41f3215d8a0ca10e58887aef",
+  "prompts": {},
+  "sessions": {
+    "s_51b8bbb4fb9639": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b93dd77d-17ee-4cf9-986b-90fccf844d7f",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
