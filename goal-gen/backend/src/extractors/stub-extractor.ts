@@ -14,12 +14,18 @@ export interface StubExtractorOptions {
   expansions?: Action[][];
   /** When set, `extract()` rejects with this (simulates a structured ExtractionError). */
   extractError?: Error;
+  /** Cost (USD) reported by each `extract()` call. Default 0 (no spend). */
+  extractCostUsd?: number;
+  /** Cost (USD) reported by each `expand()` call — exercises the re-extraction budget guard. Default 0. */
+  expandCostUsd?: number;
 }
 
 export class StubExtractor implements LlmExtractor {
   private readonly goalSpec: GoalSpec;
   private readonly expansions: Action[][];
   private readonly extractError: Error | undefined;
+  private readonly extractCostUsd: number;
+  private readonly expandCostUsd: number;
   extractCalls = 0;
   expandCalls = 0;
 
@@ -27,12 +33,14 @@ export class StubExtractor implements LlmExtractor {
     this.goalSpec = opts.goalSpec;
     this.expansions = (opts.expansions ?? []).map((batch) => [...batch]);
     this.extractError = opts.extractError;
+    this.extractCostUsd = opts.extractCostUsd ?? 0;
+    this.expandCostUsd = opts.expandCostUsd ?? 0;
   }
 
-  async extract(_req: ExtractRequest): Promise<GoalSpec> {
+  async extract(_req: ExtractRequest): Promise<{ goalSpec: GoalSpec; costUsd: number }> {
     this.extractCalls++;
     if (this.extractError) throw this.extractError;
-    return structuredClone(this.goalSpec);
+    return { goalSpec: structuredClone(this.goalSpec), costUsd: this.extractCostUsd };
   }
 
   async expand(
@@ -40,9 +48,9 @@ export class StubExtractor implements LlmExtractor {
     _currentState: WorldState,
     _failureEvidence: FailureEvidence,
     _existingPool: Action[],
-  ): Promise<Action[]> {
+  ): Promise<{ actions: Action[]; costUsd: number }> {
     this.expandCalls++;
     const next = this.expansions.shift();
-    return next ? structuredClone(next) : [];
+    return { actions: next ? structuredClone(next) : [], costUsd: this.expandCostUsd };
   }
 }

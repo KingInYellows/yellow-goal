@@ -317,5 +317,5 @@ tests in #4); only the real-`claude` integration probe stands alone as #5.
 - [x] 1. agent/feat/m1-runner-foundation (completed 2026-06-29)
 - [x] 2. agent/feat/m1-claude-executor (completed 2026-06-29)
 - [x] 3. agent/feat/m1-llm-extractor (completed 2026-06-29)
-- [ ] 4. agent/feat/m1-orchestrator-loop
+- [x] 4. agent/feat/m1-orchestrator-loop (completed 2026-06-29)
 - [ ] 5. agent/test/m1-runner-e2e

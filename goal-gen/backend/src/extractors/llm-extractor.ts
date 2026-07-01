@@ -33,7 +33,8 @@ export interface LlmCompletion {
 
 /** The thin LLM transport the extractor authors through. Swappable (claude -p now; API later). */
 export interface LlmClient {
-  complete(prompt: string): Promise<LlmCompletion>;
+  /** `signal` propagates run cancellation (SIGINT/SIGTERM) into the underlying `claude -p` child. */
+  complete(prompt: string, signal?: AbortSignal): Promise<LlmCompletion>;
 }
 
 const EXTRACT_TIMEOUT_MS = 120_000;
@@ -46,16 +47,23 @@ interface RawSpawn {
   stderr: string;
   code: number | null;
   killed: boolean;
+  /** True when the run's AbortSignal fired (SIGINT/SIGTERM) while this child was in flight. */
+  aborted: boolean;
   spawnError: string | undefined;
 }
 
-function spawnClaudeText(argv: readonly string[], timeoutMs: number): Promise<RawSpawn> {
+function spawnClaudeText(argv: readonly string[], timeoutMs: number, signal?: AbortSignal): Promise<RawSpawn> {
   return new Promise((resolve) => {
+    // Already aborted before we'd even spawn (e.g. Ctrl-C raced the call) — never start the child.
+    if (signal?.aborted) {
+      resolve({ stdout: '', stderr: '', code: null, killed: false, aborted: true, spawnError: undefined });
+      return;
+    }
     let child: ReturnType<typeof spawn>;
     try {
       child = spawn('claude', [...argv], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
-      resolve({ stdout: '', stderr: '', code: null, killed: false, spawnError: (e as Error).message });
+      resolve({ stdout: '', stderr: '', code: null, killed: false, aborted: false, spawnError: (e as Error).message });
       return;
     }
     const out: Buffer[] = [];
@@ -63,22 +71,31 @@ function spawnClaudeText(argv: readonly string[], timeoutMs: number): Promise<Ra
     child.stdout?.on('data', (d: Buffer) => out.push(d));
     child.stderr?.on('data', (d: Buffer) => err.push(d));
     let killed = false;
+    let aborted = false;
     let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       killed = true;
       child.kill('SIGTERM');
       sigkillTimer = setTimeout(() => child.kill('SIGKILL'), SIGKILL_GRACE_MS);
     }, timeoutMs);
+    // Mirror the timeout's SIGTERM→SIGKILL escalation when the caller aborts the run.
+    const onAbort = (): void => {
+      aborted = true;
+      child.kill('SIGTERM');
+      sigkillTimer = setTimeout(() => child.kill('SIGKILL'), SIGKILL_GRACE_MS);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
     const finish = (res: RawSpawn): void => {
       clearTimeout(timer);
       if (sigkillTimer) clearTimeout(sigkillTimer);
+      signal?.removeEventListener('abort', onAbort);
       resolve(res);
     };
     child.on('error', (e) =>
-      finish({ stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8'), code: null, killed, spawnError: e.message }),
+      finish({ stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8'), code: null, killed, aborted, spawnError: e.message }),
     );
     child.on('close', (code) =>
-      finish({ stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8'), code, killed, spawnError: undefined }),
+      finish({ stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8'), code, killed, aborted, spawnError: undefined }),
     );
   });
 }
@@ -150,12 +167,13 @@ export class ClaudeLlmClient implements LlmClient {
     this.timeoutMs = opts.timeoutMs ?? EXTRACT_TIMEOUT_MS;
   }
 
-  async complete(prompt: string): Promise<LlmCompletion> {
+  async complete(prompt: string, signal?: AbortSignal): Promise<LlmCompletion> {
     const argv = ['-p', prompt, '--output-format', 'json', '--max-turns', '1', '--model', this.model];
-    const res = await spawnClaudeText(argv, this.timeoutMs);
+    const res = await spawnClaudeText(argv, this.timeoutMs, signal);
     if (res.spawnError) {
       throw new ExtractionError(`claude failed to spawn: ${res.spawnError} (is the CLI installed and logged in?)`);
     }
+    if (res.aborted) throw new ExtractionError('claude extraction aborted (run cancelled)');
     if (res.killed) throw new ExtractionError(`claude extraction timed out after ${this.timeoutMs}ms`);
     const env = readEnvelope(res.stdout);
     if (!env) throw new ExtractionError(`claude returned an unparseable envelope (exit ${res.code})`, { raw: res.stdout.slice(0, 2000) });
@@ -259,24 +277,30 @@ export class LlmExtractorImpl implements LlmExtractor {
     this.emit = opts.onEvent ?? ((e) => process.stderr.write(`${JSON.stringify(e)}\n`));
   }
 
-  async extract(req: ExtractRequest): Promise<GoalSpec> {
+  async extract(req: ExtractRequest, signal?: AbortSignal): Promise<{ goalSpec: GoalSpec; costUsd: number }> {
     const prompt = extractionPrompt(req);
-    const first = await this.client.complete(prompt);
+    const first = await this.client.complete(prompt, signal);
+    let totalCostUsd = first.costUsd;
     const firstParse = tryParseGoalSpec(first.text);
     if (firstParse.ok) {
-      this.emit({ ev: 'extract.measure', firstTry: true, repairNeeded: false, success: true });
-      return firstParse.value;
+      this.emit({ ev: 'extract.measure', firstTry: true, repairNeeded: false, success: true, costUsd: totalCostUsd });
+      return { goalSpec: firstParse.value, costUsd: totalCostUsd };
     }
     // one bounded repair round (cap previous output so an oversized response doesn't blow repair
     // context; pass the original prompt so the repair has the goal + schema even if `first` was junk)
-    const repaired = await this.client.complete(repairPrompt(prompt, capForRepair(first.text), firstParse.error));
+    const repaired = await this.client.complete(repairPrompt(prompt, capForRepair(first.text), firstParse.error), signal);
+    totalCostUsd += repaired.costUsd;
     const repairParse = tryParseGoalSpec(repaired.text);
-    this.emit({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: repairParse.ok });
-    if (repairParse.ok) return repairParse.value;
+    this.emit({ ev: 'extract.measure', firstTry: false, repairNeeded: true, success: repairParse.ok, costUsd: totalCostUsd });
+    if (repairParse.ok) return { goalSpec: repairParse.value, costUsd: totalCostUsd };
+    // PR review: the failed completion + repair round already spent money — carry it on the error so
+    // the orchestrator's catch (Orchestrator.run) can fold it into budget accounting instead of
+    // silently dropping it (mirrors expand()'s handling below).
     throw new ExtractionError('extractor produced no schema-valid GoalSpec after one repair round', {
       issues: repairParse.error,
       rawFirst: first.text.slice(0, 2000),
       rawRepair: repaired.text.slice(0, 2000),
+      costUsd: totalCostUsd,
     });
   }
 
@@ -285,28 +309,36 @@ export class LlmExtractorImpl implements LlmExtractor {
     currentState: WorldState,
     failureEvidence: FailureEvidence,
     existingPool: Action[],
-  ): Promise<Action[]> {
+    signal?: AbortSignal,
+  ): Promise<{ actions: Action[]; costUsd: number }> {
     const prompt = expandPrompt(goalText, currentState, failureEvidence, existingPool);
-    const first = await this.client.complete(prompt);
+    const first = await this.client.complete(prompt, signal);
+    let totalCostUsd = first.costUsd;
     let parse = tryParseActions(first.text);
     if (!parse.ok) {
-      const repaired = await this.client.complete(repairPrompt(prompt, capForRepair(first.text), parse.error));
+      const repaired = await this.client.complete(repairPrompt(prompt, capForRepair(first.text), parse.error), signal);
+      totalCostUsd += repaired.costUsd;
       parse = tryParseActions(repaired.text);
     }
     if (!parse.ok) {
-      this.emit({ ev: 'expand.measure', success: false });
+      this.emit({ ev: 'expand.measure', success: false, costUsd: totalCostUsd });
+      // PR #8 review P2: the failed completion + repair round already spent money — carry it on the
+      // error so a catcher (orchestrator.reextract) can fold it into budget accounting instead of
+      // silently dropping it.
       throw new ExtractionError('expand produced no schema-valid actions after one repair round', {
         issues: parse.error,
+        costUsd: totalCostUsd,
       });
     }
     const deduped = dedupeIds(parse.value, existingPool);
     if (deduped.length === 0) {
-      this.emit({ ev: 'expand.measure', success: false, added: 0 });
+      this.emit({ ev: 'expand.measure', success: false, added: 0, costUsd: totalCostUsd });
       throw new ExtractionError('expand returned zero new actions — cannot extend the action pool', {
         rawFirst: first.text.slice(0, 2000),
+        costUsd: totalCostUsd,
       });
     }
-    this.emit({ ev: 'expand.measure', success: true, added: deduped.length });
-    return deduped;
+    this.emit({ ev: 'expand.measure', success: true, added: deduped.length, costUsd: totalCostUsd });
+    return { actions: deduped, costUsd: totalCostUsd };
   }
 }
