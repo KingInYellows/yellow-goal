@@ -115,6 +115,37 @@ describe('orchestrator — repeated action within one plan (PR #8 review P2)', (
   });
 });
 
+describe('orchestrator — 3-occurrence non-monotonic plan (PR #8/#9 review, cross-plan `completed` staleness)', () => {
+  it('walks forward to the final step instead of bouncing back to an intervening one', async () => {
+    // P: {} -> {x:1} · Q: {x:1} -> {y:1, x:0} (clears x) · R: {x:1,y:1} -> {w:1}; goal {x:1,y:1,w:1}.
+    // R needs BOTH x and y, so it can only run after Q (the only source of y) AND after x is restored
+    // (Q clears it) — the unique optimal plan is [P, Q, P, R]. A per-pass "invalidate this actionId's
+    // completion when ground truth stops matching what it established" design breaks this: the second
+    // P's pass makes Q's own recorded update ({x:0}) stop matching current ground truth (x is back to
+    // 1), so Q's completion gets invalidated too — and nextStep's occurrence-scan (from the start of
+    // plan.steps) finds Q's now-"undone" occurrence BEFORE it ever reaches R, redispatching Q instead
+    // of advancing to R. The plan-local cursor design never re-examines an already-passed position, so
+    // this can't happen.
+    const spec: GoalSpec = {
+      goalText: 'non-monotonic-3-occurrence',
+      initialState: { x: 0, y: 0, w: 0 },
+      goalState: { x: 1, y: 1, w: 1 },
+      constraints: [],
+      completionPolicy: 'verify-only',
+      actions: [
+        action('P', {}, { x: 1 }, 'verify-P'),
+        action('Q', { x: 1 }, { y: 1, x: 0 }, 'verify-Q'),
+        action('R', { x: 1, y: 1 }, { w: 1 }, 'verify-R'),
+      ],
+    };
+    const { orch, executor } = build({ goalSpec: spec });
+    const summary = await orch.run({ goalText: spec.goalText });
+    expect(summary.status).toBe('succeeded');
+    expect(summary.replans).toBe(0); // resolved within the single initial plan
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['P', 'Q', 'P', 'R']);
+  });
+});
+
 describe('orchestrator — confirm-DoD gate', () => {
   it('n at the DoD gate exits cancelled with no execution', async () => {
     const { orch, executor } = build({ goalSpec: TWO_STEP, confirm: false });

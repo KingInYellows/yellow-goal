@@ -70,24 +70,30 @@ interface RunState {
   goalSpec: GoalSpec;
   currentState: WorldState;
   pool: Action[];
-  /** Completions per actionId, COUNTED not boolean: the planner may legitimately re-emit the same
-   *  pool action at more than one plan step (e.g. an intervening step undoes its effect), so a
-   *  Set<actionId> would mark every later occurrence "done" after the first pass. `nextStep` walks
-   *  `plan.steps` matching each step's ORDINAL occurrence of its actionId against this count, so a
-   *  later repeat of an already-passed action is still dispatched (PR #8 review P2).
+  /**
+   * Index into the CURRENTLY ACTIVE `plan.steps` of the next step to dispatch (PR #8/#9 review — 5
+   * threads on `RunState.completed` cross-plan staleness, resolved by replacing that run-scoped
+   * counter with this plan-local cursor). Advances by exactly 1 on every real PASS; walking the
+   * active plan's array in strict order handles a pool action legitimately re-emitted at more than
+   * one step WITHIN one plan (e.g. an intervening step undoes its effect — non-monotonic plans like
+   * [A, C, B, A] are valid optimal plans) with no ambiguity, because dispatch order never branches.
    *
-   *  KNOWN LIMITATION (PR #9 review, chatgpt-codex-connector): these counts accumulate over the whole
-   *  run, not scoped to the currently active plan. A forced replan whose new plan re-requires an
-   *  action whose prior completion was invalidated by an intervening ground-truth change (e.g. a later
-   *  step's successPredicate cleared what an earlier plan's pass had established) can be skipped as
-   *  already-done. An attempted fix that reset this map whenever `nextStep` saw a different `plan.id`
-   *  was reverted here after it regressed the "livelock guard (forced-replan streak)" test: the reset
-   *  fired on the very first forced replan (a content-hash-scoped `plan.id` changes whenever
-   *  `currentState` advances, which happens on every real dispatch, not just on the invalidation case
-   *  this was meant to catch), causing an already-passed action to be redispatched. A correct fix needs
-   *  to distinguish "this plan is new because ground truth invalidated a completion" from "this plan is
-   *  new because currentState legitimately advanced" — left open pending a proper design decision. */
-  completed: Map<string, number>;
+   * The only place cross-plan reconciliation is needed is at INSTALL time: every site that installs
+   * a brand-new `plan` object (initial obtainPlan, forcedReplan, replanLadder, reextract) recomputes
+   * this cursor via `firstUndonePosition`, which fast-forwards past a LEADING run of steps whose
+   * action's established effect (`successPredicate ?? effects`) already holds in ground-truth
+   * `currentState` — so a freshly (re)planned action already reflected in ground truth is not
+   * redundantly redispatched, while one a later step invalidated (cleared/changed) IS dispatched
+   * again, because ground truth no longer matches what it left.
+   *
+   * This must NOT be done by invalidating/decrementing counts per-pass instead: an earlier attempt
+   * along those lines broke non-monotonic plans with 3+ occurrences of a repeated actionId (e.g.
+   * [P, Q, P, R] where Q's own effect gets invalidated by the second P) by making an EARLIER,
+   * already-dispatched step look "undone" again — the walk would jump backward to Q instead of
+   * forward to R. Scanning strictly forward via one index, fast-forwarded only at install time,
+   * avoids that: a position once passed is never re-examined mid-plan.
+   */
+  planCursor: number;
   /** Action ids the operator has confirmed (initial DoD + every re-confirm). A replan that surfaces
    *  an id NOT in here must be re-confirmed before its verify.command runs (PR #8 review P1). */
   confirmed: Set<string>;
@@ -176,7 +182,7 @@ export class Orchestrator {
       goalSpec,
       currentState: { ...goalSpec.initialState },
       pool: sanitized.valid,
-      completed: new Map(),
+      planCursor: 0,
       confirmed: new Set(),
       replans: 0,
       replanStreak: 0,
@@ -307,7 +313,7 @@ export class Orchestrator {
         return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded post-action`);
       }
       if (result.kind === 'passed') {
-        state.completed.set(action.id, (state.completed.get(action.id) ?? 0) + 1);
+        state.planCursor++;
         const update = passUpdate(action);
         state.currentState = mergeState(state.currentState, update);
         this.recordOutcome(state, action.id, 'succeeded', result.attempts, result.costUsd);
@@ -421,7 +427,10 @@ export class Orchestrator {
       this.emit({ ev: 'plan.threw', message: r.error.message });
       return this.reextract(state, withValidation(evidence, r.error));
     }
-    if (r.plan !== null) return { kind: 'plan', plan: r.plan };
+    if (r.plan !== null) {
+      state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
+      return { kind: 'plan', plan: r.plan };
+    }
     return this.reextract(state, evidence);
   }
 
@@ -447,7 +456,8 @@ export class Orchestrator {
       this.emit({ ev: 'plan.threw', message: r.error.message });
       return this.reextract(state, withValidation(evidence, r.error));
     }
-    if (r.plan === null || this.nextStep(r.plan, state) === undefined) {
+    const cursor = r.plan !== null ? firstUndonePosition(r.plan, state.currentState, state.pool) : 0;
+    if (r.plan === null || cursor >= r.plan.steps.length) {
       // A no-plan (or a plan with no dispatchable next step) is, like the streak-exhaustion branch
       // above and the rest of the ladder (obtainPlan / replanLadder), a trigger to escalate to bounded
       // re-extraction — NOT an immediate terminal failure. The existing pool may simply be missing an
@@ -456,6 +466,7 @@ export class Orchestrator {
       return this.reextract(state, { ...evidence, verifyStderr: failReason });
     }
     state.replanStreak++;
+    state.planCursor = cursor;
     this.emit({ ev: 'replanned', forced: true, replanStreak: state.replanStreak });
     return { kind: 'plan', plan: r.plan };
   }
@@ -483,6 +494,7 @@ export class Orchestrator {
       }
       if (r.plan !== null) {
         state.replans++;
+        state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
         this.emit({ ev: 'replanned', replans: state.replans });
         return { kind: 'plan', plan: r.plan };
       }
@@ -519,6 +531,12 @@ export class Orchestrator {
       const detail = (e as { detail?: Record<string, unknown> }).detail;
       const failedCostUsd = detail !== undefined && typeof detail.costUsd === 'number' ? detail.costUsd : 0;
       state.accumulatedCostUsd += failedCostUsd;
+      // Item 6 (PR #8 review, chatgpt-codex-connector): mirror the initial-extraction catch above — an
+      // abort during expand() must surface as 'cancelled', not 'failed', so an operator kill during
+      // recovery re-extraction is reported the same way as every other abort path.
+      if (this.signal.aborted) {
+        return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'aborted during re-extraction') };
+      }
       return { kind: 'terminal', summary: this.summary(state, 'failed', `expand failed: ${(e as Error).message}`) };
     }
     // PR #8 review P2: account the spend immediately and stop if this expansion pushed the run over the
@@ -585,31 +603,16 @@ export class Orchestrator {
     // a re-extracted plan whose first step is still stale would inherit the exhausted counter and
     // re-escalate immediately, burning the next re-extraction slot with no breathing room.
     state.replanStreak = 0;
+    state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
     this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions });
     return { kind: 'plan', plan: r.plan };
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * First not-yet-done step, tracked by ORDINAL OCCURRENCE per actionId rather than a single
-   * actionId flag: the planner may legitimately re-emit the same pool action at more than one plan
-   * step (e.g. an intervening step undoes its effect — non-monotonic plans like
-   * [set-x, set-y-and-clear-x, set-x] are valid optimal plans). Walk `plan.steps` in order counting
-   * how many times each actionId has been SEEN so far in this walk; the first step whose seen-count
-   * (before incrementing) is not yet covered by `state.completed`'s count for that actionId is the
-   * next one to dispatch (PR #8 review P2). See the KNOWN LIMITATION note on `RunState.completed`
-   * regarding run-scoped (not plan-scoped) counts.
-   */
+  /** The next not-yet-dispatched step of the CURRENTLY ACTIVE plan — see `RunState.planCursor`. */
   private nextStep(plan: Plan, state: RunState): PlanStep | undefined {
-    const seenSoFar = new Map<string, number>();
-    for (const s of plan.steps) {
-      const occurrence = seenSoFar.get(s.actionId) ?? 0;
-      seenSoFar.set(s.actionId, occurrence + 1);
-      const doneCount = state.completed.get(s.actionId) ?? 0;
-      if (occurrence >= doneCount) return s;
-    }
-    return undefined;
+    return plan.steps[state.planCursor];
   }
 
   private buildDod(state: RunState, plan: Plan): DodInfo {
@@ -687,6 +690,36 @@ function mergeState(state: WorldState, update: Partial<WorldState>): WorldState 
     if (v !== undefined) next[k] = v;
   }
   return next;
+}
+
+/**
+ * Cross-plan reconciliation for a freshly (re)computed plan (PR #8/#9 review — resolves the 5
+ * threads on `RunState.completed`'s run-scoped staleness). Fast-forwards past a LEADING run of
+ * `plan.steps` whose action's established effect (`successPredicate ?? effects`) already holds in
+ * ground-truth `currentState` — the planner, unaware of ground truth, may re-propose an action whose
+ * real (narrower) contribution is already reflected, and redispatching it would be redundant. Stops
+ * at the first step whose establishment does NOT hold, which is either a step never yet dispatched or
+ * one a later action's real update since invalidated (cleared/changed) — either way it must run.
+ * Returns `plan.steps.length` if every step's establishment already holds (no dispatchable step).
+ *
+ * An action with an EMPTY establishment (no successPredicate and empty `effects`) is never skipped:
+ * `satisfies(state, {})` is vacuously true, which would otherwise fast-forward past a step that has
+ * never actually run. The planner's search currently can't select such a no-op action into any plan
+ * (applying empty effects reaches the same, already-`closed` state key, so it's pruned — see
+ * `plan()`'s inner loop), but the schema/`validateIntake` don't forbid `effects: {}` at the type
+ * level, so this guard is cheap insurance against that planner invariant changing later.
+ */
+function firstUndonePosition(plan: Plan, currentState: WorldState, pool: Action[]): number {
+  const byId = new Map(pool.map((a) => [a.id, a]));
+  let i = 0;
+  for (; i < plan.steps.length; i++) {
+    const step = plan.steps[i];
+    const action = step ? byId.get(step.actionId) : undefined;
+    if (!action) break;
+    const established = passUpdate(action);
+    if (Object.keys(established).length === 0 || !satisfies(currentState, established)) break;
+  }
+  return i;
 }
 
 function buildEvidence(action: Action, agentRun: { stderr?: string; diffRef?: string }, v?: { exitCode: number; stdout: string; stderr: string }): FailureEvidence {
