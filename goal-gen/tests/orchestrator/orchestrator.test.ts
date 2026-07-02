@@ -12,7 +12,7 @@ import type { StubAgentOutcome } from '../../backend/src/executors/stub-executor
 import { StubExtractor } from '../../backend/src/extractors/stub-extractor';
 import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
 import { Orchestrator } from '../../backend/src/orchestrator/orchestrator';
-import type { DodConfirmer, WorktreeProvider } from '../../backend/src/orchestrator/orchestrator';
+import type { DodConfirmer, PersistenceProvider, WorktreeProvider } from '../../backend/src/orchestrator/orchestrator';
 import type { Action, GoalSpec, WorldState } from '../../backend/src/planner/types';
 import type { RunConfig, VerifyResult } from '../../backend/src/types';
 
@@ -40,6 +40,10 @@ interface Harness {
   confirm?: boolean | DodConfirmer;
   config?: Partial<RunConfig>;
   extractError?: Error;
+  /** Optional injectable persistence dependency (mirrors executor/verifier/confirm) — omitted by
+   *  default, so existing tests are unaffected; new tests can inject a fake to assert on
+   *  persisted rows (plan Step 9). */
+  persistence?: PersistenceProvider;
 }
 
 function build(h: Harness) {
@@ -62,8 +66,36 @@ function build(h: Harness) {
     confirm,
     worktreeProvider: stubWorktree,
     onEvent: (e) => events.push(e),
+    ...(h.persistence ? { persistence: h.persistence } : {}),
   });
   return { orch, extractor, executor, verifier, events };
+}
+
+/** An in-memory `PersistenceProvider` double — records every upserted `Plan` and inserted
+ *  `AgentRun`/run so tests can assert on persisted rows without a real database. */
+function fakePersistence(): PersistenceProvider & {
+  plans: Array<{ id: string; goalSpecId: string; replanOf?: string }>;
+  runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }>;
+  agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }>;
+} {
+  const plans: Array<{ id: string; goalSpecId: string; replanOf?: string }> = [];
+  const runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }> = [];
+  const agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }> = [];
+  return {
+    plans,
+    runs,
+    agentRuns,
+    upsertPlan: async (plan) => {
+      if (plans.some((p) => p.id === plan.id)) return; // mirrors ON CONFLICT DO NOTHING
+      plans.push({ id: plan.id, goalSpecId: plan.goalSpecId, ...(plan.replanOf ? { replanOf: plan.replanOf } : {}) });
+    },
+    insertRun: async (run) => {
+      runs.push(run);
+    },
+    insertAgentRun: async (agentRun) => {
+      agentRuns.push({ id: agentRun.id, planId: agentRun.planId, stepId: agentRun.stepId, actionId: agentRun.actionId });
+    },
+  };
 }
 
 const TWO_STEP: GoalSpec = {
@@ -74,6 +106,51 @@ const TWO_STEP: GoalSpec = {
   completionPolicy: 'verify-only',
   actions: [action('s1', { a: false }, { a: true }, 'verify-a'), action('s2', { a: true }, { b: true }, 'verify-b')],
 };
+
+describe('orchestrator — persistence seam (plan Step 9)', () => {
+  it('upserts the plan once and inserts one run + one agent_run per dispatched step, with deterministic unique stepIds', async () => {
+    const persistence = fakePersistence();
+    const { orch } = build({ goalSpec: TWO_STEP, persistence });
+    const summary = await orch.run({ goalText: TWO_STEP.goalText }, 'test-run-id');
+    expect(summary.status).toBe('succeeded');
+
+    expect(persistence.plans).toHaveLength(1); // single initial plan, no replan/reextraction
+    const planId = persistence.plans[0]?.id;
+    expect(planId).toBeTruthy();
+
+    expect(persistence.runs).toHaveLength(1);
+    expect(persistence.runs[0]).toMatchObject({ id: 'test-run-id', planId, status: 'running' });
+
+    expect(persistence.agentRuns).toHaveLength(2);
+    expect(persistence.agentRuns.map((r) => r.actionId)).toEqual(['s1', 's2']);
+    expect(persistence.agentRuns.every((r) => r.planId === planId)).toBe(true);
+    const stepIds = persistence.agentRuns.map((r) => r.stepId);
+    expect(new Set(stepIds).size).toBe(2); // unique per dispatched step
+    expect(stepIds.every((id) => id.length > 0)).toBe(true);
+  });
+
+  it('does not persist anything when no persistence dependency is injected (existing behavior unaffected)', async () => {
+    const { orch } = build({ goalSpec: TWO_STEP });
+    const summary = await orch.run({ goalText: TWO_STEP.goalText });
+    expect(summary.status).toBe('succeeded'); // no throw from the default no-op persistence
+  });
+});
+
+describe('orchestrator — runId minting (plan Step 7)', () => {
+  it('mints a fresh runId per run() call on a REUSED instance, never colliding (the fixed constructor-time bug)', async () => {
+    const { orch, executor } = build({ goalSpec: TWO_STEP });
+    await orch.run({ goalText: TWO_STEP.goalText }); // no runId passed -> defaults to crypto.randomUUID()
+    await orch.run({ goalText: TWO_STEP.goalText }); // same instance, second call
+    const runIds = new Set(executor.runs.map((r) => r.runId));
+    expect(runIds.size).toBe(2); // one distinct runId per call, not shared across the reused instance
+  });
+
+  it('uses the injected runId when supplied (R3/R4: API mints and injects per invocation)', async () => {
+    const { orch, executor } = build({ goalSpec: TWO_STEP });
+    await orch.run({ goalText: TWO_STEP.goalText }, 'api-minted-uuid');
+    expect(executor.runs.every((r) => r.runId === 'api-minted-uuid')).toBe(true);
+  });
+});
 
 describe('orchestrator — happy path', () => {
   it('extracts, plans, confirms, executes serially, and terminates succeeded', async () => {

@@ -33,12 +33,15 @@ export type AgentRunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
  * (CLAUDE.md invariant #2). `diffRef` is set by the activity oracle when the worktree changed; it
  * is explicitly NOT a pass/fail signal (that is the verify oracle's job alone).
  *
- * `planId` is an orchestration concern the executor cannot know (RunContext has no plan id); the
- * executor emits `''` and the orchestrator stamps the real plan id when it records the run.
+ * `planId` and `stepId` are orchestration concerns the executor cannot know (RunContext carries
+ * neither); the executor emits `''` for `planId` and the orchestrator stamps the real plan id and
+ * the deterministic `stepId` (`db/repository.ts`'s `stepId()`, `planId` + the dispatched step's
+ * sequence index — R2) when it records the run.
  */
 export interface AgentRun {
   id: string;
   planId: string;
+  stepId: string;
   actionId: string;
   executor: ExecutorKind;
   startedAt: string;
@@ -48,6 +51,10 @@ export interface AgentRun {
   stderr?: string;
   exitCode?: number;
   diffRef?: string;
+  /** Full patch text captured before worktree teardown (R6) — distinct from `diffRef`, which is
+   *  only a pointer (`commit:<sha>` / `dirty:<count>`). `undefined` when nothing changed or the
+   *  capture itself failed (fail-open — mirrors the activity oracle's `diffRef` contract). */
+  diffContent?: string;
   tokens?: number;
   costUsd?: number;
 }

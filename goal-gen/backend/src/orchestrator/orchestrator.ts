@@ -15,13 +15,17 @@
  *  - Mandatory guardrails with a terminal state each: budget, replans, re-extractions, per-action
  *    retries, per-action timeout (in the executor). `failures` is retained for loop-detection (M2).
  */
+import { randomUUID } from 'node:crypto';
 import { plan as runPlanner } from '../planner/plan';
 import { satisfies } from '../planner/simulate';
 import { createWorktree } from '../executors/worktree';
 import type { WorktreeHandle, CreateWorktreeOptions } from '../executors/worktree';
+import { captureDiff } from '../executors/diff-capture';
+import { stepId } from '../db/repository';
 import type { Action, CompletionPolicy, GoalSpec, Plan, PlanStep, WorldState } from '../planner/types';
 import type {
   ActionOutcome,
+  AgentRun,
   Executor,
   ExtractRequest,
   FailureEvidence,
@@ -52,6 +56,26 @@ export type DodConfirmer = (dod: DodInfo, signal: AbortSignal) => Promise<boolea
 /** Provides a fresh per-action worktree. Production = `createWorktree`; tests inject a stub. */
 export type WorktreeProvider = (opts: CreateWorktreeOptions) => Promise<WorktreeHandle>;
 
+/**
+ * Optional persistence seam (R1-R6): when injected, the orchestrator upserts each newly installed
+ * `Plan` (+ its `plan_steps`, R2) and every completed `AgentRun`. Production wires this to
+ * `db/repository.ts`; tests inject a fake so new tests can assert on persisted rows while existing
+ * tests (which never pass `persistence`) are entirely unaffected — see `noopPersistence` below.
+ */
+export interface PersistenceProvider {
+  upsertPlan(plan: Plan): Promise<void>;
+  insertRun(run: { id: string; planId: string; status: 'running'; startedAt: string }): Promise<void>;
+  insertAgentRun(agentRun: AgentRun): Promise<void>;
+}
+
+/** Default no-op persistence — existing CLI/test usage that never injects `persistence` sees zero
+ *  behavior change (Harness extension in `orchestrator.test.ts` is additive, per plan Step 9). */
+const noopPersistence: PersistenceProvider = {
+  upsertPlan: async () => {},
+  insertRun: async () => {},
+  insertAgentRun: async () => {},
+};
+
 export interface OrchestratorDeps {
   extractor: LlmExtractor;
   executor: Executor;
@@ -62,6 +86,8 @@ export interface OrchestratorDeps {
   onEvent?: (event: Record<string, unknown>) => void;
   /** Cancellation: propagated to the executor; default never aborts. */
   signal?: AbortSignal;
+  /** Optional persistence seam (R1-R6); defaults to a no-op. */
+  persistence?: PersistenceProvider;
 }
 
 /** Mutable per-run state — local to one `run()` so the orchestrator instance is reusable. */
@@ -127,7 +153,7 @@ export class Orchestrator {
   private readonly worktreeProvider: WorktreeProvider;
   private readonly emit: (event: Record<string, unknown>) => void;
   private readonly signal: AbortSignal;
-  private runCounter = 0;
+  private readonly persistence: PersistenceProvider;
 
   constructor(deps: OrchestratorDeps) {
     this.extractor = deps.extractor;
@@ -138,10 +164,19 @@ export class Orchestrator {
     this.worktreeProvider = deps.worktreeProvider ?? createWorktree;
     this.emit = deps.onEvent ?? (() => {});
     this.signal = deps.signal ?? new AbortController().signal;
+    this.persistence = deps.persistence ?? noopPersistence;
   }
 
-  /** Run the full loop for one goal and return its terminal summary. Never throws. */
-  async run(req: ExtractRequest): Promise<RunSummary> {
+  /**
+   * Run the full loop for one goal and return its terminal summary. Never throws.
+   *
+   * `runId` is minted per CALL (R3), not per-instance: `RunState`'s doc comment states this
+   * orchestrator instance is reusable across successive `run()` calls, so a constructor-time
+   * runId would collide on worktree branch names (`${runId}-${safeId}-${attempts}`) across two
+   * calls on the same instance. The future API layer passes its minted UUID here (R4); CLI/tests
+   * that omit it get a fresh `crypto.randomUUID()` per call, preserving current behavior.
+   */
+  async run(req: ExtractRequest, runId?: string): Promise<RunSummary> {
     // --- EXTRACT ---
     let goalSpec: GoalSpec;
     let extractCostUsd = 0;
@@ -190,7 +225,7 @@ export class Orchestrator {
       accumulatedCostUsd: extractCostUsd,
       failures: new Map(),
       outcomes: new Map(),
-      runId: `run-${++this.runCounter}`,
+      runId: runId ?? randomUUID(),
     };
     this.emit({
       ev: 'extract.done',
@@ -206,6 +241,8 @@ export class Orchestrator {
       if (obtained.kind === 'terminal') return obtained.summary;
       plan = obtained.plan;
     }
+    // `runs.planId` is the INITIATING plan (spec Data Model) — only mintable once the first plan exists.
+    await this.persistRun(state, plan);
 
     // --- CONFIRM DoD ---
     const confirmed = await this.confirm(this.buildDod(state, plan), this.signal);
@@ -367,6 +404,14 @@ export class Orchestrator {
         };
         const agentRun = await this.executor.run(action, ctx);
         agentRun.planId = planId; // the executor cannot know the plan id; stamp it (spec: AgentRun.planId)
+        // Deterministic stepId (planId + the dispatched step's sequence index) — same derivation
+        // `repository.ts`'s upsertPlan() used to mint the corresponding `plan_steps` row (R2).
+        agentRun.stepId = stepId(planId, state.planCursor);
+        // R6: capture the full diff BEFORE handle.cleanup() (finally block below) destroys the
+        // git objects. Diffs against the worktree's stored baseline, not bare HEAD, so this is
+        // correct even when the agent ran `git commit` (activityOracle's `headMoved` case).
+        const diffContent = captureDiff(handle.worktreePath, handle.initialSha);
+        if (diffContent !== undefined) agentRun.diffContent = diffContent;
         const spent = agentRun.costUsd ?? 0;
         stepCost += spent;
         state.accumulatedCostUsd += spent;
@@ -378,6 +423,7 @@ export class Orchestrator {
           costUsd: spent,
           diffRef: agentRun.diffRef ?? null,
         });
+        await this.persistAgentRun(agentRun);
 
         const cmd = action.verify.command;
         if (cmd && cmd.trim().length > 0) {
@@ -429,7 +475,7 @@ export class Orchestrator {
     }
     if (r.plan !== null) {
       state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
-      return { kind: 'plan', plan: r.plan };
+      return this.planResult(r.plan);
     }
     return this.reextract(state, evidence);
   }
@@ -468,7 +514,7 @@ export class Orchestrator {
     state.replanStreak++;
     state.planCursor = cursor;
     this.emit({ ev: 'replanned', forced: true, replanStreak: state.replanStreak });
-    return { kind: 'plan', plan: r.plan };
+    return this.planResult(r.plan);
   }
 
   /**
@@ -496,7 +542,7 @@ export class Orchestrator {
         state.replans++;
         state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
         this.emit({ ev: 'replanned', replans: state.replans });
-        return { kind: 'plan', plan: r.plan };
+        return this.planResult(r.plan);
       }
     }
     return this.reextract(state, evidence);
@@ -605,7 +651,45 @@ export class Orchestrator {
     state.replanStreak = 0;
     state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
     this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions });
-    return { kind: 'plan', plan: r.plan };
+    return this.planResult(r.plan);
+  }
+
+  // ── Persistence (R1-R6; best-effort — never aborts a run) ──────────────────────────────────────
+
+  /** Wraps a freshly obtained `Plan` as a `PlanOutcome`, upserting it (+ its `plan_steps`, R2)
+   *  first — the single choke point all 4 Plan-install sites route through. */
+  private async planResult(plan: Plan): Promise<PlanOutcome> {
+    await this.persistPlan(plan);
+    return { kind: 'plan', plan };
+  }
+
+  private async persistPlan(plan: Plan): Promise<void> {
+    try {
+      await this.persistence.upsertPlan(plan);
+    } catch (e) {
+      this.emit({ ev: 'persistence.error', op: 'upsertPlan', message: (e as Error).message });
+    }
+  }
+
+  private async persistRun(state: RunState, plan: Plan): Promise<void> {
+    try {
+      await this.persistence.insertRun({
+        id: state.runId,
+        planId: plan.id,
+        status: 'running',
+        startedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      this.emit({ ev: 'persistence.error', op: 'insertRun', message: (e as Error).message });
+    }
+  }
+
+  private async persistAgentRun(agentRun: AgentRun): Promise<void> {
+    try {
+      await this.persistence.insertAgentRun(agentRun);
+    } catch (e) {
+      this.emit({ ev: 'persistence.error', op: 'insertAgentRun', message: (e as Error).message });
+    }
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
