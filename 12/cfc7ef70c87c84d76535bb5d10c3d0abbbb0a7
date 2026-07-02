@@ -1,0 +1,101 @@
+goal-gen/plans/m1-backend-api-persistence-controls-01-persistence-foundation.md
+  s_c72830ee26f199::t_b19691e2f1062c 153-170
+  s_ddf8870feee231::t_d1c116712ed428 1-75,77-80,82-83,85-86,88-95,110-112,127-130,146-152,172-179,208-211,213-215,247-261,281-305
+  s_c72830ee26f199::t_f094c5b6c9e6eb 262-280
+  s_c72830ee26f199::t_d69cb5f370bedb 131-144
+  s_c72830ee26f199::t_a61907ee3a4201 96-108,113-125
+  s_c72830ee26f199::t_fae5e14c2e05dc 76,81,84,87,109,126,145,171,207,212,246
+  s_c72830ee26f199::t_c490964a003635 180-206
+  s_c72830ee26f199::t_ccd2b9ff14d284 216-245
+goal-gen/backend/src/db/migrations/meta/_journal.json
+  s_c72830ee26f199::t_9f15e6681526dd 8-9
+  s_c72830ee26f199::t_966d30dd7992e8 1-7,11-13
+  s_c72830ee26f199::t_9b3eddbd9771e1 10
+goal-gen/backend/src/db/client.ts
+  s_c72830ee26f199::t_d3eb34b9899532 1-18
+goal-gen/backend/src/executors/diff-capture.ts
+  s_c72830ee26f199::t_e6c50c5fe5b417 27-30
+  s_c72830ee26f199::t_ed0a8d6b78c623 1-26,31-33
+goal-gen/package.json
+  s_c72830ee26f199::t_99f044e97d5689 13-19,22,25-26
+goal-gen/tests/db/schema.test.ts
+  s_c72830ee26f199::t_60d9c1f90de492 55,87
+  s_c72830ee26f199::t_574b31bad6fe47 1-54,56-86,88-91
+goal-gen/backend/src/db/migrations/meta/0000_snapshot.json
+  s_c72830ee26f199::t_966d30dd7992e8 1,3-468,470-559
+  s_c72830ee26f199::t_9f15e6681526dd 2,469
+goal-gen/backend/src/db/schema.ts
+  s_c72830ee26f199::t_b84138b34688ce 1-62,66-82,85-90,92-116
+  s_c72830ee26f199::t_565089b7efdbad 63-65
+  s_c72830ee26f199::t_0bd74920fc1207 83-84,91
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_c72830ee26f199::t_5083de4574b777 307
+goal-gen/tests/orchestrator/orchestrator.test.ts
+  s_c72830ee26f199::t_d37acb0ed7a843 110-138
+  s_c72830ee26f199::t_0879086b6f3e77 139-154
+  s_c72830ee26f199::t_4e02394c9b28f0 43-46,69,74-75,77-98
+  s_c72830ee26f199::t_ce2283801c2d32 76
+  s_c72830ee26f199::t_99607a1d85f936 15
+  s_c72830ee26f199::t_7ecdb9ab4428de 99-100
+goal-gen/backend/src/types.ts
+  s_c72830ee26f199::t_53937224572d46 36-39,44,54-57
+goal-gen/backend/src/executors/worktree.ts
+  s_c72830ee26f199::t_a4bd6dc66527bc 30-33
+  s_c72830ee26f199::t_47b65ba98f7623 45-51
+goal-gen/drizzle.config.ts
+  s_c72830ee26f199::t_be77a27711572f 1-10
+goal-gen/tests/db/repository.test.ts
+  s_c72830ee26f199::t_330f4a1fb3b9f8 83
+  s_c72830ee26f199::t_9a44e96eff00bc 1-82,84-96
+goal-gen/backend/src/db/migrations/0000_medical_madripoor.sql
+  s_c72830ee26f199::t_9f15e6681526dd 1-77
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_c72830ee26f199::t_57f93b06e714e5 59-78,89-90
+  s_c72830ee26f199::t_44e74cc0e40aba 228
+  s_c72830ee26f199::t_8dc9745a6ec272 655,657-692
+  s_c72830ee26f199::t_113bf83cbd5e10 654
+  s_c72830ee26f199::t_c3b65ae568e39c 545
+  s_c72830ee26f199::t_b165bb4b93e9ad 18,23-24,28
+  s_c72830ee26f199::t_07c9b3e49e6ab1 156,167,170-179
+  s_c72830ee26f199::t_54f87455db9577 407-414,426
+  s_c72830ee26f199::t_65a5aa19f7f56e 517
+  s_c72830ee26f199::t_ed7c0c2d0e7ff2 478
+  s_c72830ee26f199::t_33b223aaec9fc8 244-245
+  s_c72830ee26f199::t_284c42da066800 656
+goal-gen/.env.example
+  s_c72830ee26f199::t_365bff9f554921 6-9
+goal-gen/backend/src/db/repository.ts
+  s_c72830ee26f199::t_ca75c569ace764 13
+  s_c72830ee26f199::t_3d092843f62834 1-12,14-76
+goal-gen/tests/db/pglite-setup.ts
+  s_c72830ee26f199::t_f94b943a5f777e 1-9,11-15,21-23
+  s_c72830ee26f199::t_c66daa546ca0dc 10,16-20
+goal-gen/backend/src/executors/stub-executor.ts
+  s_c72830ee26f199::t_a30efe159bf417 67
+goal-gen/package-lock.json
+  s_c72830ee26f199::t_d9255332ed8c24 10-13,15,18-19,28-41,76-80,83-85,88-91,102,105-108,119,122-125,136,139-142,153,156-159,170,173-176,187,190-193,204,207-210,221,224-227,238,241-244,255,258-261,272,275-278,289,292-295,306,309-312,323,326-329,340,343-346,357,360-363,365,374,377-380,388,391,394-414,422,425,428-448,456,459,462-512,514-515,517,523,529,531-532,534,540,546,548-549,557,563,565-566,568,574,580,582-583,585,591,597-603,607-611,614-617,625,628,631-634,636,642,645,648-651,653,659,662,665-668,670,676,679,682-685,687,696,699-702,704,713,716-719,721,730,733-736,747,750-753,755,764,767-770,772,781,784-787,798,801-804,812,815,818-821,823,828-830,832,835-838,846,849,852-855,863,866,869-875,879-883,886-892,895-900,903-909,911-918,920-926,928-935,937-957,961-964,967,969-977,980-983,987,990-996,999-1004,1007-1013,1016-1021,1024-1030,1033-1038,1041-1047,1050-1055,1058-1852,1855-1860,1863-1869,1872-1877,1880-1886,1888-1895,1897-1903,1906-1909,1911,1914-1920,1923-1926,1931-1937,1939-1946,1948-1951,1953-1957,1959-2112,2240-2252,2587-2675,2725-2763,2781-2790,2832-2841,2852-2871,2975,3163-3171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "12cfc7ef70c87c84d76535bb5d10c3d0abbbb0a7",
+  "prompts": {},
+  "sessions": {
+    "s_c72830ee26f199": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "62f8ebd1-deda-4c67-a506-28c8483a5fdd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_ddf8870feee231": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2eeda143-76db-4221-a8ad-75983f3f1052",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
