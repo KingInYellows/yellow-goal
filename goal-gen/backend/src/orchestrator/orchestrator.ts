@@ -38,6 +38,7 @@ import type {
   Verifier,
 } from '../types';
 import { defaultRunConfig } from './guardrails';
+import { AsyncLatch } from './async-gate';
 
 /** The definition of done shown to the operator at the confirm gate (plan task 4.2). */
 export interface DodInfo {
@@ -50,8 +51,16 @@ export interface DodInfo {
 
 /** Operator confirmation of the DoD. Production reads stdin; tests inject a deterministic answer.
  *  `signal` is the run's AbortSignal (SIGINT/SIGTERM) — a confirmer waiting on input (e.g. stdin)
- *  must race against it so kill control stops promptly at confirmation prompts too (PR #10 review P2). */
-export type DodConfirmer = (dod: DodInfo, signal: AbortSignal) => Promise<boolean>;
+ *  must race against it so kill control stops promptly at confirmation prompts too (PR #10 review P2).
+ *  `kind` distinguishes the initial DoD confirm from an automatic mid-run re-confirm (R24) — for
+ *  observability only; both resolve via the same `POST /runs/:id/step {decision}` endpoint, so no
+ *  confirmer implementation needs to branch its behavior on it. */
+export type DodConfirmer = (dod: DodInfo, signal: AbortSignal, kind: 'dod' | 'reconfirm') => Promise<boolean>;
+
+/** Sign-off gate replacing the old synchronous confirm()-reuse (R30) — a distinct decision shape
+ *  ('accept' | 'reject', not boolean) resolved via `POST /runs/:id/accept`, not `/step`. Production
+ *  reads stdin (mirroring `stdinConfirm`); tests inject a deterministic answer. */
+export type AcceptanceGate = (dod: DodInfo, signal: AbortSignal) => Promise<'accept' | 'reject'>;
 
 /** Provides a fresh per-action worktree. Production = `createWorktree`; tests inject a stub. */
 export type WorktreeProvider = (opts: CreateWorktreeOptions) => Promise<WorktreeHandle>;
@@ -67,6 +76,12 @@ export interface PersistenceProvider {
   upsertPlan(plan: Plan): Promise<void>;
   insertRun(run: { id: string; planId: string; status: 'running'; startedAt: string }): Promise<void>;
   insertAgentRun(agentRun: AgentRun, runId: string): Promise<void>;
+  /** Transition an existing run's status (R29/R30) — e.g. into `'awaiting-acceptance'`. */
+  updateRunStatus(runId: string, status: RunStatus): Promise<void>;
+  /** Durable event-log write (R5); this shell wires only the `AwaitingAcceptance` transition
+   *  (R31, synchronous on the gate-entry path) — every other event type's write is shell 03's
+   *  async `onEvent` queue (R19). */
+  insertRunEvent(event: { runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }): Promise<void>;
 }
 
 /** Default no-op persistence — existing CLI/test usage that never injects `persistence` sees zero
@@ -76,6 +91,8 @@ const noopPersistence: PersistenceProvider = {
   upsertPlan: async () => {},
   insertRun: async () => {},
   insertAgentRun: async () => {},
+  updateRunStatus: async () => {},
+  insertRunEvent: async () => {},
 };
 
 export interface OrchestratorDeps {
@@ -84,12 +101,17 @@ export interface OrchestratorDeps {
   verifier: Verifier;
   config?: RunConfig;
   confirm?: DodConfirmer;
+  /** Sign-off gate (R30); defaults to a stdin-based prompt (`stdinAcceptanceGate`). */
+  acceptanceGate?: AcceptanceGate;
   worktreeProvider?: WorktreeProvider;
   onEvent?: (event: Record<string, unknown>) => void;
   /** Cancellation: propagated to the executor; default never aborts. */
   signal?: AbortSignal;
   /** Optional persistence seam (R1-R6); defaults to a no-op. */
   persistence?: PersistenceProvider;
+  /** Pause/resume latch (R26/R27), checked at the top of the run loop; defaults to a fresh,
+   *  never-paused instance (no behavior change unless a caller — `RunSession` — calls `.pause()`). */
+  pauseLatch?: AsyncLatch;
 }
 
 /** Mutable per-run state — local to one `run()` so the orchestrator instance is reusable. */
@@ -152,10 +174,12 @@ export class Orchestrator {
   private readonly verifier: Verifier;
   private readonly config: RunConfig;
   private readonly confirm: DodConfirmer;
+  private readonly acceptanceGate: AcceptanceGate;
   private readonly worktreeProvider: WorktreeProvider;
   private readonly emit: (event: Record<string, unknown>) => void;
   private readonly signal: AbortSignal;
   private readonly persistence: PersistenceProvider;
+  private readonly pauseLatch: AsyncLatch;
 
   constructor(deps: OrchestratorDeps) {
     this.extractor = deps.extractor;
@@ -163,10 +187,12 @@ export class Orchestrator {
     this.verifier = deps.verifier;
     this.config = deps.config ?? defaultRunConfig();
     this.confirm = deps.confirm ?? stdinConfirm;
+    this.acceptanceGate = deps.acceptanceGate ?? stdinAcceptanceGate;
     this.worktreeProvider = deps.worktreeProvider ?? createWorktree;
     this.emit = deps.onEvent ?? (() => {});
     this.signal = deps.signal ?? new AbortController().signal;
     this.persistence = deps.persistence ?? noopPersistence;
+    this.pauseLatch = deps.pauseLatch ?? new AsyncLatch();
   }
 
   /**
@@ -247,7 +273,7 @@ export class Orchestrator {
     await this.persistRun(state, plan);
 
     // --- CONFIRM DoD ---
-    const confirmed = await this.confirm(this.buildDod(state, plan), this.signal);
+    const confirmed = await this.confirm(this.buildDod(state, plan), this.signal, 'dod');
     if (!confirmed) {
       this.emit({ ev: 'dod.cancelled' });
       return this.summary(state, 'cancelled', 'cancelled at DoD confirmation');
@@ -260,6 +286,12 @@ export class Orchestrator {
       // Item 3: check AbortSignal at the top of every iteration so SIGINT/abort stops promptly.
       if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted');
 
+      // R26: pause takes effect before the NEXT step dispatch, never preempting an in-flight step.
+      // `whenResumed` never rejects, so re-check the signal (it may have fired while paused) rather
+      // than assuming resolution means "resumed".
+      await this.pauseLatch.whenResumed(this.signal);
+      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted');
+
       // PR #8 review P2: check the budget cap before the satisfies() branch below. Extraction cost is
       // accumulated before this loop ever runs, so without this check an extraction/repair spend that
       // alone exceeds maxBudgetUsd would slip through as 'succeeded' whenever the extracted initial
@@ -269,12 +301,16 @@ export class Orchestrator {
       }
 
       if (satisfies(state.currentState, state.goalSpec.goalState)) {
-        // Item 4: sign-off gate — when the policy requires operator acceptance, prompt before
+        // Item 4 / R30: sign-off gate — when the policy requires operator acceptance, prompt before
         // declaring success. On rejection, fall through to replan/re-extraction.
         const policy = state.goalSpec.completionPolicy;
         if (policy === 'verify+signoff' || policy === 'operator-defined') {
-          const accepted = await this.confirm(this.buildDod(state, plan), this.signal);
-          if (accepted) return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
+          // R31: the awaiting-acceptance status/event write happens on this AWAITED gate-entry path
+          // (not via the lazy onEvent drain R19 uses for other events, since that async queue is a
+          // later shell), so a concurrent GET /runs/:id can never observe a stale non-awaiting status.
+          await this.persistAwaitingAcceptance(state, plan);
+          const decision = await this.acceptanceGate(this.buildDod(state, plan), this.signal);
+          if (decision === 'accept') return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
           // Rejection AFTER goalState is already satisfied: re-planning here is incoherent — the
           // deterministic planner from a satisfied state returns a zero-step plan, so the loop would
           // spin (re-prompting sign-off forever) with no actions able to change the outcome. Return a
@@ -323,7 +359,7 @@ export class Orchestrator {
       // omitted from the operator-confirmed plan. Never run an unconfirmed action's verify.command without
       // showing it — re-confirm the DoD whenever the about-to-dispatch action was not previously confirmed.
       if (!state.confirmed.has(action.id)) {
-        const okay = await this.confirm(this.buildDod(state, plan), this.signal);
+        const okay = await this.confirm(this.buildDod(state, plan), this.signal, 'reconfirm');
         if (!okay) {
           this.emit({ ev: 'dod.cancelled', reason: 'replan introduced unconfirmed action(s)', actionId: action.id });
           return this.summary(state, 'cancelled', 'cancelled at re-confirmation of replan-introduced actions');
@@ -650,7 +686,7 @@ export class Orchestrator {
     }
     // Item 5: re-confirm DoD for newly-added actions before executing them, and remember the confirmed
     // ids so the main-loop dispatch gate (PR #8 P1) does not re-prompt for them.
-    const reconfirmed = await this.confirm(this.buildDod(state, r.plan), this.signal);
+    const reconfirmed = await this.confirm(this.buildDod(state, r.plan), this.signal, 'reconfirm');
     if (!reconfirmed) {
       this.emit({ ev: 'dod.cancelled', reason: 're-extracted actions not accepted' });
       return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'cancelled at re-extracted DoD confirmation') };
@@ -676,46 +712,50 @@ export class Orchestrator {
     return { kind: 'plan', plan };
   }
 
-  private async persistGoalSpec(state: RunState, plan: Plan): Promise<void> {
+  /** Best-effort wrapper shared by every persistence call site: never lets a persistence failure
+   *  abort a run, surfacing the error as an event instead. */
+  private async persistBestEffort(op: string, fn: () => Promise<void>): Promise<void> {
     try {
-      await this.persistence.upsertGoalSpec({
+      await fn();
+    } catch (e) {
+      this.emit({ ev: 'persistence.error', op, message: (e as Error).message });
+    }
+  }
+
+  private async persistGoalSpec(state: RunState, plan: Plan): Promise<void> {
+    await this.persistBestEffort('upsertGoalSpec', () =>
+      this.persistence.upsertGoalSpec({
         id: plan.goalSpecId,
         goalText: state.goalSpec.goalText,
         goalState: state.goalSpec.goalState,
         completionPolicy: state.goalSpec.completionPolicy,
-      });
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'upsertGoalSpec', message: (e as Error).message });
-    }
+      }),
+    );
   }
 
   private async persistPlan(plan: Plan): Promise<void> {
-    try {
-      await this.persistence.upsertPlan(plan);
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'upsertPlan', message: (e as Error).message });
-    }
+    await this.persistBestEffort('upsertPlan', () => this.persistence.upsertPlan(plan));
   }
 
   private async persistRun(state: RunState, plan: Plan): Promise<void> {
-    try {
-      await this.persistence.insertRun({
-        id: state.runId,
-        planId: plan.id,
-        status: 'running',
-        startedAt: new Date().toISOString(),
-      });
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'insertRun', message: (e as Error).message });
-    }
+    await this.persistBestEffort('insertRun', () =>
+      this.persistence.insertRun({ id: state.runId, planId: plan.id, status: 'running', startedAt: new Date().toISOString() }),
+    );
   }
 
   private async persistAgentRun(agentRun: AgentRun, runId: string): Promise<void> {
-    try {
-      await this.persistence.insertAgentRun(agentRun, runId);
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'insertAgentRun', message: (e as Error).message });
-    }
+    await this.persistBestEffort('insertAgentRun', () => this.persistence.insertAgentRun(agentRun, runId));
+  }
+
+  /** R30/R31: transition the run to `awaiting-acceptance` and persist the event, both awaited
+   *  BEFORE the acceptance gate opens — the ordering (not just the individual awaits) is what
+   *  R31 requires, so a concurrent `GET /runs/:id` can never observe a stale status. Both calls
+   *  share one `persistence.error` op label since R31 treats this as one logical transition. */
+  private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
+    await this.persistBestEffort('awaitingAcceptance', async () => {
+      await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
+      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload: {} });
+    });
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -889,11 +929,13 @@ function bareSummary(goalText: string, status: RunStatus, reason: string, costUs
  *  Races the prompt against `signal` (SIGINT/SIGTERM) so an abort while waiting on stdin stops the
  *  prompt immediately instead of leaving the run stuck until the operator types something (PR #10
  *  review P2) — treated the same as a rejected confirmation ('cancelled', not a hang or a throw). */
-export const stdinConfirm: DodConfirmer = async (dod, signal) => {
+export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   const { createInterface } = await import('node:readline/promises');
   const lines = [
     '',
-    '=== Definition of Done — confirm before executing ===',
+    kind === 'reconfirm'
+      ? '=== Definition of Done — RE-CONFIRM new actions before executing ==='
+      : '=== Definition of Done — confirm before executing ===',
     `Goal: ${dod.goalText}`,
     `Goal state: ${JSON.stringify(dod.goalState)}`,
     `Completion policy: ${dod.completionPolicy}`,
@@ -914,6 +956,32 @@ export const stdinConfirm: DodConfirmer = async (dod, signal) => {
     return /^y(es)?$/i.test(answer.trim());
   } catch (e) {
     if (signal.aborted) return false; // aborted mid-prompt (SIGINT/SIGTERM) — treat as declined, not a crash
+    throw e;
+  } finally {
+    rl.close();
+  }
+};
+
+/** Default sign-off gate (R30): pretty-print the DoD, read one accept/reject line from stdin.
+ *  Same abort-race shape as `stdinConfirm`, but the declined path is 'reject', not `false`. */
+export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
+  const { createInterface } = await import('node:readline/promises');
+  const lines = [
+    '',
+    '=== Definition of Done — ACCEPT sign-off before declaring success ===',
+    `Goal: ${dod.goalText}`,
+    `Goal state: ${JSON.stringify(dod.goalState)}`,
+    `Completion policy: ${dod.completionPolicy}`,
+    '',
+  ];
+  process.stdout.write(`${lines.join('\n')}\n`);
+  if (signal.aborted) return 'reject';
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question('Accept? [y/N] ', { signal });
+    return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';
+  } catch (e) {
+    if (signal.aborted) return 'reject'; // aborted mid-prompt — treat as declined, not a crash
     throw e;
   } finally {
     rl.close();

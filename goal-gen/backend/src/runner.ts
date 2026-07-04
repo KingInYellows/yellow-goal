@@ -49,7 +49,12 @@ async function run(args: string[]): Promise<RunSummary> {
     noiseFilterPaths: config.noiseFilterPaths,
   });
   const verifier = new ShellVerifier();
-  const confirm: DodConfirmer | undefined = autoConfirm ? async () => true : undefined;
+  const confirm: DodConfirmer | undefined = autoConfirm
+    ? async (_dod, _signal, kind) => {
+        log({ ev: 'gate.autoConfirm', kind });
+        return true;
+      }
+    : undefined;
 
   const ac = new AbortController();
   const abort = () => ac.abort();

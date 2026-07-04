@@ -10,8 +10,10 @@
  * conflict path (drizzle-orm#2474) — callers needing the canonical row regardless of insert
  * outcome should follow up with an explicit `SELECT`, not rely on `RETURNING` here.
  */
+import { eq } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import type { Plan } from '../planner/types';
+import type { RunStatus } from '../types';
 import {
   agentRuns,
   goalSpecs,
@@ -65,6 +67,12 @@ export async function upsertPlan(db: Database, plan: Plan): Promise<void> {
  *  insert is still idempotent for safety against a caller retrying the same `runId`. */
 export async function insertRun(db: Database, row: NewRunRow): Promise<void> {
   await db.insert(runs).values(row).onConflictDoNothing({ target: runs.id });
+}
+
+/** Transition an existing `runs` row's status (R29/R30) — e.g. into `'awaiting-acceptance'` on
+ *  sign-off gate entry. Unlike `insertRun`, this targets a row that must already exist. */
+export async function updateRunStatus(db: Database, runId: string, status: RunStatus): Promise<void> {
+  await db.update(runs).set({ status }).where(eq(runs.id, runId));
 }
 
 /** `AgentRun.id` is unique per executor invocation; a plain insert is sufficient. */

@@ -156,8 +156,9 @@ export interface RunConfig {
 
 // ─── Run outcome ──────────────────────────────────────────────────────────────────────────────
 
-/** Terminal run states (orchestrator.md). `awaiting-acceptance` sign-off is deferred past v1. */
-export type RunStatus = 'succeeded' | 'failed' | 'cancelled' | 'budget-exhausted';
+/** Run states (orchestrator.md). `awaiting-acceptance` is a non-terminal, in-flight state parked
+ *  on the sign-off gate (R29); the rest are terminal. */
+export type RunStatus = 'succeeded' | 'failed' | 'cancelled' | 'budget-exhausted' | 'awaiting-acceptance';
 
 export interface ActionOutcome {
   actionId: string;
