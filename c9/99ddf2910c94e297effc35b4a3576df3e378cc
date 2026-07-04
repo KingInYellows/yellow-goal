@@ -1,0 +1,82 @@
+goal-gen/backend/src/db/migrations/0001_fixed_marvex.sql
+  s_c72830ee26f199::t_ae84c143e77050 1
+goal-gen/backend/src/db/repository.ts
+  s_c72830ee26f199::t_6db3d5d13413d2 13,16
+  s_c72830ee26f199::t_b9c9afd7b157c3 70-75
+goal-gen/tests/orchestrator/orchestrator.test.ts
+  s_c72830ee26f199::t_ce962b654960c7 609-610,621-622,634-635
+  s_c72830ee26f199::t_6ac30a34c79fa4 128-129,134-135,140-141,152-157
+  s_c72830ee26f199::t_842b290c680011 76-121
+  s_c72830ee26f199::t_ee2a244f768d24 633
+  s_c72830ee26f199::t_5835effd6c70f2 16-17
+  s_c72830ee26f199::t_fbce461cd0c67b 19
+  s_c72830ee26f199::t_ab62e89af7e800 550-608,611-620,623-632,636-643
+goal-gen/backend/src/db/migrations/meta/0001_snapshot.json
+  s_c72830ee26f199::t_94e4464283d175 1,4-533,536-560
+  s_c72830ee26f199::t_ae84c143e77050 2-3,534-535
+goal-gen/backend/src/db/migrations/meta/_journal.json
+  s_c72830ee26f199::t_ae84c143e77050 11-17
+goal-gen/backend/src/runner.ts
+  s_c72830ee26f199::t_99c85f91c5e389 52-57
+goal-gen/tests/orchestrator/async-gate.test.ts
+  s_c72830ee26f199::t_e3da3d881fcdf8 105
+  s_c72830ee26f199::t_e9e767de3fcf4a 76-77
+  s_c72830ee26f199::t_e06dc7e143d896 10-11,13-23,27,32,34,38-44,47-48,51,54-55,57,63,65,71-72,74-75,80-81,83-85,88-94,96-98,100-104,106-109,158-170
+  s_c72830ee26f199::t_f9a6512b6777cc 95
+  s_c72830ee26f199::t_d1951dfc278018 1-9,12,24-26,28-31,33,35-37,45-46,49-50,52-53,56,58-62,64,66-70,73,78-79,82,86-87,99,110-157,171-182
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_c72830ee26f199::t_bcbd3adf55634a 908
+  s_c72830ee26f199::t_9aafc0597eb0f9 78-83,92-93
+  s_c72830ee26f199::t_807392109bec23 60-63
+  s_c72830ee26f199::t_3377a9b69cee92 274
+  s_c72830ee26f199::t_3c6fc71b9a3c30 287-292
+  s_c72830ee26f199::t_df4d0b8b221d2e 724,940-965
+  s_c72830ee26f199::t_4453f0e3bc94dc 41
+  s_c72830ee26f199::t_a7fbd287368374 360
+  s_c72830ee26f199::t_cf23f3cfff743d 175,180,188,193
+  s_c72830ee26f199::t_b2f11e12b5fec6 302,306-311
+  s_c72830ee26f199::t_aa76de32d82f63 102-103,110-112
+  s_c72830ee26f199::t_587d12c9b5af41 54-58
+  s_c72830ee26f199::t_fa5fa4a0350cdf 912-914
+  s_c72830ee26f199::t_ef7283d92b2b54 702-704,706,708,712-715,717-719,723,728-729,731,733-734
+  s_c72830ee26f199::t_250a6336be813e 726-727,730,732
+  s_c72830ee26f199::t_f1022a8c62fd2a 677
+  s_c72830ee26f199::t_71952996bc86cf 59
+  s_c72830ee26f199::t_d152cfcf8f4cf6 725
+goal-gen/backend/src/db/schema.ts
+  s_c72830ee26f199::t_5bcd5806289ea5 18-25
+  s_c72830ee26f199::t_70e5a18ef4508c 6-7
+goal-gen/backend/src/orchestrator/async-gate.ts
+  s_c72830ee26f199::t_58c51312b3dbb9 3,11-15,29-38,40-52,54-76,79-81,83-84,87,89,95-97,99-105
+  s_c72830ee26f199::t_c603afb3c29d8c 1-2,4-10,16-28,39,53,77-78,82,85-86,88,90-94,98,106-140
+goal-gen/backend/src/types.ts
+  s_c72830ee26f199::t_a6b574c022e2ae 159-161
+goal-gen/backend/src/orchestrator/run-session.ts
+  s_c72830ee26f199::t_8b9d05ea7cdf3b 1-12,14-17,19-20,24-34,36-42,45-62,64-65,70-89
+  s_c72830ee26f199::t_8ff2efb5cda25c 13,18,21-23,35,43-44,63,66-69
+goal-gen/plans/m1-backend-api-persistence-controls-02-gate-control-mechanics.md
+  s_c72830ee26f199::t_12498dfc468aad 112,118,136,143,164,177,208,218
+  s_c72830ee26f199::t_edb2439c36bbd4 150-162
+  s_c72830ee26f199::t_b645d6f2c4e6ac 47-76
+  s_c72830ee26f199::t_0d7895463c8d7d 124-135
+  s_c72830ee26f199::t_82199c19a39a0d 192-207
+  s_c72830ee26f199::t_d7554efe91880e 1-46,77-111,113-117,119-123,137-142,144-149,163,165-176,178-191,209-217,246-255,268-281
+  s_c72830ee26f199::t_320833e6aca9c9 256-267
+  s_c72830ee26f199::t_65f55c80c0eb29 219-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "c999ddf2910c94e297effc35b4a3576df3e378cc",
+  "prompts": {},
+  "sessions": {
+    "s_c72830ee26f199": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "62f8ebd1-deda-4c67-a506-28c8483a5fdd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
