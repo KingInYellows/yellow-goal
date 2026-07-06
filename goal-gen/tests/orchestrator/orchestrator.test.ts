@@ -126,14 +126,14 @@ function fakePersistence(): PersistenceProvider & {
   plans: Array<{ id: string; goalSpecId: string; replanOf?: string }>;
   runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }>;
   agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }>;
-  runStatuses: Map<string, RunStatus>;
+  runStatuses: Map<string, RunStatus | 'running'>;
   runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }>;
 } {
   const goalSpecs: Array<{ id: string; goalText: string; goalState: Partial<WorldState>; completionPolicy: GoalSpec['completionPolicy'] }> = [];
   const plans: Array<{ id: string; goalSpecId: string; replanOf?: string }> = [];
   const runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }> = [];
   const agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }> = [];
-  const runStatuses = new Map<string, RunStatus>();
+  const runStatuses = new Map<string, RunStatus | 'running'>();
   const runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }> = [];
   return {
     goalSpecs,
@@ -204,6 +204,26 @@ describe('orchestrator — persistence seam (plan Step 9)', () => {
     const { orch } = build({ goalSpec: TWO_STEP });
     const summary = await orch.run({ goalText: TWO_STEP.goalText });
     expect(summary.status).toBe('succeeded'); // no throw from the default no-op persistence
+  });
+
+  it('does not mark the run persisted when insertRun fails best-effort', async () => {
+    const persistence = fakePersistence();
+    const statusUpdates: Array<{ runId: string; status: RunStatus | 'running' }> = [];
+    const failingPersistence: PersistenceProvider = {
+      ...persistence,
+      insertRun: async () => {
+        throw new Error('insert run failed');
+      },
+      updateRunStatus: async (runId, status) => {
+        statusUpdates.push({ runId, status });
+        await persistence.updateRunStatus(runId, status);
+      },
+    };
+    const { orch, events } = build({ goalSpec: TWO_STEP, persistence: failingPersistence });
+    const summary = await orch.run({ goalText: TWO_STEP.goalText }, 'run-insert-failed');
+    expect(summary.status).toBe('succeeded');
+    expect(statusUpdates).toEqual([]);
+    expect(events).toContainEqual({ ev: 'persistence.error', op: 'insertRun', message: 'insert run failed' });
   });
 });
 
@@ -628,18 +648,25 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
   });
 
-  it('sign-off gate (R30): rejecting after goalState is satisfied cancels the run and persists the terminal status', async () => {
+  it('sign-off gate (R30): rejecting after goalState is satisfied continues through re-extraction', async () => {
     const persistence = fakePersistence();
-    const { session } = buildSession({ goalSpec: ALREADY_SATISFIED, persistence });
+    const { session, extractor, events } = buildSession({ goalSpec: ALREADY_SATISFIED, persistence });
     const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
     await waitForGateKind(session, 'dod');
     session.resolveGate(true);
     await waitForGateKind(session, 'accept');
     expect(session.resolveGate('reject')).toBe(true);
+    await waitForGateKind(session, 'reconfirm');
+    expect(persistence.runStatuses.get(session.runId)).toBe('running');
+    expect(session.resolveGate(true)).toBe(true);
+    await waitForGateKind(session, 'accept');
+    expect(session.resolveGate('accept')).toBe(true);
     const summary = await summaryPromise;
-    expect(summary.status).toBe('cancelled');
-    expect(summary.reason).toMatch(/rejected sign-off/);
-    expect(persistence.runStatuses.get(session.runId)).toBe('cancelled');
+    expect(summary.status).toBe('succeeded');
+    expect(summary.reason).toMatch(/signed off/);
+    expect(extractor.expandCalls).toBe(1);
+    expect(events.some((e) => e.ev === 'signoff.rejected')).toBe(true);
+    expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
   });
 
   it('R31: the awaiting-acceptance status/event write lands synchronously BEFORE the gate awaits', async () => {

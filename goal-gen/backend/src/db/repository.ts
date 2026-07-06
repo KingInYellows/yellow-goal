@@ -29,6 +29,7 @@ import {
 
 /** Structural type covering both the pg (`node-postgres`) and PGlite-backed Drizzle instances. */
 export type Database = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+type PersistedRunStatus = RunStatus | 'running';
 
 /** Deterministic `plan_steps.id` — `planId` + `sequenceIndex`, independent of `actionId` (R2). */
 export function stepId(planId: string, sequenceIndex: number): string {
@@ -71,7 +72,7 @@ export async function insertRun(db: Database, row: NewRunRow): Promise<void> {
 
 /** Transition an existing `runs` row's status (R29/R30) — e.g. into `'awaiting-acceptance'` on
  *  sign-off gate entry. Unlike `insertRun`, this targets a row that must already exist. */
-export async function updateRunStatus(db: Database, runId: string, status: RunStatus): Promise<void> {
+export async function updateRunStatus(db: Database, runId: string, status: PersistedRunStatus): Promise<void> {
   const updated = await db.update(runs).set({ status }).where(eq(runs.id, runId)).returning({ id: runs.id });
   if (updated.length === 0) {
     throw new Error(`updateRunStatus: run ${runId} was not found`);

@@ -40,6 +40,8 @@ import type {
 import { defaultRunConfig } from './guardrails';
 import { AsyncLatch } from './async-gate';
 
+type PersistedRunStatus = RunStatus | 'running';
+
 /** The definition of done shown to the operator at the confirm gate (plan task 4.2). */
 export interface DodInfo {
   goalText: string;
@@ -77,7 +79,7 @@ export interface PersistenceProvider {
   insertRun(run: { id: string; planId: string; status: 'running'; startedAt: string }): Promise<void>;
   insertAgentRun(agentRun: AgentRun, runId: string): Promise<void>;
   /** Transition an existing run's status (R29/R30) — e.g. into `'awaiting-acceptance'`. */
-  updateRunStatus(runId: string, status: RunStatus): Promise<void>;
+  updateRunStatus(runId: string, status: PersistedRunStatus): Promise<void>;
   /** Durable event-log write (R5); this shell wires only the `AwaitingAcceptance` transition
    *  (R31, synchronous on the gate-entry path) — every other event type's write is shell 03's
    *  async `onEvent` queue (R19). */
@@ -305,7 +307,7 @@ export class Orchestrator {
 
       if (satisfies(state.currentState, state.goalSpec.goalState)) {
         // Item 4 / R30: sign-off gate — when the policy requires operator acceptance, prompt before
-        // declaring success. On rejection, fall through to replan/re-extraction.
+        // declaring success. On rejection, continue through the bounded re-extraction ladder.
         const policy = state.goalSpec.completionPolicy;
         if (policy === 'verify+signoff' || policy === 'operator-defined') {
           // R31: the awaiting-acceptance status/event write happens on this AWAITED gate-entry path
@@ -316,12 +318,17 @@ export class Orchestrator {
           if (decision === 'accept') {
             return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');
           }
-          // Rejection AFTER goalState is already satisfied: re-planning here is incoherent — the
-          // deterministic planner from a satisfied state returns a zero-step plan, so the loop would
-          // spin (re-prompting sign-off forever) with no actions able to change the outcome. Return a
-          // non-succeeded terminal; the operator can re-run with adjusted goalState/verify criteria.
           this.emit({ ev: 'signoff.rejected' });
-          return this.terminalSummary(state, 'cancelled', 'operator rejected sign-off after goalState satisfied');
+          if (state.runPersisted) {
+            await this.persistRunStatus(state, 'running', 'resumeAfterSignoffRejected');
+          }
+          const o = await this.reextract(state, {
+            actionId: '(signoff-rejected)',
+            verifyStderr: 'operator rejected sign-off after goalState satisfied; continue/replan per completion policy',
+          });
+          if (o.kind === 'terminal') return o.summary;
+          plan = o.plan;
+          continue;
         }
         return this.terminalSummary(state, 'succeeded', 'goalState satisfied');
       }
@@ -719,11 +726,13 @@ export class Orchestrator {
 
   /** Best-effort wrapper shared by every persistence call site: never lets a persistence failure
    *  abort a run, surfacing the error as an event instead. */
-  private async persistBestEffort(op: string, fn: () => Promise<void>): Promise<void> {
+  private async persistBestEffort(op: string, fn: () => Promise<void>): Promise<boolean> {
     try {
       await fn();
+      return true;
     } catch (e) {
       this.emit({ ev: 'persistence.error', op, message: (e as Error).message });
+      return false;
     }
   }
 
@@ -743,10 +752,9 @@ export class Orchestrator {
   }
 
   private async persistRun(state: RunState, plan: Plan): Promise<void> {
-    await this.persistBestEffort('insertRun', () =>
+    state.runPersisted = await this.persistBestEffort('insertRun', () =>
       this.persistence.insertRun({ id: state.runId, planId: plan.id, status: 'running', startedAt: new Date().toISOString() }),
     );
-    state.runPersisted = true;
   }
 
   private async persistAgentRun(agentRun: AgentRun, runId: string): Promise<void> {
@@ -764,7 +772,7 @@ export class Orchestrator {
     });
   }
 
-  private async persistRunStatus(state: RunState, status: RunStatus, op: string): Promise<void> {
+  private async persistRunStatus(state: RunState, status: PersistedRunStatus, op: string): Promise<void> {
     await this.persistBestEffort(op, () => this.persistence.updateRunStatus(state.runId, status));
   }
 
