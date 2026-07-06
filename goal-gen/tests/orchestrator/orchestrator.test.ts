@@ -74,17 +74,24 @@ function build(h: Harness) {
 /** An in-memory `PersistenceProvider` double — records every upserted `Plan` and inserted
  *  `AgentRun`/run so tests can assert on persisted rows without a real database. */
 function fakePersistence(): PersistenceProvider & {
+  goalSpecs: Array<{ id: string; goalText: string; goalState: Partial<WorldState>; completionPolicy: GoalSpec['completionPolicy'] }>;
   plans: Array<{ id: string; goalSpecId: string; replanOf?: string }>;
   runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }>;
   agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }>;
 } {
+  const goalSpecs: Array<{ id: string; goalText: string; goalState: Partial<WorldState>; completionPolicy: GoalSpec['completionPolicy'] }> = [];
   const plans: Array<{ id: string; goalSpecId: string; replanOf?: string }> = [];
   const runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }> = [];
   const agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }> = [];
   return {
+    goalSpecs,
     plans,
     runs,
     agentRuns,
+    upsertGoalSpec: async (goalSpec) => {
+      if (goalSpecs.some((g) => g.id === goalSpec.id)) return;
+      goalSpecs.push(goalSpec);
+    },
     upsertPlan: async (plan) => {
       if (plans.some((p) => p.id === plan.id)) return; // mirrors ON CONFLICT DO NOTHING
       plans.push({ id: plan.id, goalSpecId: plan.goalSpecId, ...(plan.replanOf ? { replanOf: plan.replanOf } : {}) });
@@ -114,7 +121,9 @@ describe('orchestrator — persistence seam (plan Step 9)', () => {
     const summary = await orch.run({ goalText: TWO_STEP.goalText }, 'test-run-id');
     expect(summary.status).toBe('succeeded');
 
+    expect(persistence.goalSpecs).toHaveLength(1);
     expect(persistence.plans).toHaveLength(1); // single initial plan, no replan/reextraction
+    expect(persistence.goalSpecs[0]?.id).toBe(persistence.plans[0]?.goalSpecId);
     const planId = persistence.plans[0]?.id;
     expect(planId).toBeTruthy();
 

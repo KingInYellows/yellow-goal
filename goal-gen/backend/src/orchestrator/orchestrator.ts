@@ -63,6 +63,7 @@ export type WorktreeProvider = (opts: CreateWorktreeOptions) => Promise<Worktree
  * tests (which never pass `persistence`) are entirely unaffected — see `noopPersistence` below.
  */
 export interface PersistenceProvider {
+  upsertGoalSpec(goalSpec: { id: string; goalText: string; goalState: Partial<WorldState>; completionPolicy: CompletionPolicy }): Promise<void>;
   upsertPlan(plan: Plan): Promise<void>;
   insertRun(run: { id: string; planId: string; status: 'running'; startedAt: string }): Promise<void>;
   insertAgentRun(agentRun: AgentRun): Promise<void>;
@@ -71,6 +72,7 @@ export interface PersistenceProvider {
 /** Default no-op persistence — existing CLI/test usage that never injects `persistence` sees zero
  *  behavior change (Harness extension in `orchestrator.test.ts` is additive, per plan Step 9). */
 const noopPersistence: PersistenceProvider = {
+  upsertGoalSpec: async () => {},
   upsertPlan: async () => {},
   insertRun: async () => {},
   insertAgentRun: async () => {},
@@ -407,11 +409,6 @@ export class Orchestrator {
         // Deterministic stepId (planId + the dispatched step's sequence index) — same derivation
         // `repository.ts`'s upsertPlan() used to mint the corresponding `plan_steps` row (R2).
         agentRun.stepId = stepId(planId, state.planCursor);
-        // R6: capture the full diff BEFORE handle.cleanup() (finally block below) destroys the
-        // git objects. Diffs against the worktree's stored baseline, not bare HEAD, so this is
-        // correct even when the agent ran `git commit` (activityOracle's `headMoved` case).
-        const diffContent = captureDiff(handle.worktreePath, handle.initialSha);
-        if (diffContent !== undefined) agentRun.diffContent = diffContent;
         const spent = agentRun.costUsd ?? 0;
         stepCost += spent;
         state.accumulatedCostUsd += spent;
@@ -423,14 +420,19 @@ export class Orchestrator {
           costUsd: spent,
           diffRef: agentRun.diffRef ?? null,
         });
-        await this.persistAgentRun(agentRun);
 
+        // Run verify BEFORE capturing the diff: captureDiff()'s `git add -N .` mutates this
+        // worktree's index, so a verify command that inspects git state (e.g. `git status`,
+        // `git diff --cached`, a staged-file linter) must observe the executor's post-run state,
+        // not the intent-to-added index. Capture happens after, still inside the try (before the
+        // finally's handle.cleanup() destroys the git objects).
         const cmd = action.verify.command;
+        let passed = false;
         if (cmd && cmd.trim().length > 0) {
           const v = await this.verifier.run(cmd, ctx);
           this.emit({ ev: 'verify', actionId: action.id, attempt: attempts, exitCode: v.exitCode });
-          if (v.exitCode === 0) return { kind: 'passed', attempts, costUsd: stepCost };
-          lastEvidence = buildEvidence(action, agentRun, v);
+          if (v.exitCode === 0) passed = true;
+          else lastEvidence = buildEvidence(action, agentRun, v);
         } else {
           // No verify command ⇒ no ground-truth gate. We NEVER pass on the agent's self-reported
           // status (that would trust a declared effect — invariant #2). The extractor schema requires
@@ -441,6 +443,16 @@ export class Orchestrator {
             verifyStderr: 'action has no verify.command; ground truth cannot be established (invariant #2)',
           };
         }
+
+        // R6: capture the full diff AFTER verify (so the verifier saw the unmutated worktree) but
+        // BEFORE handle.cleanup() (finally block below) destroys the git objects. Diffs against the
+        // worktree's stored baseline, not bare HEAD, so this is correct even when the agent ran
+        // `git commit` (activityOracle's `headMoved` case).
+        const diffContent = captureDiff(handle.worktreePath, handle.initialSha);
+        if (diffContent !== undefined) agentRun.diffContent = diffContent;
+        await this.persistAgentRun(agentRun);
+
+        if (passed) return { kind: 'passed', attempts, costUsd: stepCost };
       } finally {
         try {
           await handle.cleanup();
@@ -475,7 +487,7 @@ export class Orchestrator {
     }
     if (r.plan !== null) {
       state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
-      return this.planResult(r.plan);
+      return this.planResult(state, r.plan);
     }
     return this.reextract(state, evidence);
   }
@@ -514,7 +526,7 @@ export class Orchestrator {
     state.replanStreak++;
     state.planCursor = cursor;
     this.emit({ ev: 'replanned', forced: true, replanStreak: state.replanStreak });
-    return this.planResult(r.plan);
+    return this.planResult(state, r.plan);
   }
 
   /**
@@ -542,7 +554,7 @@ export class Orchestrator {
         state.replans++;
         state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
         this.emit({ ev: 'replanned', replans: state.replans });
-        return this.planResult(r.plan);
+        return this.planResult(state, r.plan);
       }
     }
     return this.reextract(state, evidence);
@@ -651,16 +663,30 @@ export class Orchestrator {
     state.replanStreak = 0;
     state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
     this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions });
-    return this.planResult(r.plan);
+    return this.planResult(state, r.plan);
   }
 
   // ── Persistence (R1-R6; best-effort — never aborts a run) ──────────────────────────────────────
 
   /** Wraps a freshly obtained `Plan` as a `PlanOutcome`, upserting it (+ its `plan_steps`, R2)
    *  first — the single choke point all 4 Plan-install sites route through. */
-  private async planResult(plan: Plan): Promise<PlanOutcome> {
+  private async planResult(state: RunState, plan: Plan): Promise<PlanOutcome> {
+    await this.persistGoalSpec(state, plan);
     await this.persistPlan(plan);
     return { kind: 'plan', plan };
+  }
+
+  private async persistGoalSpec(state: RunState, plan: Plan): Promise<void> {
+    try {
+      await this.persistence.upsertGoalSpec({
+        id: plan.goalSpecId,
+        goalText: state.goalSpec.goalText,
+        goalState: state.goalSpec.goalState,
+        completionPolicy: state.goalSpec.completionPolicy,
+      });
+    } catch (e) {
+      this.emit({ ev: 'persistence.error', op: 'upsertGoalSpec', message: (e as Error).message });
+    }
   }
 
   private async persistPlan(plan: Plan): Promise<void> {
