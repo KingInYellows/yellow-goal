@@ -156,6 +156,8 @@ interface RunState {
   failures: Map<string, FailureRecord[]>;
   outcomes: Map<string, ActionOutcome>;
   runId: string;
+  /** False until `runs` row insertion has been attempted; initial extraction/planning failures have no row. */
+  runPersisted: boolean;
 }
 
 type StepResult =
@@ -254,6 +256,7 @@ export class Orchestrator {
       failures: new Map(),
       outcomes: new Map(),
       runId: runId ?? randomUUID(),
+      runPersisted: false,
     };
     this.emit({
       ev: 'extract.done',
@@ -276,7 +279,7 @@ export class Orchestrator {
     const confirmed = await this.confirm(this.buildDod(state, plan), this.signal, 'dod');
     if (!confirmed) {
       this.emit({ ev: 'dod.cancelled' });
-      return this.summary(state, 'cancelled', 'cancelled at DoD confirmation');
+      return this.terminalSummary(state, 'cancelled', 'cancelled at DoD confirmation');
     }
     for (const s of plan.steps) state.confirmed.add(s.actionId);
     this.emit({ ev: 'dod.confirmed', sequence: plan.steps.map((s) => s.actionId) });
@@ -284,20 +287,20 @@ export class Orchestrator {
     // --- MAIN LOOP (serial) ---
     for (;;) {
       // Item 3: check AbortSignal at the top of every iteration so SIGINT/abort stops promptly.
-      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted');
+      if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted');
 
       // R26: pause takes effect before the NEXT step dispatch, never preempting an in-flight step.
       // `whenResumed` never rejects, so re-check the signal (it may have fired while paused) rather
       // than assuming resolution means "resumed".
       await this.pauseLatch.whenResumed(this.signal);
-      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted');
+      if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted');
 
       // PR #8 review P2: check the budget cap before the satisfies() branch below. Extraction cost is
       // accumulated before this loop ever runs, so without this check an extraction/repair spend that
       // alone exceeds maxBudgetUsd would slip through as 'succeeded' whenever the extracted initial
       // state already happens to satisfy the goal (per-action budget checks at dispatch time never run).
       if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded`);
       }
 
       if (satisfies(state.currentState, state.goalSpec.goalState)) {
@@ -311,18 +314,16 @@ export class Orchestrator {
           await this.persistAwaitingAcceptance(state, plan);
           const decision = await this.acceptanceGate(this.buildDod(state, plan), this.signal);
           if (decision === 'accept') {
-            await this.persistRunStatus(state, 'succeeded', 'terminalRunStatus');
-            return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
+            return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');
           }
           // Rejection AFTER goalState is already satisfied: re-planning here is incoherent — the
           // deterministic planner from a satisfied state returns a zero-step plan, so the loop would
           // spin (re-prompting sign-off forever) with no actions able to change the outcome. Return a
           // non-succeeded terminal; the operator can re-run with adjusted goalState/verify criteria.
           this.emit({ ev: 'signoff.rejected' });
-          await this.persistRunStatus(state, 'cancelled', 'terminalRunStatus');
-          return this.summary(state, 'cancelled', 'operator rejected sign-off after goalState satisfied');
+          return this.terminalSummary(state, 'cancelled', 'operator rejected sign-off after goalState satisfied');
         }
-        return this.summary(state, 'succeeded', 'goalState satisfied');
+        return this.terminalSummary(state, 'succeeded', 'goalState satisfied');
       }
 
       const step = this.nextStep(plan, state);
@@ -366,7 +367,7 @@ export class Orchestrator {
         const okay = await this.confirm(this.buildDod(state, plan), this.signal, 'reconfirm');
         if (!okay) {
           this.emit({ ev: 'dod.cancelled', reason: 'replan introduced unconfirmed action(s)', actionId: action.id });
-          return this.summary(state, 'cancelled', 'cancelled at re-confirmation of replan-introduced actions');
+          return this.terminalSummary(state, 'cancelled', 'cancelled at re-confirmation of replan-introduced actions');
         }
         for (const s of plan.steps) state.confirmed.add(s.actionId);
         this.emit({ ev: 'dod.reconfirmed', reason: 'replan introduced unconfirmed action(s)', actionId: action.id });
@@ -374,22 +375,22 @@ export class Orchestrator {
 
       // Budget check BEFORE dispatch (plan task 4.3).
       if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached`);
       }
 
       const result = await this.executeStep(state, action, plan.id);
       // A real dispatch happened → reset the forced-replan no-progress streak (livelock guard).
       state.replanStreak = 0;
       // Item 3: check signal again after an await that may have taken a long time.
-      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted after step');
+      if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted after step');
       if (result.kind === 'budget') {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached mid-action`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached mid-action`);
       }
       // Item 6: enforce budget AFTER each action's cost is accumulated (not only pre-dispatch). Use
       // `>` so an action that spent EXACTLY to the cap still completes — it succeeded within budget,
       // and the next iteration's pre-dispatch `>=` check stops further work before overspending.
       if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded post-action`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded post-action`);
       }
       if (result.kind === 'passed') {
         state.planCursor++;
@@ -605,14 +606,14 @@ export class Orchestrator {
     if (state.reextractions >= this.config.maxReextractions) {
       return {
         kind: 'terminal',
-        summary: this.summary(state, 'failed', `re-extraction cap (${this.config.maxReextractions}) reached; goal unreachable`),
+        summary: await this.terminalSummary(state, 'failed', `re-extraction cap (${this.config.maxReextractions}) reached; goal unreachable`),
       };
     }
     // PR #8 review P2: re-extraction calls `claude -p` (real spend). Refuse to START one once the budget
     // is already exhausted — the main loop's pre-dispatch check is too late to bound a recursive
     // re-extraction's spend (this path can append, plan, and recurse before any executor dispatch).
     if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
-      return { kind: 'terminal', summary: this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before re-extraction`) };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before re-extraction`) };
     }
     state.reextractions++;
     this.emit({ ev: 'reextract', reextractions: state.reextractions, forActionId: evidence.actionId });
@@ -633,15 +634,15 @@ export class Orchestrator {
       // abort during expand() must surface as 'cancelled', not 'failed', so an operator kill during
       // recovery re-extraction is reported the same way as every other abort path.
       if (this.signal.aborted) {
-        return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'aborted during re-extraction') };
+        return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'aborted during re-extraction') };
       }
-      return { kind: 'terminal', summary: this.summary(state, 'failed', `expand failed: ${(e as Error).message}`) };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'failed', `expand failed: ${(e as Error).message}`) };
     }
     // PR #8 review P2: account the spend immediately and stop if this expansion pushed the run over the
     // cap (`>` so spending EXACTLY to the cap still proceeds, mirroring the executor budget rule).
     state.accumulatedCostUsd += expanded.costUsd;
     if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
-      return { kind: 'terminal', summary: this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by re-extraction`) };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by re-extraction`) };
     }
     // Validate expanded actions BEFORE appending so a malformed one cannot permanently poison the
     // pool (append-only) and make every subsequent plan() throw. The extractor schema enforces
@@ -693,7 +694,7 @@ export class Orchestrator {
     const reconfirmed = await this.confirm(this.buildDod(state, r.plan), this.signal, 'reconfirm');
     if (!reconfirmed) {
       this.emit({ ev: 'dod.cancelled', reason: 're-extracted actions not accepted' });
-      return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'cancelled at re-extracted DoD confirmation') };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'cancelled at re-extracted DoD confirmation') };
     }
     for (const s of r.plan.steps) state.confirmed.add(s.actionId);
     // A successful re-extraction is a progress event (new actions were added). Reset the forced-replan
@@ -745,6 +746,7 @@ export class Orchestrator {
     await this.persistBestEffort('insertRun', () =>
       this.persistence.insertRun({ id: state.runId, planId: plan.id, status: 'running', startedAt: new Date().toISOString() }),
     );
+    state.runPersisted = true;
   }
 
   private async persistAgentRun(agentRun: AgentRun, runId: string): Promise<void> {
@@ -758,12 +760,19 @@ export class Orchestrator {
   private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
     await this.persistBestEffort('awaitingAcceptance', async () => {
       await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
-      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload: {} });
+      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload: { goalState: state.goalSpec.goalState } });
     });
   }
 
   private async persistRunStatus(state: RunState, status: RunStatus, op: string): Promise<void> {
     await this.persistBestEffort(op, () => this.persistence.updateRunStatus(state.runId, status));
+  }
+
+  private async terminalSummary(state: RunState, status: RunStatus, reason: string): Promise<RunSummary> {
+    if (state.runPersisted) {
+      await this.persistRunStatus(state, status, 'terminalRunStatus');
+    }
+    return this.summary(state, status, reason);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -980,6 +989,13 @@ export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
     `Goal: ${dod.goalText}`,
     `Goal state: ${JSON.stringify(dod.goalState)}`,
     `Completion policy: ${dod.completionPolicy}`,
+    'Planned actions:',
+    ...dod.actions.map((a, i) => {
+      const check = a.verify.command
+        ? `verify: ${a.verify.command}`
+        : `verify predicate: ${JSON.stringify(a.verify.successPredicate ?? {})}`;
+      return `  ${i + 1}. ${a.name}  (${check})`;
+    }),
     '',
   ];
   process.stdout.write(`${lines.join('\n')}\n`);

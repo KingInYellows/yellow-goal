@@ -190,6 +190,7 @@ describe('orchestrator — persistence seam (plan Step 9)', () => {
 
     expect(persistence.runs).toHaveLength(1);
     expect(persistence.runs[0]).toMatchObject({ id: 'test-run-id', planId, status: 'running' });
+    expect(persistence.runStatuses.get('test-run-id')).toBe('succeeded');
 
     expect(persistence.agentRuns).toHaveLength(2);
     expect(persistence.agentRuns.map((r) => r.actionId)).toEqual(['s1', 's2']);
@@ -651,6 +652,8 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     // The gate is still OPEN (unresolved) at this point — assert the write already landed.
     expect(persistence.runStatuses.get(session.runId)).toBe('awaiting-acceptance');
     expect(persistence.runEvents.some((e) => e.runId === session.runId && e.type === 'AwaitingAcceptance')).toBe(true);
+    const event = persistence.runEvents.find((e) => e.runId === session.runId && e.type === 'AwaitingAcceptance');
+    expect(event?.payload.goalState).toEqual(ALREADY_SATISFIED.goalState);
     session.resolveGate('accept');
     await summaryPromise;
   });
