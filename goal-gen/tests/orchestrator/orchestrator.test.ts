@@ -589,6 +589,7 @@ const ALREADY_SATISFIED: GoalSpec = {
   completionPolicy: 'verify+signoff',
   actions: [],
 };
+const SIGNOFF_REMEDIATION = action('remediate-signoff', { done: true }, { remediated: true }, 'verify-remediated');
 
 describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
   it('resolves the initial DoD gate via the stand-in resolver (resolveGate) and succeeds', async () => {
@@ -650,7 +651,7 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
 
   it('sign-off gate (R30): rejecting after goalState is satisfied continues through re-extraction', async () => {
     const persistence = fakePersistence();
-    const { session, extractor, events } = buildSession({ goalSpec: ALREADY_SATISFIED, persistence });
+    const { session, extractor, executor, events } = buildSession({ goalSpec: ALREADY_SATISFIED, expansions: [[SIGNOFF_REMEDIATION]], persistence });
     const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
     await waitForGateKind(session, 'dod');
     session.resolveGate(true);
@@ -660,6 +661,7 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     expect(persistence.runStatuses.get(session.runId)).toBe('running');
     expect(session.resolveGate(true)).toBe(true);
     await waitForGateKind(session, 'accept');
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['remediate-signoff']);
     expect(session.resolveGate('accept')).toBe(true);
     const summary = await summaryPromise;
     expect(summary.status).toBe('succeeded');
@@ -667,6 +669,22 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     expect(extractor.expandCalls).toBe(1);
     expect(events.some((e) => e.ev === 'signoff.rejected')).toBe(true);
     expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
+  });
+
+  it('sign-off gate (R30): aborting while awaiting sign-off cancels without remediation', async () => {
+    const persistence = fakePersistence();
+    const { session, extractor, events } = buildSession({ goalSpec: ALREADY_SATISFIED, expansions: [[SIGNOFF_REMEDIATION]], persistence });
+    const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
+    await waitForGateKind(session, 'dod');
+    session.resolveGate(true);
+    await waitForGateKind(session, 'accept');
+    session.cancel();
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('cancelled');
+    expect(summary.reason).toMatch(/aborted during sign-off/);
+    expect(extractor.expandCalls).toBe(0);
+    expect(events.some((e) => e.ev === 'signoff.rejected')).toBe(false);
+    expect(persistence.runStatuses.get(session.runId)).toBe('cancelled');
   });
 
   it('R31: the awaiting-acceptance status/event write lands synchronously BEFORE the gate awaits', async () => {

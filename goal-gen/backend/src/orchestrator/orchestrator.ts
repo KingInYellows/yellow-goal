@@ -15,7 +15,7 @@
  *  - Mandatory guardrails with a terminal state each: budget, replans, re-extractions, per-action
  *    retries, per-action timeout (in the executor). `failures` is retained for loop-detection (M2).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { plan as runPlanner } from '../planner/plan';
 import { satisfies } from '../planner/simulate';
 import { createWorktree } from '../executors/worktree';
@@ -146,6 +146,10 @@ interface RunState {
    * avoids that: a position once passed is never re-examined mid-plan.
    */
   planCursor: number;
+  /** True while dispatching remediation actions after a rejected sign-off despite goalState already
+   *  being satisfied. Without this, the top-of-loop satisfied check reopens sign-off before the
+   *  remediation plan can run. */
+  signoffRemediationActive: boolean;
   /** Action ids the operator has confirmed (initial DoD + every re-confirm). A replan that surfaces
    *  an id NOT in here must be re-confirmed before its verify.command runs (PR #8 review P1). */
   confirmed: Set<string>;
@@ -250,6 +254,7 @@ export class Orchestrator {
       currentState: { ...goalSpec.initialState },
       pool: sanitized.valid,
       planCursor: 0,
+      signoffRemediationActive: false,
       confirmed: new Set(),
       replans: 0,
       replanStreak: 0,
@@ -305,7 +310,7 @@ export class Orchestrator {
         return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded`);
       }
 
-      if (satisfies(state.currentState, state.goalSpec.goalState)) {
+      if (!state.signoffRemediationActive && satisfies(state.currentState, state.goalSpec.goalState)) {
         // Item 4 / R30: sign-off gate — when the policy requires operator acceptance, prompt before
         // declaring success. On rejection, continue through the bounded re-extraction ladder.
         const policy = state.goalSpec.completionPolicy;
@@ -315,6 +320,7 @@ export class Orchestrator {
           // later shell), so a concurrent GET /runs/:id can never observe a stale non-awaiting status.
           await this.persistAwaitingAcceptance(state, plan);
           const decision = await this.acceptanceGate(this.buildDod(state, plan), this.signal);
+          if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted during sign-off');
           if (decision === 'accept') {
             return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');
           }
@@ -322,10 +328,7 @@ export class Orchestrator {
           if (state.runPersisted) {
             await this.persistRunStatus(state, 'running', 'resumeAfterSignoffRejected');
           }
-          const o = await this.reextract(state, {
-            actionId: '(signoff-rejected)',
-            verifyStderr: 'operator rejected sign-off after goalState satisfied; continue/replan per completion policy',
-          });
+          const o = await this.remediateRejectedSignoff(state, plan);
           if (o.kind === 'terminal') return o.summary;
           plan = o.plan;
           continue;
@@ -335,6 +338,12 @@ export class Orchestrator {
 
       const step = this.nextStep(plan, state);
       if (step === undefined) {
+        if (state.signoffRemediationActive) {
+          state.signoffRemediationActive = false;
+          state.planCursor = 0;
+          this.emit({ ev: 'signoff.remediation.done' });
+          continue;
+        }
         // Current plan exhausted but goal unmet — recompute from the real current state. forcedReplan
         // bounds the no-progress streak (a re-plan that keeps surfacing a step the ground-truth state
         // can never satisfy is a loop) and still escalates a malformed pool to re-extraction (#3).
@@ -656,9 +665,12 @@ export class Orchestrator {
     // structure + non-empty verify, and expand() already de-dups ids against the pool; the remaining
     // poison vector is `cost <= 0` (the schema defers cost>0 to the planner by design decision #3).
     // Drop those here; if nothing usable survives, the re-extraction made no progress.
-    const validNew = expanded.actions.filter((a) => a.cost > 0);
-    const dropped = expanded.actions.length - validNew.length;
-    if (dropped > 0) this.emit({ ev: 'reextract.dropped', dropped, reason: 'cost <= 0' });
+    const existingIds = new Set(state.pool.map((a) => a.id));
+    const validNew = expanded.actions.filter((a) => a.cost > 0 && !existingIds.has(a.id));
+    const droppedCost = expanded.actions.filter((a) => !(a.cost > 0)).length;
+    const droppedDuplicate = expanded.actions.filter((a) => a.cost > 0 && existingIds.has(a.id)).length;
+    if (droppedCost > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedCost, reason: 'cost <= 0' });
+    if (droppedDuplicate > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedDuplicate, reason: 'duplicate id' });
     // Append only the valid actions. If nothing usable was added, we do NOT short-circuit here: the
     // following safePlan() will either find no plan or re-throw on the still-malformed pool, and the
     // re-extraction cap bounds the loop — same path as any other no-progress re-extraction.
@@ -712,6 +724,87 @@ export class Orchestrator {
     state.planCursor = firstUndonePosition(r.plan, state.currentState, state.pool);
     this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions });
     return this.planResult(state, r.plan);
+  }
+
+  /**
+   * A rejected sign-off means the symbolic `goalState` is already true but the operator still wants
+   * corrective work. The normal planner optimally returns a zero-step plan from a satisfied state, so
+   * this path installs the newly-authored remediation actions directly and suppresses the satisfied
+   * short-circuit until that plan is exhausted.
+   */
+  private async remediateRejectedSignoff(state: RunState, currentPlan: Plan): Promise<PlanOutcome> {
+    if (state.reextractions >= this.config.maxReextractions) {
+      return {
+        kind: 'terminal',
+        summary: await this.terminalSummary(state, 'failed', `re-extraction cap (${this.config.maxReextractions}) reached; sign-off remediation unavailable`),
+      };
+    }
+    if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before sign-off remediation`) };
+    }
+    const evidence: FailureEvidence = {
+      actionId: '(signoff-rejected)',
+      verifyStderr: 'operator rejected sign-off after goalState satisfied; author corrective remediation actions',
+    };
+    state.reextractions++;
+    this.emit({ ev: 'reextract', reextractions: state.reextractions, forActionId: evidence.actionId });
+
+    let expanded: { actions: Action[]; costUsd: number };
+    try {
+      expanded = await this.extractor.expand(state.goalText, state.currentState, evidence, state.pool, this.signal);
+    } catch (e) {
+      const detail = (e as { detail?: Record<string, unknown> }).detail;
+      const failedCostUsd = detail !== undefined && typeof detail.costUsd === 'number' ? detail.costUsd : 0;
+      state.accumulatedCostUsd += failedCostUsd;
+      if (this.signal.aborted) {
+        return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'aborted during sign-off remediation') };
+      }
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'failed', `expand failed: ${(e as Error).message}`) };
+    }
+
+    state.accumulatedCostUsd += expanded.costUsd;
+    if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by sign-off remediation`) };
+    }
+
+    const validNew = expanded.actions.filter((a) => a.cost > 0);
+    const dropped = expanded.actions.length - validNew.length;
+    if (dropped > 0) this.emit({ ev: 'reextract.dropped', dropped, reason: 'cost <= 0' });
+    state.pool = [...state.pool, ...validNew];
+    this.emit({ ev: 'reextract.added', added: validNew.length, poolSize: state.pool.length });
+    if (validNew.length === 0) return this.remediateRejectedSignoff(state, currentPlan);
+
+    const remediationPlan = this.buildSignoffRemediationPlan(state, currentPlan, validNew);
+    const reconfirmed = await this.confirm(this.buildDod(state, remediationPlan), this.signal, 'reconfirm');
+    if (!reconfirmed) {
+      this.emit({ ev: 'dod.cancelled', reason: 'sign-off remediation actions not accepted' });
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'cancelled at sign-off remediation confirmation') };
+    }
+    for (const s of remediationPlan.steps) state.confirmed.add(s.actionId);
+    state.replanStreak = 0;
+    state.planCursor = 0;
+    state.signoffRemediationActive = true;
+    this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions, reason: 'sign-off remediation' });
+    return this.planResult(state, remediationPlan);
+  }
+
+  private buildSignoffRemediationPlan(state: RunState, currentPlan: Plan, actions: Action[]): Plan {
+    const actionIds = actions.map((a) => a.id);
+    const fingerprint = JSON.stringify({
+      goalSpecId: currentPlan.goalSpecId,
+      replanOf: currentPlan.id,
+      from: sortedStateEntries(state.currentState),
+      actions: actionIds,
+      reextractions: state.reextractions,
+    });
+    return {
+      id: `plan_signoff_${shortHash(fingerprint)}`,
+      goalSpecId: currentPlan.goalSpecId,
+      steps: actionIds.map((actionId) => ({ actionId, status: 'pending', dependsOn: [] })),
+      totalCost: actions.reduce((sum, a) => sum + a.cost, 0),
+      createdFromState: { ...state.currentState },
+      replanOf: currentPlan.id,
+    };
   }
 
   // ── Persistence (R1-R6; best-effort — never aborts a run) ──────────────────────────────────────
@@ -865,6 +958,16 @@ function mergeState(state: WorldState, update: Partial<WorldState>): WorldState 
     if (v !== undefined) next[k] = v;
   }
   return next;
+}
+
+function sortedStateEntries(state: WorldState): Array<[string, WorldState[string]]> {
+  return Object.keys(state)
+    .sort()
+    .map((key) => [key, state[key]!]);
+}
+
+function shortHash(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 16);
 }
 
 /**
