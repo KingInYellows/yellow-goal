@@ -9,10 +9,10 @@
  * uncommitted delta left), but diffing against `initialSha` still shows everything from creation
  * to now, committed or not.
  *
- * `git add -N .` (intent-to-add) stages untracked files as empty blobs so they appear as full
- * additions in that diff. This mutates the index, which is normally unsafe to do carelessly, but
- * the worktree is torn down immediately after this call (see `worktree.ts`'s documented teardown
- * ordering) — no caller ever observes the mutated index.
+ * `git add -N .` (intent-to-add) stages untracked files as empty blobs so they appear in the diff.
+ * This mutates the index, which is normally unsafe to do carelessly, but the worktree is torn down
+ * immediately after this call (see `worktree.ts`'s documented teardown ordering) — no caller ever
+ * observes the mutated index.
  */
 import { git } from './worktree';
 
@@ -27,7 +27,7 @@ export function captureDiff(worktreePath: string, initialSha: string): string | 
   // --no-ext-diff/--no-textconv: the agent can write repo-local .git/config + .gitattributes
   // during its turn (GIT_ENV only pins the GLOBAL/SYSTEM config, not this worktree's own), and a
   // planted diff driver would otherwise execute inside the orchestrator process on this call.
-  const diff = git(['diff', '--no-ext-diff', '--no-textconv', '--binary', initialSha], worktreePath);
+  const diff = git(['diff', '--no-ext-diff', '--no-textconv', initialSha], worktreePath);
   if (diff.status !== 0 || diff.stdout.length === 0) return undefined;
   return diff.stdout;
 }

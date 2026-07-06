@@ -16,3 +16,7 @@ function requiredEnv(name: string): string {
 
 export const pool = new Pool({ connectionString: requiredEnv('DATABASE_URL') });
 export const db = drizzle(pool, { schema });
+
+export async function closeDb(): Promise<void> {
+  await pool.end();
+}

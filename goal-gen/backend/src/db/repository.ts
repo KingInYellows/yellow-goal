@@ -44,19 +44,21 @@ export async function upsertGoalSpec(db: Database, row: NewGoalSpecRow): Promise
  * tables, never minting orphan `plan_steps` rows.
  */
 export async function upsertPlan(db: Database, plan: Plan): Promise<void> {
-  await db
-    .insert(plans)
-    .values({ id: plan.id, goalSpecId: plan.goalSpecId, replanOf: plan.replanOf ?? null })
-    .onConflictDoNothing({ target: plans.id });
-  if (plan.steps.length === 0) return;
-  const rows = plan.steps.map((step, sequenceIndex) => ({
-    id: stepId(plan.id, sequenceIndex),
-    planId: plan.id,
-    actionId: step.actionId,
-    sequenceIndex,
-    status: step.status,
-  }));
-  await db.insert(planSteps).values(rows).onConflictDoNothing({ target: planSteps.id });
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(plans)
+      .values({ id: plan.id, goalSpecId: plan.goalSpecId, replanOf: plan.replanOf ?? null })
+      .onConflictDoNothing({ target: plans.id });
+    if (plan.steps.length === 0) return;
+    const rows = plan.steps.map((step, sequenceIndex) => ({
+      id: stepId(plan.id, sequenceIndex),
+      planId: plan.id,
+      actionId: step.actionId,
+      sequenceIndex,
+      status: step.status,
+    }));
+    await tx.insert(planSteps).values(rows).onConflictDoNothing({ target: planSteps.id });
+  });
 }
 
 /** `runId` is a fresh UUID minted per `run()` call (R3) — collision is not expected, but the

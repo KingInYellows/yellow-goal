@@ -66,7 +66,7 @@ export interface PersistenceProvider {
   upsertGoalSpec(goalSpec: { id: string; goalText: string; goalState: Partial<WorldState>; completionPolicy: CompletionPolicy }): Promise<void>;
   upsertPlan(plan: Plan): Promise<void>;
   insertRun(run: { id: string; planId: string; status: 'running'; startedAt: string }): Promise<void>;
-  insertAgentRun(agentRun: AgentRun): Promise<void>;
+  insertAgentRun(agentRun: AgentRun, runId: string): Promise<void>;
 }
 
 /** Default no-op persistence — existing CLI/test usage that never injects `persistence` sees zero
@@ -450,7 +450,7 @@ export class Orchestrator {
         // `git commit` (activityOracle's `headMoved` case).
         const diffContent = captureDiff(handle.worktreePath, handle.initialSha);
         if (diffContent !== undefined) agentRun.diffContent = diffContent;
-        await this.persistAgentRun(agentRun);
+        await this.persistAgentRun(agentRun, state.runId);
 
         if (passed) return { kind: 'passed', attempts, costUsd: stepCost };
       } finally {
@@ -710,9 +710,9 @@ export class Orchestrator {
     }
   }
 
-  private async persistAgentRun(agentRun: AgentRun): Promise<void> {
+  private async persistAgentRun(agentRun: AgentRun, runId: string): Promise<void> {
     try {
-      await this.persistence.insertAgentRun(agentRun);
+      await this.persistence.insertAgentRun(agentRun, runId);
     } catch (e) {
       this.emit({ ev: 'persistence.error', op: 'insertAgentRun', message: (e as Error).message });
     }

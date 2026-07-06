@@ -99,7 +99,8 @@ function fakePersistence(): PersistenceProvider & {
     insertRun: async (run) => {
       runs.push(run);
     },
-    insertAgentRun: async (agentRun) => {
+    insertAgentRun: async (agentRun, runId) => {
+      expect(runId).toBeDefined();
       agentRuns.push({ id: agentRun.id, planId: agentRun.planId, stepId: agentRun.stepId, actionId: agentRun.actionId });
     },
   };
