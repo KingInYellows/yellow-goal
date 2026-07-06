@@ -106,45 +106,13 @@ function hash64(input: string): string {
   return (h1 >>> 0).toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
 }
 
-/**
- * Recursively stringify an unknown value with sorted object keys so the result is deterministic
- * regardless of property insertion order. Used for `payload.mcpTool.args` which is typed `unknown`.
- */
-function stableStringify(val: unknown): string {
-  if (val === null || val === undefined) return String(val);
-  if (typeof val !== 'object') return JSON.stringify(val);
-  if (Array.isArray(val)) return `[${val.map(stableStringify).join(',')}]`;
-  const obj = val as Record<string, unknown>;
-  const pairs = Object.keys(obj)
-    .sort()
-    .filter((k) => obj[k] !== undefined)
-    .map((k) => `${JSON.stringify(k)}:${stableStringify(obj[k])}`);
-  return `{${pairs.join(',')}}`;
-}
 
 /** Content-derived, stable id for a GoalSpec. */
 function goalSpecId(goalSpec: GoalSpec): string {
   const canonical = JSON.stringify({
     goalText: goalSpec.goalText,
-    initial: sortedEntries(goalSpec.initialState),
-    goal: sortedEntries(goalSpec.goalState),
-    constraints: goalSpec.constraints,
+    goalState: sortedEntries(goalSpec.goalState),
     completionPolicy: goalSpec.completionPolicy,
-    actions: goalSpec.actions.map((a) => ({
-      id: a.id,
-      name: a.name,
-      cost: a.cost,
-      executor: a.executor,
-      pre: sortedEntries(a.preconditions),
-      eff: sortedEntries(a.effects),
-      payload: stableStringify(a.payload),
-      verify: {
-        command: a.verify.command,
-        successPredicate: a.verify.successPredicate
-          ? sortedEntries(a.verify.successPredicate)
-          : undefined,
-      },
-    })),
   });
   return `goal_${hash64(canonical)}`;
 }
