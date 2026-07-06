@@ -26,7 +26,7 @@ export const goalSpecs = pgTable('goal_specs', {
   goalText: text('goal_text').notNull(),
   goalState: jsonb('goal_state').notNull().$type<Partial<WorldState>>(),
   completionPolicy: completionPolicyEnum('completion_policy').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
 
 /**
@@ -38,7 +38,7 @@ export const plans = pgTable('plans', {
   id: text('id').primaryKey(),
   goalSpecId: text('goal_spec_id').notNull().references(() => goalSpecs.id),
   replanOf: text('replan_of').references((): AnyPgColumn => plans.id),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
 
 /**
@@ -99,7 +99,7 @@ export const runEvents = pgTable('run_events', {
   stepId: text('step_id').references(() => planSteps.id),
   type: text('type').notNull(),
   payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
 
 export type GoalSpecRow = typeof goalSpecs.$inferSelect;
