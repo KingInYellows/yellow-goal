@@ -613,8 +613,9 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     expect(executor.runs).toHaveLength(2);
   });
 
-  it('sign-off gate (R30): accepting after goalState is satisfied succeeds', async () => {
-    const { session } = buildSession({ goalSpec: ALREADY_SATISFIED });
+  it('sign-off gate (R30): accepting after goalState is satisfied succeeds and persists the terminal status', async () => {
+    const persistence = fakePersistence();
+    const { session } = buildSession({ goalSpec: ALREADY_SATISFIED, persistence });
     const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
     await waitForGateKind(session, 'dod'); // initial DoD confirm fires unconditionally first
     session.resolveGate(true);
@@ -623,10 +624,12 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     const summary = await summaryPromise;
     expect(summary.status).toBe('succeeded');
     expect(summary.reason).toMatch(/signed off/);
+    expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
   });
 
-  it('sign-off gate (R30): rejecting after goalState is satisfied cancels the run', async () => {
-    const { session } = buildSession({ goalSpec: ALREADY_SATISFIED });
+  it('sign-off gate (R30): rejecting after goalState is satisfied cancels the run and persists the terminal status', async () => {
+    const persistence = fakePersistence();
+    const { session } = buildSession({ goalSpec: ALREADY_SATISFIED, persistence });
     const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
     await waitForGateKind(session, 'dod');
     session.resolveGate(true);
@@ -635,6 +638,7 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     const summary = await summaryPromise;
     expect(summary.status).toBe('cancelled');
     expect(summary.reason).toMatch(/rejected sign-off/);
+    expect(persistence.runStatuses.get(session.runId)).toBe('cancelled');
   });
 
   it('R31: the awaiting-acceptance status/event write lands synchronously BEFORE the gate awaits', async () => {

@@ -98,6 +98,16 @@ describe('PendingGate', () => {
     expect(await opened).toBe('reject');
   });
 
+  it('resolve() with an invalid accept decision string is a safe no-op', async () => {
+    const gate = new PendingGate();
+    const controller = new AbortController();
+    const opened = gate.openAccept(controller.signal);
+    expect(gate.resolve('maybe' as unknown as 'accept')).toBe(false);
+    expect(gate.kind()).toBe('accept');
+    gate.resolve('accept');
+    expect(await opened).toBe('accept');
+  });
+
   it('resolve() with a wrong-shape decision (string while dod is open) is a safe no-op', async () => {
     const gate = new PendingGate();
     const controller = new AbortController();

@@ -6,7 +6,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { insertAgentRun, insertRun, upsertGoalSpec, upsertPlan } from '../../backend/src/db/repository';
+import { insertAgentRun, insertRun, updateRunStatus, upsertGoalSpec, upsertPlan } from '../../backend/src/db/repository';
 import { agentRuns, planSteps, plans, runs } from '../../backend/src/db/schema';
 import type { Plan } from '../../backend/src/planner/types';
 import { createTestDb } from './pglite-setup';
@@ -92,5 +92,16 @@ describe('repository — runId / diffContent round-tripping (plan Step 7/8)', ()
     const runRows = await ctx.db.select().from(runs).where(eq(runs.id, 'run_rt'));
     expect(runRows).toHaveLength(1);
     expect(runRows[0]?.planId).toBe(REPEATED_PLAN.id);
+  });
+
+  it('updateRunStatus updates an existing run and throws when the run is missing', async () => {
+    await upsertPlan(ctx.db, REPEATED_PLAN);
+    await insertRun(ctx.db, { id: 'run_status', planId: REPEATED_PLAN.id, status: 'running' });
+
+    await updateRunStatus(ctx.db, 'run_status', 'awaiting-acceptance');
+    const rows = await ctx.db.select().from(runs).where(eq(runs.id, 'run_status'));
+    expect(rows[0]?.status).toBe('awaiting-acceptance');
+
+    await expect(updateRunStatus(ctx.db, 'missing_run', 'succeeded')).rejects.toThrow(/missing_run/);
   });
 });

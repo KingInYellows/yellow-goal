@@ -310,12 +310,16 @@ export class Orchestrator {
           // later shell), so a concurrent GET /runs/:id can never observe a stale non-awaiting status.
           await this.persistAwaitingAcceptance(state, plan);
           const decision = await this.acceptanceGate(this.buildDod(state, plan), this.signal);
-          if (decision === 'accept') return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
+          if (decision === 'accept') {
+            await this.persistRunStatus(state, 'succeeded', 'terminalRunStatus');
+            return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
+          }
           // Rejection AFTER goalState is already satisfied: re-planning here is incoherent — the
           // deterministic planner from a satisfied state returns a zero-step plan, so the loop would
           // spin (re-prompting sign-off forever) with no actions able to change the outcome. Return a
           // non-succeeded terminal; the operator can re-run with adjusted goalState/verify criteria.
           this.emit({ ev: 'signoff.rejected' });
+          await this.persistRunStatus(state, 'cancelled', 'terminalRunStatus');
           return this.summary(state, 'cancelled', 'operator rejected sign-off after goalState satisfied');
         }
         return this.summary(state, 'succeeded', 'goalState satisfied');
@@ -756,6 +760,10 @@ export class Orchestrator {
       await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
       await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload: {} });
     });
+  }
+
+  private async persistRunStatus(state: RunState, status: RunStatus, op: string): Promise<void> {
+    await this.persistBestEffort(op, () => this.persistence.updateRunStatus(state.runId, status));
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────

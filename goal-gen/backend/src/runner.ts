@@ -16,7 +16,7 @@ import { ShellVerifier } from './executors/shell-verifier';
 import { ClaudeLlmClient, LlmExtractorImpl } from './extractors/llm-extractor';
 import { defaultRunConfig } from './orchestrator/guardrails';
 import { Orchestrator } from './orchestrator/orchestrator';
-import type { DodConfirmer } from './orchestrator/orchestrator';
+import type { AcceptanceGate, DodConfirmer } from './orchestrator/orchestrator';
 import type { RunSummary } from './types';
 
 /** Structured JSON-lines log line to stdout (one self-describing event per line). */
@@ -55,13 +55,19 @@ async function run(args: string[]): Promise<RunSummary> {
         return true;
       }
     : undefined;
+  const acceptanceGate: AcceptanceGate | undefined = autoConfirm
+    ? async () => {
+        log({ ev: 'gate.autoAccept' });
+        return 'accept';
+      }
+    : undefined;
 
   const ac = new AbortController();
   const abort = () => ac.abort();
   process.once('SIGINT', abort);
   process.once('SIGTERM', abort);
 
-  const orchestrator = new Orchestrator({ extractor, executor, verifier, config, onEvent: log, confirm, signal: ac.signal });
+  const orchestrator = new Orchestrator({ extractor, executor, verifier, config, onEvent: log, confirm, acceptanceGate, signal: ac.signal });
   return orchestrator.run({ goalText }).finally(() => {
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);

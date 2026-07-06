@@ -97,7 +97,7 @@ export class PendingGate {
   resolve(decision: boolean | 'accept' | 'reject'): boolean {
     if (!this.slot) return false;
     if (this.slot.kind === 'accept') {
-      if (typeof decision !== 'string') return false;
+      if (decision !== 'accept' && decision !== 'reject') return false;
       this.slot.resolve(decision);
       return true;
     }

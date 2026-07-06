@@ -72,7 +72,10 @@ export async function insertRun(db: Database, row: NewRunRow): Promise<void> {
 /** Transition an existing `runs` row's status (R29/R30) — e.g. into `'awaiting-acceptance'` on
  *  sign-off gate entry. Unlike `insertRun`, this targets a row that must already exist. */
 export async function updateRunStatus(db: Database, runId: string, status: RunStatus): Promise<void> {
-  await db.update(runs).set({ status }).where(eq(runs.id, runId));
+  const updated = await db.update(runs).set({ status }).where(eq(runs.id, runId)).returning({ id: runs.id });
+  if (updated.length === 0) {
+    throw new Error(`updateRunStatus: run ${runId} was not found`);
+  }
 }
 
 /** `AgentRun.id` is unique per executor invocation; a plain insert is sufficient. */
