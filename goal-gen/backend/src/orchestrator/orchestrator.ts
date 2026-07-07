@@ -150,6 +150,11 @@ interface RunState {
    *  being satisfied. Without this, the top-of-loop satisfied check reopens sign-off before the
    *  remediation plan can run. */
   signoffRemediationActive: boolean;
+  /** Count of remediation actions that successfully passed verify during the current remediation
+   *  round. Reset when entering remediation; checked when the remediation plan exhausts to ensure
+   *  at least one action succeeded before clearing signoffRemediationActive (prevents reopening
+   *  sign-off when all remediation actions failed due to unmet preconditions). */
+  signoffRemediationSuccesses: number;
   /** Action ids the operator has confirmed (initial DoD + every re-confirm). A replan that surfaces
    *  an id NOT in here must be re-confirmed before its verify.command runs (PR #8 review P1). */
   confirmed: Set<string>;
@@ -255,6 +260,7 @@ export class Orchestrator {
       pool: sanitized.valid,
       planCursor: 0,
       signoffRemediationActive: false,
+      signoffRemediationSuccesses: 0,
       confirmed: new Set(),
       replans: 0,
       replanStreak: 0,
@@ -339,10 +345,22 @@ export class Orchestrator {
       const step = this.nextStep(plan, state);
       if (step === undefined) {
         if (state.signoffRemediationActive) {
-          state.signoffRemediationActive = false;
-          state.planCursor = 0;
-          this.emit({ ev: 'signoff.remediation.done' });
-          continue;
+          // Only exit remediation mode if at least one remediation action succeeded. If all actions
+          // failed (e.g., due to unmet preconditions), keep remediation active so the recovery
+          // path can continue through re-extraction rather than reopening sign-off prematurely.
+          if (state.signoffRemediationSuccesses > 0) {
+            state.signoffRemediationActive = false;
+            state.signoffRemediationSuccesses = 0;
+            state.planCursor = 0;
+            this.emit({ ev: 'signoff.remediation.done' });
+            continue;
+          } else {
+            // No remediation actions passed; continue through the re-extraction ladder.
+            const o = await this.remediateRejectedSignoff(state, plan);
+            if (o.kind === 'terminal') return o.summary;
+            plan = o.plan;
+            continue;
+          }
         }
         // Current plan exhausted but goal unmet — recompute from the real current state. forcedReplan
         // bounds the no-progress streak (a re-plan that keeps surfacing a step the ground-truth state
@@ -413,6 +431,9 @@ export class Orchestrator {
         const update = passUpdate(action);
         state.currentState = mergeState(state.currentState, update);
         this.recordOutcome(state, action.id, 'succeeded', result.attempts, result.costUsd);
+        if (state.signoffRemediationActive) {
+          state.signoffRemediationSuccesses++;
+        }
         this.emit({ ev: 'step.pass', actionId: action.id, attempts: result.attempts, applied: update });
         continue; // termination re-checked at the top
       }
@@ -796,6 +817,7 @@ export class Orchestrator {
     state.replanStreak = 0;
     state.planCursor = 0;
     state.signoffRemediationActive = true;
+    state.signoffRemediationSuccesses = 0;
     this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions, reason: 'sign-off remediation' });
     return this.planResult(state, remediationPlan);
   }
