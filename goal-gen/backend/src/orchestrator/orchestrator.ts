@@ -388,6 +388,14 @@ export class Orchestrator {
       // bounds that no-progress streak so the loop terminates (wall-clock is deferred in v1).
       if (!satisfies(state.currentState, action.preconditions)) {
         this.emit({ ev: 'plan.stale', actionId: action.id, reason: 'preconditions unmet by ground-truth state' });
+        if (state.signoffRemediationActive) {
+          // Stale precondition during remediation: route through remediation recovery to preserve context,
+          // not through normal forcedReplan which could reopen sign-off when goalState is still satisfied.
+          const o = await this.remediateRejectedSignoff(state, plan, { actionId: action.id, verifyStderr: 'planned step preconditions unmet by ground-truth state during remediation' });
+          if (o.kind === 'terminal') return o.summary;
+          plan = o.plan;
+          continue;
+        }
         const o = await this.forcedReplan(state, { actionId: action.id }, 'planned step preconditions unmet by ground-truth state and no replan possible');
         if (o.kind === 'terminal') return o.summary;
         plan = o.plan;
@@ -800,9 +808,14 @@ export class Orchestrator {
       return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by sign-off remediation`) };
     }
 
-    const validNew = expanded.actions.filter((a) => a.cost > 0);
-    const dropped = expanded.actions.length - validNew.length;
-    if (dropped > 0) this.emit({ ev: 'reextract.dropped', dropped, reason: 'cost <= 0' });
+    // Filter duplicates and invalid actions, mirroring the normal reextract() path to prevent
+    // duplicate IDs from poisoning the pool or causing the planner to reference stale actions.
+    const existingIds = new Set(state.pool.map((a) => a.id));
+    const validNew = expanded.actions.filter((a) => a.cost > 0 && !existingIds.has(a.id));
+    const droppedCost = expanded.actions.filter((a) => !(a.cost > 0)).length;
+    const droppedDuplicate = expanded.actions.filter((a) => a.cost > 0 && existingIds.has(a.id)).length;
+    if (droppedCost > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedCost, reason: 'cost <= 0' });
+    if (droppedDuplicate > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedDuplicate, reason: 'duplicate id' });
     state.pool = [...state.pool, ...validNew];
     this.emit({ ev: 'reextract.added', added: validNew.length, poolSize: state.pool.length });
     if (validNew.length === 0) return this.remediateRejectedSignoff(state, currentPlan);
