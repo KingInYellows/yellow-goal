@@ -349,6 +349,19 @@ export class Orchestrator {
           // failed (e.g., due to unmet preconditions), keep remediation active so the recovery
           // path can continue through re-extraction rather than reopening sign-off prematurely.
           if (state.signoffRemediationSuccesses > 0) {
+            // Check if the remediation actions changed goalState back to unsatisfied — if so, we need
+            // to route through forcedReplan/reextract toward the original goal, not just clear
+            // remediation and continue with the exhausted remediation plan (which would re-dispatch
+            // the first corrective action instead of planning toward the now-unmet goal).
+            if (!satisfies(state.currentState, state.goalSpec.goalState)) {
+              state.signoffRemediationActive = false;
+              state.signoffRemediationSuccesses = 0;
+              this.emit({ ev: 'signoff.remediation.unsatisfied' });
+              const o = await this.forcedReplan(state, { actionId: '(remediation-unsatisfied)' }, 'remediation exhausted but goalState no longer satisfied');
+              if (o.kind === 'terminal') return o.summary;
+              plan = o.plan;
+              continue;
+            }
             state.signoffRemediationActive = false;
             state.signoffRemediationSuccesses = 0;
             state.planCursor = 0;

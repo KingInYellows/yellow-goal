@@ -8,7 +8,7 @@
  * structured summary. `runner.ts` still carries NO business logic of its own — argv, the structured
  * JSON-lines log sink, and exit-code control flow only. It never calls `process.exit()` mid-run.
  *
- *   --yes, -y   auto-confirm the definition-of-done gate (non-interactive; for automation/the probe).
+ *   --yes, -y   auto-confirm all gates: definition-of-done and sign-off (non-interactive; for automation/the probe).
  */
 import { pathToFileURL } from 'node:url';
 import { ClaudeCodeExecutor } from './executors/claude-code-executor';
@@ -16,7 +16,7 @@ import { ShellVerifier } from './executors/shell-verifier';
 import { ClaudeLlmClient, LlmExtractorImpl } from './extractors/llm-extractor';
 import { defaultRunConfig } from './orchestrator/guardrails';
 import { Orchestrator } from './orchestrator/orchestrator';
-import type { AcceptanceGate, DodConfirmer } from './orchestrator/orchestrator';
+import type { DodConfirmer } from './orchestrator/orchestrator';
 import type { RunSummary } from './types';
 
 /** Structured JSON-lines log line to stdout (one self-describing event per line). */
@@ -55,19 +55,16 @@ async function run(args: string[]): Promise<RunSummary> {
         return true;
       }
     : undefined;
-  const acceptanceGate: AcceptanceGate | undefined = autoConfirm
-    ? async () => {
-        log({ ev: 'gate.autoAccept' });
-        return 'accept';
-      }
-    : undefined;
+  // Sign-off gate deliberately NOT auto-accepted by --yes: DoD confirmation is about trusting the
+  // plan, sign-off is about verifying results. Keep them separate so --yes enables automation
+  // without silently bypassing the acceptance control (CodeAnt AI review: Critical severity).
 
   const ac = new AbortController();
   const abort = () => ac.abort();
   process.once('SIGINT', abort);
   process.once('SIGTERM', abort);
 
-  const orchestrator = new Orchestrator({ extractor, executor, verifier, config, onEvent: log, confirm, acceptanceGate, signal: ac.signal });
+  const orchestrator = new Orchestrator({ extractor, executor, verifier, config, onEvent: log, confirm, signal: ac.signal });
   return orchestrator.run({ goalText }).finally(() => {
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
