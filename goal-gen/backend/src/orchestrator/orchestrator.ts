@@ -420,6 +420,12 @@ export class Orchestrator {
       this.recordOutcome(state, action.id, 'failed', result.attempts, result.costUsd);
       this.recordFailure(state, action.id, result.evidence);
       this.emit({ ev: 'step.fail', actionId: action.id, attempts: result.attempts });
+      if (state.signoffRemediationActive) {
+        const o = await this.remediateRejectedSignoff(state, plan, result.evidence);
+        if (o.kind === 'terminal') return o.summary;
+        plan = o.plan;
+        continue;
+      }
       const o = await this.replanLadder(state, action.id, result.evidence);
       if (o.kind === 'terminal') return o.summary;
       plan = o.plan;
@@ -732,7 +738,7 @@ export class Orchestrator {
    * this path installs the newly-authored remediation actions directly and suppresses the satisfied
    * short-circuit until that plan is exhausted.
    */
-  private async remediateRejectedSignoff(state: RunState, currentPlan: Plan): Promise<PlanOutcome> {
+  private async remediateRejectedSignoff(state: RunState, currentPlan: Plan, failureEvidence?: FailureEvidence): Promise<PlanOutcome> {
     if (state.reextractions >= this.config.maxReextractions) {
       return {
         kind: 'terminal',
@@ -742,10 +748,16 @@ export class Orchestrator {
     if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
       return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before sign-off remediation`) };
     }
-    const evidence: FailureEvidence = {
-      actionId: '(signoff-rejected)',
-      verifyStderr: 'operator rejected sign-off after goalState satisfied; author corrective remediation actions',
-    };
+    const evidence: FailureEvidence =
+      failureEvidence !== undefined
+        ? {
+            ...failureEvidence,
+            verifyStderr: `${failureEvidence.verifyStderr ?? ''}\nsign-off remediation failed; author corrective replacement actions`.trim(),
+          }
+        : {
+            actionId: '(signoff-rejected)',
+            verifyStderr: 'operator rejected sign-off after goalState satisfied; author corrective remediation actions',
+          };
     state.reextractions++;
     this.emit({ ev: 'reextract', reextractions: state.reextractions, forActionId: evidence.actionId });
 

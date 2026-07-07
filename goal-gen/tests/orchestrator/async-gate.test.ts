@@ -158,6 +158,25 @@ describe('AsyncLatch', () => {
     expect(resumed).toBe(true);
   });
 
+  it('keeps the same waiter blocked when resume() is immediately followed by a fresh pause', async () => {
+    const latch = new AsyncLatch();
+    const controller = new AbortController();
+    latch.pause();
+    let resumed = false;
+    const waiting = latch.whenResumed(controller.signal).then(() => {
+      resumed = true;
+    });
+    await Promise.resolve();
+    expect(resumed).toBe(false);
+    latch.resume();
+    latch.pause();
+    await Promise.resolve();
+    expect(resumed).toBe(false);
+    latch.resume();
+    await waiting;
+    expect(resumed).toBe(true);
+  });
+
   it('whenResumed(signal) settles (does not hang) when the signal aborts while paused, with no resume()', async () => {
     const latch = new AsyncLatch();
     const controller = new AbortController();

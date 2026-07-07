@@ -119,6 +119,16 @@ async function waitForGateKind(session: RunSession, kind: GateKind, timeoutMs = 
   }
 }
 
+async function waitForGateKindAndRunCount(session: RunSession, kind: GateKind, runCount: number, executor: StubExecutor, timeoutMs = 500): Promise<void> {
+  const start = Date.now();
+  while (session.pendingGateKind() !== kind || executor.runs.length < runCount) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Timed out waiting for gate kind '${kind}' with ${runCount} run(s) (current: ${session.pendingGateKind()}, runs: ${executor.runs.length})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 /** An in-memory `PersistenceProvider` double — records every upserted `Plan` and inserted
  *  `AgentRun`/run so tests can assert on persisted rows without a real database. */
 function fakePersistence(): PersistenceProvider & {
@@ -590,6 +600,7 @@ const ALREADY_SATISFIED: GoalSpec = {
   actions: [],
 };
 const SIGNOFF_REMEDIATION = action('remediate-signoff', { done: true }, { remediated: true }, 'verify-remediated');
+const SIGNOFF_REMEDIATION_RETRY = action('remediate-signoff-retry', { done: true }, { remediated: true }, 'verify-remediated-retry');
 
 describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
   it('resolves the initial DoD gate via the stand-in resolver (resolveGate) and succeeds', async () => {
@@ -685,6 +696,41 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     expect(extractor.expandCalls).toBe(0);
     expect(events.some((e) => e.ev === 'signoff.rejected')).toBe(false);
     expect(persistence.runStatuses.get(session.runId)).toBe('cancelled');
+  });
+
+  it('sign-off gate (R30): failed remediation re-enters remediation instead of reopening sign-off', async () => {
+    const persistence = fakePersistence();
+    const { session, extractor, executor } = buildSession({
+      goalSpec: ALREADY_SATISFIED,
+      expansions: [[SIGNOFF_REMEDIATION], [SIGNOFF_REMEDIATION_RETRY]],
+      verifier: {
+        byCommand: {
+          'verify-remediated': [
+            { exitCode: 1, stdout: '', stderr: 'still not accepted' },
+            { exitCode: 1, stdout: '', stderr: 'still not accepted' },
+            { exitCode: 1, stdout: '', stderr: 'still not accepted' },
+          ],
+        },
+      },
+      persistence,
+    });
+    const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
+    await waitForGateKind(session, 'dod');
+    session.resolveGate(true);
+    await waitForGateKind(session, 'accept');
+    session.resolveGate('reject');
+    await waitForGateKind(session, 'reconfirm');
+    session.resolveGate(true);
+    await waitForGateKindAndRunCount(session, 'reconfirm', 3, executor);
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['remediate-signoff', 'remediate-signoff', 'remediate-signoff']);
+    expect(session.resolveGate(true)).toBe(true);
+    await waitForGateKindAndRunCount(session, 'accept', 4, executor);
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['remediate-signoff', 'remediate-signoff', 'remediate-signoff', 'remediate-signoff-retry']);
+    expect(extractor.expandCalls).toBe(2);
+    expect(session.resolveGate('accept')).toBe(true);
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('succeeded');
+    expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
   });
 
   it('R31: the awaiting-acceptance status/event write lands synchronously BEFORE the gate awaits', async () => {

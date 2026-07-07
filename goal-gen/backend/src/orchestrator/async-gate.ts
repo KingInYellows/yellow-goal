@@ -134,7 +134,10 @@ export class AsyncLatch {
    *  never rejects, so callers must re-check `signal.aborted` after awaiting this to distinguish
    *  "resumed" from "aborted while paused". */
   async whenResumed(signal: AbortSignal): Promise<void> {
-    if (!this.deferred) return;
-    await raceWithAbort(this.deferred.promise, signal, () => undefined);
+    while (this.deferred) {
+      const pending = this.deferred;
+      await raceWithAbort(pending.promise, signal, () => undefined);
+      if (signal.aborted) return;
+    }
   }
 }
