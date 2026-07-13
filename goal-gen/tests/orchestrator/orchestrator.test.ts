@@ -13,8 +13,10 @@ import { StubExtractor } from '../../backend/src/extractors/stub-extractor';
 import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
 import { Orchestrator } from '../../backend/src/orchestrator/orchestrator';
 import type { DodConfirmer, PersistenceProvider, WorktreeProvider } from '../../backend/src/orchestrator/orchestrator';
+import { RunSession } from '../../backend/src/orchestrator/run-session';
+import type { GateKind } from '../../backend/src/orchestrator/run-session';
 import type { Action, GoalSpec, WorldState } from '../../backend/src/planner/types';
-import type { RunConfig, VerifyResult } from '../../backend/src/types';
+import type { RunConfig, RunStatus, VerifyResult } from '../../backend/src/types';
 
 /** Worktree double — the stubs ignore the path, so this never touches the filesystem. */
 const stubWorktree: WorktreeProvider = async (opts) => ({
@@ -71,6 +73,62 @@ function build(h: Harness) {
   return { orch, extractor, executor, verifier, events };
 }
 
+/** A `RunSession`-backed harness (plan Step 8) — unlike `build()`, this does NOT accept a
+ *  `confirm` option: `RunSession` supplies its own `confirm`/`acceptanceGate` bound to its
+ *  internal pending-gate slot, so tests interact via `session.resolveGate()`/`pause()`/`resume()`
+ *  instead of a fixed answer. `build()`'s `confirm` seam has no equivalent here by design — that
+ *  IS the thing this shell adds. */
+interface SessionHarness {
+  goalSpec: GoalSpec;
+  expansions?: Action[][];
+  executor?: { default?: StubAgentOutcome; byAction?: Record<string, StubAgentOutcome[]> };
+  verifier?: { default?: VerifyResult; byCommand?: Record<string, VerifyResult[]> };
+  config?: Partial<RunConfig>;
+  persistence?: PersistenceProvider;
+}
+
+function buildSession(h: SessionHarness) {
+  const extractor = new StubExtractor({
+    goalSpec: h.goalSpec,
+    ...(h.expansions ? { expansions: h.expansions } : {}),
+  });
+  const executor = new StubExecutor(h.executor ?? { default: { status: 'succeeded', costUsd: 0 } });
+  const verifier = new StubVerifier(h.verifier ?? {});
+  const events: Record<string, unknown>[] = [];
+  const session = new RunSession({
+    extractor,
+    executor,
+    verifier,
+    config: defaultRunConfig(h.config),
+    worktreeProvider: stubWorktree,
+    onEvent: (e) => events.push(e),
+    ...(h.persistence ? { persistence: h.persistence } : {}),
+  });
+  return { session, extractor, executor, verifier, events };
+}
+
+/** Polls `pendingGateKind()` until it matches `kind` — the stand-in for a real HTTP request
+ *  arriving after the gate opens (plan Step 8). */
+async function waitForGateKind(session: RunSession, kind: GateKind, timeoutMs = 500): Promise<void> {
+  const start = Date.now();
+  while (session.pendingGateKind() !== kind) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Timed out waiting for gate kind '${kind}' (current: ${session.pendingGateKind()})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
+async function waitForGateKindAndRunCount(session: RunSession, kind: GateKind, runCount: number, executor: StubExecutor, timeoutMs = 500): Promise<void> {
+  const start = Date.now();
+  while (session.pendingGateKind() !== kind || executor.runs.length < runCount) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`Timed out waiting for gate kind '${kind}' with ${runCount} run(s) (current: ${session.pendingGateKind()}, runs: ${executor.runs.length})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+}
+
 /** An in-memory `PersistenceProvider` double — records every upserted `Plan` and inserted
  *  `AgentRun`/run so tests can assert on persisted rows without a real database. */
 function fakePersistence(): PersistenceProvider & {
@@ -78,16 +136,22 @@ function fakePersistence(): PersistenceProvider & {
   plans: Array<{ id: string; goalSpecId: string; replanOf?: string }>;
   runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }>;
   agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }>;
+  runStatuses: Map<string, RunStatus | 'running'>;
+  runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }>;
 } {
   const goalSpecs: Array<{ id: string; goalText: string; goalState: Partial<WorldState>; completionPolicy: GoalSpec['completionPolicy'] }> = [];
   const plans: Array<{ id: string; goalSpecId: string; replanOf?: string }> = [];
   const runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }> = [];
   const agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }> = [];
+  const runStatuses = new Map<string, RunStatus | 'running'>();
+  const runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }> = [];
   return {
     goalSpecs,
     plans,
     runs,
     agentRuns,
+    runStatuses,
+    runEvents,
     upsertGoalSpec: async (goalSpec) => {
       if (goalSpecs.some((g) => g.id === goalSpec.id)) return;
       goalSpecs.push(goalSpec);
@@ -102,6 +166,12 @@ function fakePersistence(): PersistenceProvider & {
     insertAgentRun: async (agentRun, runId) => {
       expect(runId).toBeDefined();
       agentRuns.push({ id: agentRun.id, planId: agentRun.planId, stepId: agentRun.stepId, actionId: agentRun.actionId });
+    },
+    updateRunStatus: async (runId, status) => {
+      runStatuses.set(runId, status);
+    },
+    insertRunEvent: async (event) => {
+      runEvents.push(event);
     },
   };
 }
@@ -130,6 +200,7 @@ describe('orchestrator — persistence seam (plan Step 9)', () => {
 
     expect(persistence.runs).toHaveLength(1);
     expect(persistence.runs[0]).toMatchObject({ id: 'test-run-id', planId, status: 'running' });
+    expect(persistence.runStatuses.get('test-run-id')).toBe('succeeded');
 
     expect(persistence.agentRuns).toHaveLength(2);
     expect(persistence.agentRuns.map((r) => r.actionId)).toEqual(['s1', 's2']);
@@ -143,6 +214,26 @@ describe('orchestrator — persistence seam (plan Step 9)', () => {
     const { orch } = build({ goalSpec: TWO_STEP });
     const summary = await orch.run({ goalText: TWO_STEP.goalText });
     expect(summary.status).toBe('succeeded'); // no throw from the default no-op persistence
+  });
+
+  it('does not mark the run persisted when insertRun fails best-effort', async () => {
+    const persistence = fakePersistence();
+    const statusUpdates: Array<{ runId: string; status: RunStatus | 'running' }> = [];
+    const failingPersistence: PersistenceProvider = {
+      ...persistence,
+      insertRun: async () => {
+        throw new Error('insert run failed');
+      },
+      updateRunStatus: async (runId, status) => {
+        statusUpdates.push({ runId, status });
+        await persistence.updateRunStatus(runId, status);
+      },
+    };
+    const { orch, events } = build({ goalSpec: TWO_STEP, persistence: failingPersistence });
+    const summary = await orch.run({ goalText: TWO_STEP.goalText }, 'run-insert-failed');
+    expect(summary.status).toBe('succeeded');
+    expect(statusUpdates).toEqual([]);
+    expect(events).toContainEqual({ ev: 'persistence.error', op: 'insertRun', message: 'insert run failed' });
   });
 });
 
@@ -495,5 +586,166 @@ describe('orchestrator — re-extraction respects the budget cap (PR #8 review P
     expect(summary.reason).toMatch(/before re-extraction/i);
     expect(extractor.expandCalls).toBe(1); // round 2 refused before calling expand()
     expect(executor.runs).toHaveLength(0);
+  });
+});
+
+/** Immediately satisfied at `initialState` with no actions — isolates the sign-off gate (R30)
+ *  from any step-dispatch machinery. */
+const ALREADY_SATISFIED: GoalSpec = {
+  goalText: 'already satisfied, needs sign-off',
+  initialState: { done: true },
+  goalState: { done: true },
+  constraints: [],
+  completionPolicy: 'verify+signoff',
+  actions: [],
+};
+const SIGNOFF_REMEDIATION = action('remediate-signoff', { done: true }, { remediated: true }, 'verify-remediated');
+const SIGNOFF_REMEDIATION_RETRY = action('remediate-signoff-retry', { done: true }, { remediated: true }, 'verify-remediated-retry');
+
+describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
+  it('resolves the initial DoD gate via the stand-in resolver (resolveGate) and succeeds', async () => {
+    const { session, executor } = buildSession({ goalSpec: TWO_STEP });
+    const summaryPromise = session.run({ goalText: TWO_STEP.goalText });
+    await waitForGateKind(session, 'dod');
+    expect(session.resolveGate(true)).toBe(true);
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('succeeded');
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['s1', 's2']);
+  });
+
+  it('resolves the initial DoD gate as declined and cancels the run', async () => {
+    const { session } = buildSession({ goalSpec: TWO_STEP });
+    const summaryPromise = session.run({ goalText: TWO_STEP.goalText });
+    await waitForGateKind(session, 'dod');
+    expect(session.resolveGate(false)).toBe(true);
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('cancelled');
+  });
+
+  it('abort-race: cancel() while a gate is open resolves it as declined (R25)', async () => {
+    const { session, executor } = buildSession({ goalSpec: TWO_STEP });
+    const summaryPromise = session.run({ goalText: TWO_STEP.goalText });
+    await waitForGateKind(session, 'dod');
+    session.cancel(); // fires the AbortSignal the gate is racing against
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('cancelled');
+    expect(executor.runs).toHaveLength(0); // never reached dispatch
+  });
+
+  it('pause() blocks the first dispatch until resume() is called', async () => {
+    const { session, executor } = buildSession({ goalSpec: TWO_STEP });
+    session.pause(); // paused before the loop even starts
+    const summaryPromise = session.run({ goalText: TWO_STEP.goalText });
+    await waitForGateKind(session, 'dod');
+    session.resolveGate(true); // clears the DoD gate; the pause check is the very next thing in the loop
+    await new Promise((r) => setTimeout(r, 10)); // let pending microtasks/timers settle
+    expect(executor.runs).toHaveLength(0); // still blocked by pause — no dispatch yet
+    session.resume();
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('succeeded');
+    expect(executor.runs).toHaveLength(2);
+  });
+
+  it('sign-off gate (R30): accepting after goalState is satisfied succeeds and persists the terminal status', async () => {
+    const persistence = fakePersistence();
+    const { session } = buildSession({ goalSpec: ALREADY_SATISFIED, persistence });
+    const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
+    await waitForGateKind(session, 'dod'); // initial DoD confirm fires unconditionally first
+    session.resolveGate(true);
+    await waitForGateKind(session, 'accept');
+    expect(session.resolveGate('accept')).toBe(true);
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('succeeded');
+    expect(summary.reason).toMatch(/signed off/);
+    expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
+  });
+
+  it('sign-off gate (R30): rejecting after goalState is satisfied continues through re-extraction', async () => {
+    const persistence = fakePersistence();
+    const { session, extractor, executor, events } = buildSession({ goalSpec: ALREADY_SATISFIED, expansions: [[SIGNOFF_REMEDIATION]], persistence });
+    const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
+    await waitForGateKind(session, 'dod');
+    session.resolveGate(true);
+    await waitForGateKind(session, 'accept');
+    expect(session.resolveGate('reject')).toBe(true);
+    await waitForGateKind(session, 'reconfirm');
+    expect(persistence.runStatuses.get(session.runId)).toBe('running');
+    expect(session.resolveGate(true)).toBe(true);
+    await waitForGateKind(session, 'accept');
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['remediate-signoff']);
+    expect(session.resolveGate('accept')).toBe(true);
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('succeeded');
+    expect(summary.reason).toMatch(/signed off/);
+    expect(extractor.expandCalls).toBe(1);
+    expect(events.some((e) => e.ev === 'signoff.rejected')).toBe(true);
+    expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
+  });
+
+  it('sign-off gate (R30): aborting while awaiting sign-off cancels without remediation', async () => {
+    const persistence = fakePersistence();
+    const { session, extractor, events } = buildSession({ goalSpec: ALREADY_SATISFIED, expansions: [[SIGNOFF_REMEDIATION]], persistence });
+    const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
+    await waitForGateKind(session, 'dod');
+    session.resolveGate(true);
+    await waitForGateKind(session, 'accept');
+    session.cancel();
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('cancelled');
+    expect(summary.reason).toMatch(/aborted during sign-off/);
+    expect(extractor.expandCalls).toBe(0);
+    expect(events.some((e) => e.ev === 'signoff.rejected')).toBe(false);
+    expect(persistence.runStatuses.get(session.runId)).toBe('cancelled');
+  });
+
+  it('sign-off gate (R30): failed remediation re-enters remediation instead of reopening sign-off', async () => {
+    const persistence = fakePersistence();
+    const { session, extractor, executor } = buildSession({
+      goalSpec: ALREADY_SATISFIED,
+      expansions: [[SIGNOFF_REMEDIATION], [SIGNOFF_REMEDIATION_RETRY]],
+      verifier: {
+        byCommand: {
+          'verify-remediated': [
+            { exitCode: 1, stdout: '', stderr: 'still not accepted' },
+            { exitCode: 1, stdout: '', stderr: 'still not accepted' },
+            { exitCode: 1, stdout: '', stderr: 'still not accepted' },
+          ],
+        },
+      },
+      persistence,
+    });
+    const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
+    await waitForGateKind(session, 'dod');
+    session.resolveGate(true);
+    await waitForGateKind(session, 'accept');
+    session.resolveGate('reject');
+    await waitForGateKind(session, 'reconfirm');
+    session.resolveGate(true);
+    await waitForGateKindAndRunCount(session, 'reconfirm', 3, executor);
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['remediate-signoff', 'remediate-signoff', 'remediate-signoff']);
+    expect(session.resolveGate(true)).toBe(true);
+    await waitForGateKindAndRunCount(session, 'accept', 4, executor);
+    expect(executor.runs.map((r) => r.actionId)).toEqual(['remediate-signoff', 'remediate-signoff', 'remediate-signoff', 'remediate-signoff-retry']);
+    expect(extractor.expandCalls).toBe(2);
+    expect(session.resolveGate('accept')).toBe(true);
+    const summary = await summaryPromise;
+    expect(summary.status).toBe('succeeded');
+    expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
+  });
+
+  it('R31: the awaiting-acceptance status/event write lands synchronously BEFORE the gate awaits', async () => {
+    const persistence = fakePersistence();
+    const { session } = buildSession({ goalSpec: ALREADY_SATISFIED, persistence });
+    const summaryPromise = session.run({ goalText: ALREADY_SATISFIED.goalText });
+    await waitForGateKind(session, 'dod');
+    session.resolveGate(true);
+    await waitForGateKind(session, 'accept');
+    // The gate is still OPEN (unresolved) at this point — assert the write already landed.
+    expect(persistence.runStatuses.get(session.runId)).toBe('awaiting-acceptance');
+    expect(persistence.runEvents.some((e) => e.runId === session.runId && e.type === 'AwaitingAcceptance')).toBe(true);
+    const event = persistence.runEvents.find((e) => e.runId === session.runId && e.type === 'AwaitingAcceptance');
+    expect(event?.payload.goalState).toEqual(ALREADY_SATISFIED.goalState);
+    session.resolveGate('accept');
+    await summaryPromise;
   });
 });

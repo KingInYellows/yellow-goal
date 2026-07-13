@@ -8,7 +8,7 @@
  * structured summary. `runner.ts` still carries NO business logic of its own — argv, the structured
  * JSON-lines log sink, and exit-code control flow only. It never calls `process.exit()` mid-run.
  *
- *   --yes, -y   auto-confirm the definition-of-done gate (non-interactive; for automation/the probe).
+ *   --yes, -y   auto-confirm all gates: definition-of-done and sign-off (non-interactive; for automation/the probe).
  */
 import { pathToFileURL } from 'node:url';
 import { ClaudeCodeExecutor } from './executors/claude-code-executor';
@@ -49,7 +49,15 @@ async function run(args: string[]): Promise<RunSummary> {
     noiseFilterPaths: config.noiseFilterPaths,
   });
   const verifier = new ShellVerifier();
-  const confirm: DodConfirmer | undefined = autoConfirm ? async () => true : undefined;
+  const confirm: DodConfirmer | undefined = autoConfirm
+    ? async (_dod, _signal, kind) => {
+        log({ ev: 'gate.autoConfirm', kind });
+        return true;
+      }
+    : undefined;
+  // Sign-off gate deliberately NOT auto-accepted by --yes: DoD confirmation is about trusting the
+  // plan, sign-off is about verifying results. Keep them separate so --yes enables automation
+  // without silently bypassing the acceptance control (CodeAnt AI review: Critical severity).
 
   const ac = new AbortController();
   const abort = () => ac.abort();

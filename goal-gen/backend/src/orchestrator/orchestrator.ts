@@ -15,7 +15,7 @@
  *  - Mandatory guardrails with a terminal state each: budget, replans, re-extractions, per-action
  *    retries, per-action timeout (in the executor). `failures` is retained for loop-detection (M2).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { plan as runPlanner } from '../planner/plan';
 import { satisfies } from '../planner/simulate';
 import { createWorktree } from '../executors/worktree';
@@ -38,6 +38,9 @@ import type {
   Verifier,
 } from '../types';
 import { defaultRunConfig } from './guardrails';
+import { AsyncLatch } from './async-gate';
+
+type PersistedRunStatus = RunStatus | 'running';
 
 /** The definition of done shown to the operator at the confirm gate (plan task 4.2). */
 export interface DodInfo {
@@ -50,8 +53,16 @@ export interface DodInfo {
 
 /** Operator confirmation of the DoD. Production reads stdin; tests inject a deterministic answer.
  *  `signal` is the run's AbortSignal (SIGINT/SIGTERM) — a confirmer waiting on input (e.g. stdin)
- *  must race against it so kill control stops promptly at confirmation prompts too (PR #10 review P2). */
-export type DodConfirmer = (dod: DodInfo, signal: AbortSignal) => Promise<boolean>;
+ *  must race against it so kill control stops promptly at confirmation prompts too (PR #10 review P2).
+ *  `kind` distinguishes the initial DoD confirm from an automatic mid-run re-confirm (R24) — for
+ *  observability only; both resolve via the same `POST /runs/:id/step {decision}` endpoint, so no
+ *  confirmer implementation needs to branch its behavior on it. */
+export type DodConfirmer = (dod: DodInfo, signal: AbortSignal, kind: 'dod' | 'reconfirm') => Promise<boolean>;
+
+/** Sign-off gate replacing the old synchronous confirm()-reuse (R30) — a distinct decision shape
+ *  ('accept' | 'reject', not boolean) resolved via `POST /runs/:id/accept`, not `/step`. Production
+ *  reads stdin (mirroring `stdinConfirm`); tests inject a deterministic answer. */
+export type AcceptanceGate = (dod: DodInfo, signal: AbortSignal) => Promise<'accept' | 'reject'>;
 
 /** Provides a fresh per-action worktree. Production = `createWorktree`; tests inject a stub. */
 export type WorktreeProvider = (opts: CreateWorktreeOptions) => Promise<WorktreeHandle>;
@@ -67,6 +78,12 @@ export interface PersistenceProvider {
   upsertPlan(plan: Plan): Promise<void>;
   insertRun(run: { id: string; planId: string; status: 'running'; startedAt: string }): Promise<void>;
   insertAgentRun(agentRun: AgentRun, runId: string): Promise<void>;
+  /** Transition an existing run's status (R29/R30) — e.g. into `'awaiting-acceptance'`. */
+  updateRunStatus(runId: string, status: PersistedRunStatus): Promise<void>;
+  /** Durable event-log write (R5); this shell wires only the `AwaitingAcceptance` transition
+   *  (R31, synchronous on the gate-entry path) — every other event type's write is shell 03's
+   *  async `onEvent` queue (R19). */
+  insertRunEvent(event: { runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }): Promise<void>;
 }
 
 /** Default no-op persistence — existing CLI/test usage that never injects `persistence` sees zero
@@ -76,6 +93,8 @@ const noopPersistence: PersistenceProvider = {
   upsertPlan: async () => {},
   insertRun: async () => {},
   insertAgentRun: async () => {},
+  updateRunStatus: async () => {},
+  insertRunEvent: async () => {},
 };
 
 export interface OrchestratorDeps {
@@ -84,12 +103,17 @@ export interface OrchestratorDeps {
   verifier: Verifier;
   config?: RunConfig;
   confirm?: DodConfirmer;
+  /** Sign-off gate (R30); defaults to a stdin-based prompt (`stdinAcceptanceGate`). */
+  acceptanceGate?: AcceptanceGate;
   worktreeProvider?: WorktreeProvider;
   onEvent?: (event: Record<string, unknown>) => void;
   /** Cancellation: propagated to the executor; default never aborts. */
   signal?: AbortSignal;
   /** Optional persistence seam (R1-R6); defaults to a no-op. */
   persistence?: PersistenceProvider;
+  /** Pause/resume latch (R26/R27), checked at the top of the run loop; defaults to a fresh,
+   *  never-paused instance (no behavior change unless a caller — `RunSession` — calls `.pause()`). */
+  pauseLatch?: AsyncLatch;
 }
 
 /** Mutable per-run state — local to one `run()` so the orchestrator instance is reusable. */
@@ -122,6 +146,15 @@ interface RunState {
    * avoids that: a position once passed is never re-examined mid-plan.
    */
   planCursor: number;
+  /** True while dispatching remediation actions after a rejected sign-off despite goalState already
+   *  being satisfied. Without this, the top-of-loop satisfied check reopens sign-off before the
+   *  remediation plan can run. */
+  signoffRemediationActive: boolean;
+  /** Count of remediation actions that successfully passed verify during the current remediation
+   *  round. Reset when entering remediation; checked when the remediation plan exhausts to ensure
+   *  at least one action succeeded before clearing signoffRemediationActive (prevents reopening
+   *  sign-off when all remediation actions failed due to unmet preconditions). */
+  signoffRemediationSuccesses: number;
   /** Action ids the operator has confirmed (initial DoD + every re-confirm). A replan that surfaces
    *  an id NOT in here must be re-confirmed before its verify.command runs (PR #8 review P1). */
   confirmed: Set<string>;
@@ -134,6 +167,8 @@ interface RunState {
   failures: Map<string, FailureRecord[]>;
   outcomes: Map<string, ActionOutcome>;
   runId: string;
+  /** False until `runs` row insertion has been attempted; initial extraction/planning failures have no row. */
+  runPersisted: boolean;
 }
 
 type StepResult =
@@ -152,10 +187,12 @@ export class Orchestrator {
   private readonly verifier: Verifier;
   private readonly config: RunConfig;
   private readonly confirm: DodConfirmer;
+  private readonly acceptanceGate: AcceptanceGate;
   private readonly worktreeProvider: WorktreeProvider;
   private readonly emit: (event: Record<string, unknown>) => void;
   private readonly signal: AbortSignal;
   private readonly persistence: PersistenceProvider;
+  private readonly pauseLatch: AsyncLatch;
 
   constructor(deps: OrchestratorDeps) {
     this.extractor = deps.extractor;
@@ -163,10 +200,12 @@ export class Orchestrator {
     this.verifier = deps.verifier;
     this.config = deps.config ?? defaultRunConfig();
     this.confirm = deps.confirm ?? stdinConfirm;
+    this.acceptanceGate = deps.acceptanceGate ?? stdinAcceptanceGate;
     this.worktreeProvider = deps.worktreeProvider ?? createWorktree;
     this.emit = deps.onEvent ?? (() => {});
     this.signal = deps.signal ?? new AbortController().signal;
     this.persistence = deps.persistence ?? noopPersistence;
+    this.pauseLatch = deps.pauseLatch ?? new AsyncLatch();
   }
 
   /**
@@ -220,6 +259,8 @@ export class Orchestrator {
       currentState: { ...goalSpec.initialState },
       pool: sanitized.valid,
       planCursor: 0,
+      signoffRemediationActive: false,
+      signoffRemediationSuccesses: 0,
       confirmed: new Set(),
       replans: 0,
       replanStreak: 0,
@@ -228,6 +269,7 @@ export class Orchestrator {
       failures: new Map(),
       outcomes: new Map(),
       runId: runId ?? randomUUID(),
+      runPersisted: false,
     };
     this.emit({
       ev: 'extract.done',
@@ -247,10 +289,10 @@ export class Orchestrator {
     await this.persistRun(state, plan);
 
     // --- CONFIRM DoD ---
-    const confirmed = await this.confirm(this.buildDod(state, plan), this.signal);
+    const confirmed = await this.confirm(this.buildDod(state, plan), this.signal, 'dod');
     if (!confirmed) {
       this.emit({ ev: 'dod.cancelled' });
-      return this.summary(state, 'cancelled', 'cancelled at DoD confirmation');
+      return this.terminalSummary(state, 'cancelled', 'cancelled at DoD confirmation');
     }
     for (const s of plan.steps) state.confirmed.add(s.actionId);
     this.emit({ ev: 'dod.confirmed', sequence: plan.steps.map((s) => s.actionId) });
@@ -258,35 +300,81 @@ export class Orchestrator {
     // --- MAIN LOOP (serial) ---
     for (;;) {
       // Item 3: check AbortSignal at the top of every iteration so SIGINT/abort stops promptly.
-      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted');
+      if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted');
+
+      // R26: pause takes effect before the NEXT step dispatch, never preempting an in-flight step.
+      // `whenResumed` never rejects, so re-check the signal (it may have fired while paused) rather
+      // than assuming resolution means "resumed".
+      await this.pauseLatch.whenResumed(this.signal);
+      if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted');
 
       // PR #8 review P2: check the budget cap before the satisfies() branch below. Extraction cost is
       // accumulated before this loop ever runs, so without this check an extraction/repair spend that
       // alone exceeds maxBudgetUsd would slip through as 'succeeded' whenever the extracted initial
       // state already happens to satisfy the goal (per-action budget checks at dispatch time never run).
       if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded`);
       }
 
-      if (satisfies(state.currentState, state.goalSpec.goalState)) {
-        // Item 4: sign-off gate — when the policy requires operator acceptance, prompt before
-        // declaring success. On rejection, fall through to replan/re-extraction.
+      if (!state.signoffRemediationActive && satisfies(state.currentState, state.goalSpec.goalState)) {
+        // Item 4 / R30: sign-off gate — when the policy requires operator acceptance, prompt before
+        // declaring success. On rejection, continue through the bounded re-extraction ladder.
         const policy = state.goalSpec.completionPolicy;
         if (policy === 'verify+signoff' || policy === 'operator-defined') {
-          const accepted = await this.confirm(this.buildDod(state, plan), this.signal);
-          if (accepted) return this.summary(state, 'succeeded', 'goalState satisfied and operator signed off');
-          // Rejection AFTER goalState is already satisfied: re-planning here is incoherent — the
-          // deterministic planner from a satisfied state returns a zero-step plan, so the loop would
-          // spin (re-prompting sign-off forever) with no actions able to change the outcome. Return a
-          // non-succeeded terminal; the operator can re-run with adjusted goalState/verify criteria.
+          // R31: the awaiting-acceptance status/event write happens on this AWAITED gate-entry path
+          // (not via the lazy onEvent drain R19 uses for other events, since that async queue is a
+          // later shell), so a concurrent GET /runs/:id can never observe a stale non-awaiting status.
+          await this.persistAwaitingAcceptance(state, plan);
+          const decision = await this.acceptanceGate(this.buildDod(state, plan), this.signal);
+          if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted during sign-off');
+          if (decision === 'accept') {
+            return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');
+          }
           this.emit({ ev: 'signoff.rejected' });
-          return this.summary(state, 'cancelled', 'operator rejected sign-off after goalState satisfied');
+          if (state.runPersisted) {
+            await this.persistRunStatus(state, 'running', 'resumeAfterSignoffRejected');
+          }
+          const o = await this.remediateRejectedSignoff(state, plan);
+          if (o.kind === 'terminal') return o.summary;
+          plan = o.plan;
+          continue;
         }
-        return this.summary(state, 'succeeded', 'goalState satisfied');
+        return this.terminalSummary(state, 'succeeded', 'goalState satisfied');
       }
 
       const step = this.nextStep(plan, state);
       if (step === undefined) {
+        if (state.signoffRemediationActive) {
+          // Only exit remediation mode if at least one remediation action succeeded. If all actions
+          // failed (e.g., due to unmet preconditions), keep remediation active so the recovery
+          // path can continue through re-extraction rather than reopening sign-off prematurely.
+          if (state.signoffRemediationSuccesses > 0) {
+            // Check if the remediation actions changed goalState back to unsatisfied — if so, we need
+            // to route through forcedReplan/reextract toward the original goal, not just clear
+            // remediation and continue with the exhausted remediation plan (which would re-dispatch
+            // the first corrective action instead of planning toward the now-unmet goal).
+            if (!satisfies(state.currentState, state.goalSpec.goalState)) {
+              state.signoffRemediationActive = false;
+              state.signoffRemediationSuccesses = 0;
+              this.emit({ ev: 'signoff.remediation.unsatisfied' });
+              const o = await this.forcedReplan(state, { actionId: '(remediation-unsatisfied)' }, 'remediation exhausted but goalState no longer satisfied');
+              if (o.kind === 'terminal') return o.summary;
+              plan = o.plan;
+              continue;
+            }
+            state.signoffRemediationActive = false;
+            state.signoffRemediationSuccesses = 0;
+            state.planCursor = 0;
+            this.emit({ ev: 'signoff.remediation.done' });
+            continue;
+          } else {
+            // No remediation actions passed; continue through the re-extraction ladder.
+            const o = await this.remediateRejectedSignoff(state, plan);
+            if (o.kind === 'terminal') return o.summary;
+            plan = o.plan;
+            continue;
+          }
+        }
         // Current plan exhausted but goal unmet — recompute from the real current state. forcedReplan
         // bounds the no-progress streak (a re-plan that keeps surfacing a step the ground-truth state
         // can never satisfy is a loop) and still escalates a malformed pool to re-extraction (#3).
@@ -313,6 +401,14 @@ export class Orchestrator {
       // bounds that no-progress streak so the loop terminates (wall-clock is deferred in v1).
       if (!satisfies(state.currentState, action.preconditions)) {
         this.emit({ ev: 'plan.stale', actionId: action.id, reason: 'preconditions unmet by ground-truth state' });
+        if (state.signoffRemediationActive) {
+          // Stale precondition during remediation: route through remediation recovery to preserve context,
+          // not through normal forcedReplan which could reopen sign-off when goalState is still satisfied.
+          const o = await this.remediateRejectedSignoff(state, plan, { actionId: action.id, verifyStderr: 'planned step preconditions unmet by ground-truth state during remediation' });
+          if (o.kind === 'terminal') return o.summary;
+          plan = o.plan;
+          continue;
+        }
         const o = await this.forcedReplan(state, { actionId: action.id }, 'planned step preconditions unmet by ground-truth state and no replan possible');
         if (o.kind === 'terminal') return o.summary;
         plan = o.plan;
@@ -323,10 +419,10 @@ export class Orchestrator {
       // omitted from the operator-confirmed plan. Never run an unconfirmed action's verify.command without
       // showing it — re-confirm the DoD whenever the about-to-dispatch action was not previously confirmed.
       if (!state.confirmed.has(action.id)) {
-        const okay = await this.confirm(this.buildDod(state, plan), this.signal);
+        const okay = await this.confirm(this.buildDod(state, plan), this.signal, 'reconfirm');
         if (!okay) {
           this.emit({ ev: 'dod.cancelled', reason: 'replan introduced unconfirmed action(s)', actionId: action.id });
-          return this.summary(state, 'cancelled', 'cancelled at re-confirmation of replan-introduced actions');
+          return this.terminalSummary(state, 'cancelled', 'cancelled at re-confirmation of replan-introduced actions');
         }
         for (const s of plan.steps) state.confirmed.add(s.actionId);
         this.emit({ ev: 'dod.reconfirmed', reason: 'replan introduced unconfirmed action(s)', actionId: action.id });
@@ -334,28 +430,31 @@ export class Orchestrator {
 
       // Budget check BEFORE dispatch (plan task 4.3).
       if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached`);
       }
 
       const result = await this.executeStep(state, action, plan.id);
       // A real dispatch happened → reset the forced-replan no-progress streak (livelock guard).
       state.replanStreak = 0;
       // Item 3: check signal again after an await that may have taken a long time.
-      if (this.signal.aborted) return this.summary(state, 'cancelled', 'aborted after step');
+      if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted after step');
       if (result.kind === 'budget') {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached mid-action`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached mid-action`);
       }
       // Item 6: enforce budget AFTER each action's cost is accumulated (not only pre-dispatch). Use
       // `>` so an action that spent EXACTLY to the cap still completes — it succeeded within budget,
       // and the next iteration's pre-dispatch `>=` check stops further work before overspending.
       if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
-        return this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded post-action`);
+        return this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded post-action`);
       }
       if (result.kind === 'passed') {
         state.planCursor++;
         const update = passUpdate(action);
         state.currentState = mergeState(state.currentState, update);
         this.recordOutcome(state, action.id, 'succeeded', result.attempts, result.costUsd);
+        if (state.signoffRemediationActive) {
+          state.signoffRemediationSuccesses++;
+        }
         this.emit({ ev: 'step.pass', actionId: action.id, attempts: result.attempts, applied: update });
         continue; // termination re-checked at the top
       }
@@ -363,6 +462,12 @@ export class Orchestrator {
       this.recordOutcome(state, action.id, 'failed', result.attempts, result.costUsd);
       this.recordFailure(state, action.id, result.evidence);
       this.emit({ ev: 'step.fail', actionId: action.id, attempts: result.attempts });
+      if (state.signoffRemediationActive) {
+        const o = await this.remediateRejectedSignoff(state, plan, result.evidence);
+        if (o.kind === 'terminal') return o.summary;
+        plan = o.plan;
+        continue;
+      }
       const o = await this.replanLadder(state, action.id, result.evidence);
       if (o.kind === 'terminal') return o.summary;
       plan = o.plan;
@@ -565,14 +670,14 @@ export class Orchestrator {
     if (state.reextractions >= this.config.maxReextractions) {
       return {
         kind: 'terminal',
-        summary: this.summary(state, 'failed', `re-extraction cap (${this.config.maxReextractions}) reached; goal unreachable`),
+        summary: await this.terminalSummary(state, 'failed', `re-extraction cap (${this.config.maxReextractions}) reached; goal unreachable`),
       };
     }
     // PR #8 review P2: re-extraction calls `claude -p` (real spend). Refuse to START one once the budget
     // is already exhausted — the main loop's pre-dispatch check is too late to bound a recursive
     // re-extraction's spend (this path can append, plan, and recurse before any executor dispatch).
     if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
-      return { kind: 'terminal', summary: this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before re-extraction`) };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before re-extraction`) };
     }
     state.reextractions++;
     this.emit({ ev: 'reextract', reextractions: state.reextractions, forActionId: evidence.actionId });
@@ -593,24 +698,27 @@ export class Orchestrator {
       // abort during expand() must surface as 'cancelled', not 'failed', so an operator kill during
       // recovery re-extraction is reported the same way as every other abort path.
       if (this.signal.aborted) {
-        return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'aborted during re-extraction') };
+        return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'aborted during re-extraction') };
       }
-      return { kind: 'terminal', summary: this.summary(state, 'failed', `expand failed: ${(e as Error).message}`) };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'failed', `expand failed: ${(e as Error).message}`) };
     }
     // PR #8 review P2: account the spend immediately and stop if this expansion pushed the run over the
     // cap (`>` so spending EXACTLY to the cap still proceeds, mirroring the executor budget rule).
     state.accumulatedCostUsd += expanded.costUsd;
     if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
-      return { kind: 'terminal', summary: this.summary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by re-extraction`) };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by re-extraction`) };
     }
     // Validate expanded actions BEFORE appending so a malformed one cannot permanently poison the
     // pool (append-only) and make every subsequent plan() throw. The extractor schema enforces
     // structure + non-empty verify, and expand() already de-dups ids against the pool; the remaining
     // poison vector is `cost <= 0` (the schema defers cost>0 to the planner by design decision #3).
     // Drop those here; if nothing usable survives, the re-extraction made no progress.
-    const validNew = expanded.actions.filter((a) => a.cost > 0);
-    const dropped = expanded.actions.length - validNew.length;
-    if (dropped > 0) this.emit({ ev: 'reextract.dropped', dropped, reason: 'cost <= 0' });
+    const existingIds = new Set(state.pool.map((a) => a.id));
+    const validNew = expanded.actions.filter((a) => a.cost > 0 && !existingIds.has(a.id));
+    const droppedCost = expanded.actions.filter((a) => !(a.cost > 0)).length;
+    const droppedDuplicate = expanded.actions.filter((a) => a.cost > 0 && existingIds.has(a.id)).length;
+    if (droppedCost > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedCost, reason: 'cost <= 0' });
+    if (droppedDuplicate > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedDuplicate, reason: 'duplicate id' });
     // Append only the valid actions. If nothing usable was added, we do NOT short-circuit here: the
     // following safePlan() will either find no plan or re-throw on the still-malformed pool, and the
     // re-extraction cap bounds the loop — same path as any other no-progress re-extraction.
@@ -650,10 +758,10 @@ export class Orchestrator {
     }
     // Item 5: re-confirm DoD for newly-added actions before executing them, and remember the confirmed
     // ids so the main-loop dispatch gate (PR #8 P1) does not re-prompt for them.
-    const reconfirmed = await this.confirm(this.buildDod(state, r.plan), this.signal);
+    const reconfirmed = await this.confirm(this.buildDod(state, r.plan), this.signal, 'reconfirm');
     if (!reconfirmed) {
       this.emit({ ev: 'dod.cancelled', reason: 're-extracted actions not accepted' });
-      return { kind: 'terminal', summary: this.summary(state, 'cancelled', 'cancelled at re-extracted DoD confirmation') };
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'cancelled at re-extracted DoD confirmation') };
     }
     for (const s of r.plan.steps) state.confirmed.add(s.actionId);
     // A successful re-extraction is a progress event (new actions were added). Reset the forced-replan
@@ -666,6 +774,99 @@ export class Orchestrator {
     return this.planResult(state, r.plan);
   }
 
+  /**
+   * A rejected sign-off means the symbolic `goalState` is already true but the operator still wants
+   * corrective work. The normal planner optimally returns a zero-step plan from a satisfied state, so
+   * this path installs the newly-authored remediation actions directly and suppresses the satisfied
+   * short-circuit until that plan is exhausted.
+   */
+  private async remediateRejectedSignoff(state: RunState, currentPlan: Plan, failureEvidence?: FailureEvidence): Promise<PlanOutcome> {
+    if (state.reextractions >= this.config.maxReextractions) {
+      return {
+        kind: 'terminal',
+        summary: await this.terminalSummary(state, 'failed', `re-extraction cap (${this.config.maxReextractions}) reached; sign-off remediation unavailable`),
+      };
+    }
+    if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} reached before sign-off remediation`) };
+    }
+    const evidence: FailureEvidence =
+      failureEvidence !== undefined
+        ? {
+            ...failureEvidence,
+            verifyStderr: `${failureEvidence.verifyStderr ?? ''}\nsign-off remediation failed; author corrective replacement actions`.trim(),
+          }
+        : {
+            actionId: '(signoff-rejected)',
+            verifyStderr: 'operator rejected sign-off after goalState satisfied; author corrective remediation actions',
+          };
+    state.reextractions++;
+    this.emit({ ev: 'reextract', reextractions: state.reextractions, forActionId: evidence.actionId });
+
+    let expanded: { actions: Action[]; costUsd: number };
+    try {
+      expanded = await this.extractor.expand(state.goalText, state.currentState, evidence, state.pool, this.signal);
+    } catch (e) {
+      const detail = (e as { detail?: Record<string, unknown> }).detail;
+      const failedCostUsd = detail !== undefined && typeof detail.costUsd === 'number' ? detail.costUsd : 0;
+      state.accumulatedCostUsd += failedCostUsd;
+      if (this.signal.aborted) {
+        return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'aborted during sign-off remediation') };
+      }
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'failed', `expand failed: ${(e as Error).message}`) };
+    }
+
+    state.accumulatedCostUsd += expanded.costUsd;
+    if (state.accumulatedCostUsd > this.config.maxBudgetUsd) {
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'budget-exhausted', `budget cap $${this.config.maxBudgetUsd} exceeded by sign-off remediation`) };
+    }
+
+    // Filter duplicates and invalid actions, mirroring the normal reextract() path to prevent
+    // duplicate IDs from poisoning the pool or causing the planner to reference stale actions.
+    const existingIds = new Set(state.pool.map((a) => a.id));
+    const validNew = expanded.actions.filter((a) => a.cost > 0 && !existingIds.has(a.id));
+    const droppedCost = expanded.actions.filter((a) => !(a.cost > 0)).length;
+    const droppedDuplicate = expanded.actions.filter((a) => a.cost > 0 && existingIds.has(a.id)).length;
+    if (droppedCost > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedCost, reason: 'cost <= 0' });
+    if (droppedDuplicate > 0) this.emit({ ev: 'reextract.dropped', dropped: droppedDuplicate, reason: 'duplicate id' });
+    state.pool = [...state.pool, ...validNew];
+    this.emit({ ev: 'reextract.added', added: validNew.length, poolSize: state.pool.length });
+    if (validNew.length === 0) return this.remediateRejectedSignoff(state, currentPlan);
+
+    const remediationPlan = this.buildSignoffRemediationPlan(state, currentPlan, validNew);
+    const reconfirmed = await this.confirm(this.buildDod(state, remediationPlan), this.signal, 'reconfirm');
+    if (!reconfirmed) {
+      this.emit({ ev: 'dod.cancelled', reason: 'sign-off remediation actions not accepted' });
+      return { kind: 'terminal', summary: await this.terminalSummary(state, 'cancelled', 'cancelled at sign-off remediation confirmation') };
+    }
+    for (const s of remediationPlan.steps) state.confirmed.add(s.actionId);
+    state.replanStreak = 0;
+    state.planCursor = 0;
+    state.signoffRemediationActive = true;
+    state.signoffRemediationSuccesses = 0;
+    this.emit({ ev: 'dod.reconfirmed', reextractions: state.reextractions, reason: 'sign-off remediation' });
+    return this.planResult(state, remediationPlan);
+  }
+
+  private buildSignoffRemediationPlan(state: RunState, currentPlan: Plan, actions: Action[]): Plan {
+    const actionIds = actions.map((a) => a.id);
+    const fingerprint = JSON.stringify({
+      goalSpecId: currentPlan.goalSpecId,
+      replanOf: currentPlan.id,
+      from: sortedStateEntries(state.currentState),
+      actions: actionIds,
+      reextractions: state.reextractions,
+    });
+    return {
+      id: `plan_signoff_${shortHash(fingerprint)}`,
+      goalSpecId: currentPlan.goalSpecId,
+      steps: actionIds.map((actionId) => ({ actionId, status: 'pending', dependsOn: [] })),
+      totalCost: actions.reduce((sum, a) => sum + a.cost, 0),
+      createdFromState: { ...state.currentState },
+      replanOf: currentPlan.id,
+    };
+  }
+
   // ── Persistence (R1-R6; best-effort — never aborts a run) ──────────────────────────────────────
 
   /** Wraps a freshly obtained `Plan` as a `PlanOutcome`, upserting it (+ its `plan_steps`, R2)
@@ -676,46 +877,63 @@ export class Orchestrator {
     return { kind: 'plan', plan };
   }
 
-  private async persistGoalSpec(state: RunState, plan: Plan): Promise<void> {
+  /** Best-effort wrapper shared by every persistence call site: never lets a persistence failure
+   *  abort a run, surfacing the error as an event instead. */
+  private async persistBestEffort(op: string, fn: () => Promise<void>): Promise<boolean> {
     try {
-      await this.persistence.upsertGoalSpec({
+      await fn();
+      return true;
+    } catch (e) {
+      this.emit({ ev: 'persistence.error', op, message: (e as Error).message });
+      return false;
+    }
+  }
+
+  private async persistGoalSpec(state: RunState, plan: Plan): Promise<void> {
+    await this.persistBestEffort('upsertGoalSpec', () =>
+      this.persistence.upsertGoalSpec({
         id: plan.goalSpecId,
         goalText: state.goalSpec.goalText,
         goalState: state.goalSpec.goalState,
         completionPolicy: state.goalSpec.completionPolicy,
-      });
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'upsertGoalSpec', message: (e as Error).message });
-    }
+      }),
+    );
   }
 
   private async persistPlan(plan: Plan): Promise<void> {
-    try {
-      await this.persistence.upsertPlan(plan);
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'upsertPlan', message: (e as Error).message });
-    }
+    await this.persistBestEffort('upsertPlan', () => this.persistence.upsertPlan(plan));
   }
 
   private async persistRun(state: RunState, plan: Plan): Promise<void> {
-    try {
-      await this.persistence.insertRun({
-        id: state.runId,
-        planId: plan.id,
-        status: 'running',
-        startedAt: new Date().toISOString(),
-      });
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'insertRun', message: (e as Error).message });
-    }
+    state.runPersisted = await this.persistBestEffort('insertRun', () =>
+      this.persistence.insertRun({ id: state.runId, planId: plan.id, status: 'running', startedAt: new Date().toISOString() }),
+    );
   }
 
   private async persistAgentRun(agentRun: AgentRun, runId: string): Promise<void> {
-    try {
-      await this.persistence.insertAgentRun(agentRun, runId);
-    } catch (e) {
-      this.emit({ ev: 'persistence.error', op: 'insertAgentRun', message: (e as Error).message });
+    await this.persistBestEffort('insertAgentRun', () => this.persistence.insertAgentRun(agentRun, runId));
+  }
+
+  /** R30/R31: transition the run to `awaiting-acceptance` and persist the event, both awaited
+   *  BEFORE the acceptance gate opens — the ordering (not just the individual awaits) is what
+   *  R31 requires, so a concurrent `GET /runs/:id` can never observe a stale status. Both calls
+   *  share one `persistence.error` op label since R31 treats this as one logical transition. */
+  private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
+    await this.persistBestEffort('awaitingAcceptance', async () => {
+      await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
+      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload: { goalState: state.goalSpec.goalState } });
+    });
+  }
+
+  private async persistRunStatus(state: RunState, status: PersistedRunStatus, op: string): Promise<void> {
+    await this.persistBestEffort(op, () => this.persistence.updateRunStatus(state.runId, status));
+  }
+
+  private async terminalSummary(state: RunState, status: RunStatus, reason: string): Promise<RunSummary> {
+    if (state.runPersisted) {
+      await this.persistRunStatus(state, status, 'terminalRunStatus');
     }
+    return this.summary(state, status, reason);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
@@ -800,6 +1018,16 @@ function mergeState(state: WorldState, update: Partial<WorldState>): WorldState 
     if (v !== undefined) next[k] = v;
   }
   return next;
+}
+
+function sortedStateEntries(state: WorldState): Array<[string, WorldState[string]]> {
+  return Object.keys(state)
+    .sort()
+    .map((key) => [key, state[key]!]);
+}
+
+function shortHash(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 16);
 }
 
 /**
@@ -889,11 +1117,13 @@ function bareSummary(goalText: string, status: RunStatus, reason: string, costUs
  *  Races the prompt against `signal` (SIGINT/SIGTERM) so an abort while waiting on stdin stops the
  *  prompt immediately instead of leaving the run stuck until the operator types something (PR #10
  *  review P2) — treated the same as a rejected confirmation ('cancelled', not a hang or a throw). */
-export const stdinConfirm: DodConfirmer = async (dod, signal) => {
+export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   const { createInterface } = await import('node:readline/promises');
   const lines = [
     '',
-    '=== Definition of Done — confirm before executing ===',
+    kind === 'reconfirm'
+      ? '=== Definition of Done — RE-CONFIRM new actions before executing ==='
+      : '=== Definition of Done — confirm before executing ===',
     `Goal: ${dod.goalText}`,
     `Goal state: ${JSON.stringify(dod.goalState)}`,
     `Completion policy: ${dod.completionPolicy}`,
@@ -914,6 +1144,39 @@ export const stdinConfirm: DodConfirmer = async (dod, signal) => {
     return /^y(es)?$/i.test(answer.trim());
   } catch (e) {
     if (signal.aborted) return false; // aborted mid-prompt (SIGINT/SIGTERM) — treat as declined, not a crash
+    throw e;
+  } finally {
+    rl.close();
+  }
+};
+
+/** Default sign-off gate (R30): pretty-print the DoD, read one accept/reject line from stdin.
+ *  Same abort-race shape as `stdinConfirm`, but the declined path is 'reject', not `false`. */
+export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
+  const { createInterface } = await import('node:readline/promises');
+  const lines = [
+    '',
+    '=== Definition of Done — ACCEPT sign-off before declaring success ===',
+    `Goal: ${dod.goalText}`,
+    `Goal state: ${JSON.stringify(dod.goalState)}`,
+    `Completion policy: ${dod.completionPolicy}`,
+    'Planned actions:',
+    ...dod.actions.map((a, i) => {
+      const check = a.verify.command
+        ? `verify: ${a.verify.command}`
+        : `verify predicate: ${JSON.stringify(a.verify.successPredicate ?? {})}`;
+      return `  ${i + 1}. ${a.name}  (${check})`;
+    }),
+    '',
+  ];
+  process.stdout.write(`${lines.join('\n')}\n`);
+  if (signal.aborted) return 'reject';
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question('Accept? [y/N] ', { signal });
+    return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';
+  } catch (e) {
+    if (signal.aborted) return 'reject'; // aborted mid-prompt — treat as declined, not a crash
     throw e;
   } finally {
     rl.close();

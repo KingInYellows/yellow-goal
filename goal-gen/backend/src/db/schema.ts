@@ -3,9 +3,8 @@
  * reconciled against `plans/specs/m1-backend-api-persistence-controls.md`'s "Data Model" section
  * (NOT the stale `docs/05-self-hosted-build-blueprint.md`).
  *
- * `runs.status` is a DB-level superset of the TS `RunStatus` (adds `'running'` for an in-flight
- * run row) — it deliberately does NOT add `'awaiting-acceptance'` here; that's R29, covered by
- * shell `m1-backend-api-persistence-controls-02-gate-control-mechanics`.
+ * `runs.status` is a DB-level superset of the TS `RunStatus`, adding only `'running'` for an
+ * in-flight run row (`'awaiting-acceptance'` is shared with the TS union verbatim, R29).
  *
  * Migrations via `drizzle-kit generate` + `migrate` only (R35) — `drizzle-kit push` is never used
  * in this repo.
@@ -16,7 +15,14 @@ import type { WorldState } from '../planner/types';
 
 export const completionPolicyEnum = pgEnum('completion_policy', ['verify-only', 'verify+signoff', 'operator-defined']);
 export const stepStatusEnum = pgEnum('step_status', ['pending', 'active', 'done', 'failed', 'skipped']);
-export const runStatusEnum = pgEnum('run_status', ['running', 'succeeded', 'failed', 'cancelled', 'budget-exhausted']);
+export const runStatusEnum = pgEnum('run_status', [
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'budget-exhausted',
+  'awaiting-acceptance',
+]);
 export const agentRunStatusEnum = pgEnum('agent_run_status', ['running', 'succeeded', 'failed', 'cancelled']);
 export const executorKindEnum = pgEnum('executor_kind', ['claude-code', 'codex', 'antigravity', 'mcp', 'shell']);
 
