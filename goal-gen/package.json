@@ -10,11 +10,20 @@
     "eval": "vitest run tests/evals",
     "eval:planner": "vitest run tests/evals/planner",
     "typecheck": "tsc --noEmit",
-    "runner": "tsx backend/src/runner.ts"
+    "runner": "tsx backend/src/runner.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.20.0",
+    "drizzle-kit": "^0.31.10",
     "fast-check": "^3.23.0",
     "js-yaml": "^4.1.0",
     "tsx": "^4.19.0",

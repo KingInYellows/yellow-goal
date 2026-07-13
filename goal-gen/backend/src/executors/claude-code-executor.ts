@@ -304,6 +304,7 @@ export class ClaudeCodeExecutor implements Executor {
     const base: AgentRun = {
       id: `${ctx.runId}:${action.id}:${++this.seq}`,
       planId: '', // stamped by the orchestrator
+      stepId: '', // stamped by the orchestrator
       actionId: action.id,
       executor: this.kind,
       startedAt,

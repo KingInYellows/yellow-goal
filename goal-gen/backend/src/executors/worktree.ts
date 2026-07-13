@@ -27,6 +27,10 @@ const GIT_IDENT = ['-c', 'user.name=goal-gen', '-c', 'user.email=goal-gen@local'
 /** Cap each synchronous git call so a hung git (gpg-agent, credential helper, stalled mount) can't
  *  deadlock the event loop — the per-action claude timeout does not cover these blocking git calls. */
 const GIT_TIMEOUT_MS = 30_000;
+/** spawnSync's default maxBuffer is 1 MiB, which silently truncates large `git diff --binary`
+ *  output and fails the caller open (empty/partial stdout) instead of erroring. 64 MiB comfortably
+ *  covers real-world diffs without unbounding memory use per call. */
+const GIT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 export interface GitResult {
   status: number;
@@ -38,7 +42,13 @@ export interface GitResult {
 export function git(args: readonly string[], cwd: string): GitResult {
   let r: SpawnSyncReturns<string>;
   try {
-    r = spawnSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', timeout: GIT_TIMEOUT_MS });
+    r = spawnSync('git', args, {
+      cwd,
+      env: GIT_ENV,
+      encoding: 'utf8',
+      timeout: GIT_TIMEOUT_MS,
+      maxBuffer: GIT_MAX_BUFFER_BYTES,
+    });
   } catch (e) {
     // spawnSync throws synchronously when the binary is missing (ENOENT) or the arg list
     // exceeds the OS limit (E2BIG). Surface it as a non-zero result so callers never see an
