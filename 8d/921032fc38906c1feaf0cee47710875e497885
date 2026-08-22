@@ -1,0 +1,67 @@
+goal-gen/packs/repository-goal-packet/v1/templates/FINDING_LEDGER.md.tmpl
+  s_6f4eaec029ade7::t_83df4b60ef0dab 1-9
+goal-gen/packs/repository-goal-packet/v1/scripts/preflight.sh
+  s_6f4eaec029ade7::t_7d8412b3a94800 1-87
+goal-gen/packs/repository-goal-packet/v1/prompts/REVIEW_PROMPT.md.tmpl
+  s_6f4eaec029ade7::t_beaae91ad2401a 1-32
+goal-gen/packs/repository-goal-packet/v1/templates/02_REPOSITORY_STATE.md.tmpl
+  s_6f4eaec029ade7::t_67a9612a50506d 1-60
+goal-gen/packs/repository-goal-packet/v1/templates/01_EXECUTIVE_JUDGMENT.md.tmpl
+  s_6f4eaec029ade7::t_2c0273413a3fc5 1-27
+goal-gen/packs/repository-goal-packet/v1/templates/06_ORCHESTRATION.md.tmpl
+  s_6f4eaec029ade7::t_428914b6a8e8e5 1-47
+goal-gen/packs/repository-goal-packet/v1/prompts/MASTER_IMPLEMENTATION_PROMPT.md.tmpl
+  s_6f4eaec029ade7::t_da3f9b13d087e6 1-136
+goal-gen/.claude/specs/packet-compiler.md
+  s_6f4eaec029ade7::t_dd17c465bc757e 1-57
+goal-gen/packs/repository-goal-packet/v1/scripts/preflight.ps1
+  s_6f4eaec029ade7::t_4bedbce7cbaa96 1-109
+goal-gen/packs/repository-goal-packet/v1/README.md
+  s_6f4eaec029ade7::t_a429296b4521f2 1-221
+goal-gen/packs/repository-goal-packet/v1/scripts/launch.sh
+  s_6f4eaec029ade7::t_b585d3f9cf0c5e 1-119
+goal-gen/packs/repository-goal-packet/v1/compatibility.json
+  s_6f4eaec029ade7::t_56338a6639e157 1-20
+goal-gen/packs/repository-goal-packet/v1/templates/FINAL_HANDOFF.md.tmpl
+  s_6f4eaec029ade7::t_0af12c4c204471 1-17
+goal-gen/packs/repository-goal-packet/v1/templates/VALIDATION_MATRIX.md.tmpl
+  s_6f4eaec029ade7::t_5ff9cf49463b1e 1-9
+goal-gen/packs/repository-goal-packet/v1/templates/00_START_HERE.md.tmpl
+  s_6f4eaec029ade7::t_58d67a1fcb5e04 1-33
+goal-gen/packs/repository-goal-packet/v1/templates/05_MILESTONE.md.tmpl
+  s_6f4eaec029ade7::t_d47de1418ddd36 1-34
+goal-gen/packs/repository-goal-packet/v1/pack.json
+  s_6f4eaec029ade7::t_c1d0b171b005c1 1-51
+goal-gen/packs/repository-goal-packet/v1/scripts/launch.ps1
+  s_6f4eaec029ade7::t_fad5327f7106e3 1-136
+goal-gen/packs/repository-goal-packet/v1/templates/03_FINDINGS.md.tmpl
+  s_6f4eaec029ade7::t_535033aca6f16e 1-32
+goal-gen/packs/repository-goal-packet/v1/policies/compiler-read-only.json
+  s_6f4eaec029ade7::t_7fcfd0d57a24f7 1-14
+goal-gen/packs/repository-goal-packet/v1/output-layout.json
+  s_6f4eaec029ade7::t_96b954e132ba72 1-35
+goal-gen/packs/repository-goal-packet/v1/templates/07_VALIDATION_PLAN.md.tmpl
+  s_6f4eaec029ade7::t_a6dda7541ef53a 1-38
+goal-gen/packs/repository-goal-packet/v1/prompts/PERSISTENT_GOAL.txt.tmpl
+  s_6f4eaec029ade7::t_65415996f3c298 1
+goal-gen/packs/repository-goal-packet/v1/templates/04_GOAL_RESOLUTION.md.tmpl
+  s_6f4eaec029ade7::t_3f0b752eb314b7 1-29
+goal-gen/packs/repository-goal-packet/v1/templates/08_HUMAN_GATES.md.tmpl
+  s_6f4eaec029ade7::t_30ea8bd05297c4 1-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "8d921032fc38906c1feaf0cee47710875e497885",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
