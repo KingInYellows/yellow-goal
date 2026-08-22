@@ -1,0 +1,42 @@
+goal-gen/AGENTS.md
+  s_6f4eaec029ade7::t_96558d5cbc683a 6
+  s_6f4eaec029ade7::t_62a7a5d7f38ab0 8,12
+goal-gen/docs/claude-code-handoff.md
+  s_6f4eaec029ade7::t_22eadc86fe8fe3 3-8
+README.md
+  s_6f4eaec029ade7::t_f136c54bb98351 10-19
+goal-gen/docs/prd.md
+  s_6f4eaec029ade7::t_47d62e1c0ec634 146-161
+goal-gen/docs/decisions/0015-compiler-provider-seams-and-failclosed-permissions.md
+  s_6f4eaec029ade7::t_bac12f5ab38f29 1-41
+HANDOFF-PROMPT.md
+  s_6f4eaec029ade7::t_17167ebaa3c1c1 3-7
+goal-gen/package.json
+  s_6f4eaec029ade7::t_ab6e12deadb4f4 14
+goal-gen/README.md
+  s_6f4eaec029ade7::t_7ec1a5640dbe64 29,34,36,38,45,47-50,53
+  s_6f4eaec029ade7::t_4c8cca53a57ac6 3,5-21
+goal-gen/CONTRIBUTING.md
+  s_6f4eaec029ade7::t_0ade8dcf6548a1 14
+  s_6f4eaec029ade7::t_6e5fffdaf3a714 37
+goal-gen/CLAUDE.md
+  s_6f4eaec029ade7::t_33400608c48bb4 26-32
+  s_6f4eaec029ade7::t_96129a6390e931 10-11
+  s_6f4eaec029ade7::t_d7a5cf2c1218eb 58,61-62,64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "e27fedb8ee4470526cdb973c72d73e1baca66e02",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
