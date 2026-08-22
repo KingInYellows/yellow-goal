@@ -1,0 +1,37 @@
+goal-gen/package.json
+  s_6f4eaec029ade7::t_2fbea1ef35f944 19
+goal-gen/schemas/README.md
+  s_6f4eaec029ade7::t_91acd2a9caba5e 22,36-64
+  s_6f4eaec029ade7::t_0d0a13ff58358a 129-133,138-140
+  s_6f4eaec029ade7::t_be8281527b7002 65
+goal-gen/tests/contracts/support/samples.ts
+  s_6f4eaec029ade7::t_2fef0d6bebda25 112-124,143-152
+goal-gen/schemas/vendored/orchestration.schema.json
+  s_6f4eaec029ade7::t_49020dd119ab01 71,92-104
+  s_6f4eaec029ade7::t_9e4820f23e1f80 9-10,12-13,16-17,25-33,38-40,48-58,62-70
+goal-gen/tests/contracts/invariants.test.ts
+  s_6f4eaec029ade7::t_4ef86dfbe59fc4 72-111
+  s_6f4eaec029ade7::t_8f87f486977a2e 6,9-15
+goal-gen/backend/src/contracts/orchestration.ts
+  s_6f4eaec029ade7::t_6982c467aae993 4-7,10-11
+  s_6f4eaec029ade7::t_191ec800c02b8d 38-39,45-46,48-49,54-55,59-66
+  s_6f4eaec029ade7::t_cd05e80b0395c7 12
+goal-gen/package-lock.json
+  s_6f4eaec029ade7::t_686fa6ac7d4aba 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "ff9164d985c04c3676db02b6d64d25cb1932819d",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
