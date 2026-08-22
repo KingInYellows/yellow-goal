@@ -1,0 +1,34 @@
+goal-gen/backend/src/inspection/index.ts
+  s_6f4eaec029ade7::t_049ad6398f213a 88-92
+goal-gen/tests/cli/commands.test.ts
+  s_6f4eaec029ade7::t_92a14a6e3ab47c 104-111,118-121,128-131
+  s_6f4eaec029ade7::t_7a7dfe00331ddf 138-141
+goal-gen/backend/src/inspection/resolver.ts
+  s_6f4eaec029ade7::t_4fdb4b456dea07 59-63
+goal-gen/tests/cli/dispatch.test.ts
+  s_6f4eaec029ade7::t_bb48d232713973 92-94,98
+goal-gen/packs/repository-goal-packet/v1/README.md
+  s_6f4eaec029ade7::t_fc1b6636495876 42-78
+goal-gen/tests/analysis/analysis.test.ts
+  s_6f4eaec029ade7::t_d0e0e0b54aa75e 11,19
+  s_6f4eaec029ade7::t_48a8078e34d3d2 109-130
+goal-gen/tests/integration/pipeline.test.ts
+  s_6f4eaec029ade7::t_2f2e3d2c815864 1-123,125-147
+  s_6f4eaec029ade7::t_d20dcce24c15ff 124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6619a1e7a8acf1b8072d8058d353b0a3b22938e9",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
