@@ -1,0 +1,26 @@
+goal-gen/backend/src/packets/index.ts
+  s_6f4eaec029ade7::t_cb17b35e0e2f8a 16
+goal-gen/tests/packets/pre-zip-validation.test.ts
+  s_6f4eaec029ade7::t_e3b285601ced0a 1-132
+goal-gen/backend/src/cli/index.ts
+  s_6f4eaec029ade7::t_a7f36348d694c0 104-108
+goal-gen/backend/src/packets/packet-validator.ts
+  s_6f4eaec029ade7::t_f80f67bf4d1ec6 165-170,173
+  s_6f4eaec029ade7::t_064aa32327c7ff 54-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "9a0e85b58c85919753198a094a9d741d64bc04a2",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
