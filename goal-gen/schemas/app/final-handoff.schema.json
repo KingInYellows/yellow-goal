@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/app/final-handoff/v1",
+  "title": "FinalHandoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "target",
+    "evidenceSummary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/final-handoff/v1"
+    },
+    "status": {
+      "enum": [
+        "PR_READY_FOR_HUMAN_REVIEW",
+        "READY_AFTER_ONE_NAMED_ACTION",
+        "DO_NOT_MERGE"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "headSha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string"
+        }
+      }
+    },
+    "evidenceSummary": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Short evidence-backed claims supporting the status, not free prose."
+    },
+    "remainingAction": {
+      "type": "string",
+      "description": "Required by contract-layer validation (zod refine) when status == READY_AFTER_ONE_NAMED_ACTION."
+    }
+  }
+}

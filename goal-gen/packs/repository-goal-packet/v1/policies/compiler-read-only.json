@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "yellow-goal/policy/v1",
+  "id": "compiler-read-only",
+  "targetReads": true,
+  "targetWrites": false,
+  "secretReads": false,
+  "externalResearch": true,
+  "providerMutations": false,
+  "allowedOutputRoots": [
+    "${RUN_DIR}",
+    "${OUTPUT_DIR}"
+  ],
+  "defaultPermissionProfile": "inspect"
+}

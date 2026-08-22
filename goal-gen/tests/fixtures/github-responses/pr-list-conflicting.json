@@ -1,0 +1,41 @@
+[
+  {
+    "number": 21,
+    "title": "fix: fixture PR with merge conflicts against base",
+    "headRefName": "agent/fix/fixture-conflict",
+    "baseRefName": "main",
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "CONFLICTING",
+    "mergeStateStatus": "DIRTY",
+    "author": { "login": "fixture-user", "id": "U_fixture0000000002", "is_bot": false, "name": "" },
+    "createdAt": "2024-01-03T00:00:00Z",
+    "updatedAt": "2024-01-05T00:00:00Z"
+  },
+  {
+    "number": 22,
+    "title": "feat: fixture PR behind base (divergent head)",
+    "headRefName": "agent/feat/fixture-behind",
+    "baseRefName": "main",
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "BEHIND",
+    "author": { "login": "fixture-user", "id": "U_fixture0000000003", "is_bot": false, "name": "" },
+    "createdAt": "2024-01-04T00:00:00Z",
+    "updatedAt": "2024-01-04T12:00:00Z"
+  },
+  {
+    "number": 23,
+    "title": "chore: fixture draft PR with unstable checks",
+    "headRefName": "agent/chore/fixture-unstable",
+    "baseRefName": "main",
+    "state": "OPEN",
+    "isDraft": true,
+    "mergeable": "UNKNOWN",
+    "mergeStateStatus": "UNSTABLE",
+    "author": { "login": "fixture-user", "id": "U_fixture0000000004", "is_bot": false, "name": "" },
+    "createdAt": "2024-01-06T00:00:00Z",
+    "updatedAt": "2024-01-06T01:00:00Z"
+  }
+]

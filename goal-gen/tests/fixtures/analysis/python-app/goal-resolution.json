@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "yellow-goal/goal-resolution/v1",
+  "requestedGoal": "Make Python packaging reproducible for CI",
+  "selectedGoal": "Add an explicit [build-system] table so packaging and pytest installs are reproducible",
+  "selectedMilestoneId": "M-python-app-build-system",
+  "relationship": "refined",
+  "rationale": "The requested CI reproducibility requires a declared build backend first; this milestone adds it, refining the request into an achievable first step.",
+  "evidenceRefs": ["ev-001"],
+  "preservedIntent": "CI-reproducible packaging becomes possible once the build backend is explicit."
+}

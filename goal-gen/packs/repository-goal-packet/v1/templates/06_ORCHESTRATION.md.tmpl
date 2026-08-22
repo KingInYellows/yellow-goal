@@ -1,0 +1,56 @@
+# Orchestration
+
+Orchestration profile: `{{ orchestration.profileId }}` (provider {{ orchestration.provider }})
+
+## Lead
+
+Role: {{ orchestration.lead.role }}
+Model role: `{{ orchestration.lead.modelRole }}` → model `{{ orchestration.lead.modelId }}`
+
+Responsibilities:
+
+{{ORCHESTRATION_LEAD_RESPONSIBILITIES_LIST}}
+
+No teammate may stage, commit, push, merge, resolve review threads, change permissions, or
+deploy.
+
+## Team size
+
+Max concurrent workers: {{ orchestration.maxConcurrentWorkers }}
+Exclusive file ownership required: {{ orchestration.exclusiveFileOwnership }}
+Plan approval required before edits: {{ orchestration.requirePlanApproval }}
+
+## Waves
+
+{{ORCHESTRATION_WAVES_SECTION}}
+
+## Mutation boundaries
+
+{{ORCHESTRATION_MUTATION_BOUNDARIES_LIST}}
+
+## Validation ownership
+
+{{ orchestration.validationOwnership }}
+
+## Stop conditions
+
+A valid blocker found by any wave reopens implementation, requires a regression test, and
+requires a rerun of affected full validation gates before the packet may claim completion
+again.
+
+{{ORCHESTRATION_STOP_CONDITIONS_LIST}}
+
+## Human approval required for
+
+{{ORCHESTRATION_HUMAN_APPROVAL_LIST}}
+
+## Runtime posture
+
+Team mode: `{{ orchestration.teamMode }}` (requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` and
+`--teammate-mode in-process`). Fallback mode: `{{ orchestration.fallbackMode }}` — if the runtime
+falls back to subagents instead of an in-process agent team, that fallback must be recorded in
+the run evidence. It must never be silently reported as an agent team.
+
+`bypassPermissions` is never used or fallen back to by this orchestration. Worktrees provide
+writer-collision isolation only; they are not a security sandbox. Merge, deployment, and
+secret operations remain unauthorized regardless of wave outcome.

@@ -3,12 +3,13 @@
 Codex-compatible repo instructions (mirror of `CLAUDE.md`). If both are present, treat `CLAUDE.md` as canonical; this file exists so the Codex executor and other AGENTS.md-aware agents get the same rules. Direct prompts override this file.
 
 ## Project
-Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction → deterministic A\* GOAP plan → orchestrator dispatches actions to headless coding-agent CLIs → ground-truth verify → replanning → live view. TypeScript end-to-end; Postgres/pgvector; **local, single-operator**, self-hosted on a Proxmox LXC or VM. **v1 = M1: Claude Code (`claude -p`) only, serial**; Codex + Antigravity + parallelism + full dashboard are M2 fast-follow. Product spec: `docs/prd.md`. Component contracts: `.claude/specs/`.
+Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction → deterministic A\* GOAP plan → orchestrator dispatches actions to headless coding-agent CLIs → ground-truth verify → replanning → live view. TypeScript end-to-end; Postgres/pgvector; **local, single-operator**, self-hosted on a Proxmox LXC or VM. **v1 = M1: Claude Code (`claude -p`) only, serial** — implemented; Codex + Antigravity + parallelism + full dashboard are M2 fast-follow. A second, **read-only** subsystem — the Universal Repository Goal Packet Compiler (`npm run cli`: request → inspect → analyze → compile → packet verify, emitting verified `repository-goal-packet@1` ZIPs) — is also implemented; it never mutates target repositories and rejects unknown permission/orchestration profiles fail-closed (`.claude/specs/packet-compiler.md`). Product spec: `docs/prd.md`. Component contracts: `.claude/specs/`.
 
-## Build / test (fill in as scaffolded)
+## Build / test
 - Install: `npm install`
 - Dev: `TBD` (not scaffolded yet)
 - Test: `npm test` · `npm run test:watch` (watch mode) · Evals: `npm run eval` (all) / `npm run eval:planner` (planner gate) · Typecheck: `npm run typecheck`
+- Compiler CLI: `npm run cli -- <subcommand>` · M1 runner: `npm run runner -- "<goal>"` (real cost)
 - Lint/format: `TBD` (not configured yet)
 Always run tests + the eval set before declaring a planner or prompt change done.
 

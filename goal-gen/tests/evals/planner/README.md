@@ -9,10 +9,9 @@ A deterministic planner can produce **several equally-optimal plans**, so exact-
 
 ## Eval-driven status
 
-The planner does not exist yet (`backend/src/planner/plan.ts` is a stub). So:
-
-- **Run now (green):** the oracle unit tests (`simulate.test.ts`) and the fixture-integrity checks in `planner.eval.test.ts`.
-- **Auto-skipped until `plan()` is implemented (M0):** the per-fixture planner suite and the `fast-check` property suite. They light up automatically once `isPlannerImplemented()` returns true — no test edits needed.
+The planner (`backend/src/planner/plan.ts`) is implemented; every suite in this directory runs
+and passes — the oracle unit tests, the fixture-integrity checks, the per-fixture planner suite,
+and the `fast-check` property suite. Nothing is skipped.
 
 ## Run
 
@@ -21,8 +20,6 @@ npm install          # first time
 npm run eval:planner # just this suite
 npm test             # everything
 ```
-
-Current state: **15 passed, 56 skipped** (planner unimplemented).
 
 ## Fixtures
 
@@ -58,9 +55,9 @@ One YAML file per tier under `fixtures/`, each a list of cases. Cases use a **mi
 
 Every case is independently checked (a separate solver confirmed each solvable case is reachable within its bound and each unsatisfiable case truly has none).
 
-## When you implement the planner (M0)
+## Gate
 
-1. Implement `plan()` in `backend/src/planner/plan.ts` per `planner.md`.
-2. The skipped suites activate automatically. Target: **plan-validity GATE ≥ 98%** (PRD §8) — i.e. ≥ 51/52 cases pass.
-3. For `multi-effect` cases, the unmet-predicate heuristic is inadmissible — use BFS mode (or accept non-optimal and relax those bounds, documenting the choice).
-4. Add an `npm run eval` step to CI as the regression gate on planner/extractor changes (ADR-0013).
+- **plan-validity GATE ≥ 98%** (PRD §8) — i.e. ≥ 51/52 cases pass; currently 52/52.
+- For `multi-effect` cases the unmet-predicate heuristic is inadmissible — the planner uses BFS
+  mode there (see `planner.md`).
+- Run `npm run eval:planner` before and after any planner or extractor-prompt change (ADR-0013).

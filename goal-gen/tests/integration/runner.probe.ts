@@ -103,7 +103,8 @@ class InjectedFailVerifier implements Verifier {
 function makeOrchestrator(config: RunConfig, verifier: Verifier): Orchestrator {
   return new Orchestrator({
     extractor: new LlmExtractorImpl(new ClaudeLlmClient({ model: MODEL }), { onEvent: log }),
-    executor: new ClaudeCodeExecutor({ model: MODEL, timeoutMs: config.actionTimeoutMs, noiseFilterPaths: config.noiseFilterPaths }),
+    // Explicit bypass opt-in: probe runs against throwaway scratch repos (see runner.ts rationale).
+    executor: new ClaudeCodeExecutor({ model: MODEL, timeoutMs: config.actionTimeoutMs, noiseFilterPaths: config.noiseFilterPaths, permissionMode: 'bypassPermissions' }),
     verifier,
     config,
     confirm: async () => true, // non-interactive: the probe IS the operator
@@ -138,7 +139,7 @@ async function scenarioA(): Promise<void> {
   const capturing = new CapturingWorktreeProvider();
   const orchestrator = new Orchestrator({
     extractor: new LlmExtractorImpl(new ClaudeLlmClient({ model: MODEL }), { onEvent: log }),
-    executor: new ClaudeCodeExecutor({ model: MODEL, timeoutMs: config.actionTimeoutMs, noiseFilterPaths: config.noiseFilterPaths }),
+    executor: new ClaudeCodeExecutor({ model: MODEL, timeoutMs: config.actionTimeoutMs, noiseFilterPaths: config.noiseFilterPaths, permissionMode: 'bypassPermissions' }),
     verifier: new ShellVerifier(),
     config,
     confirm: async () => true,

@@ -1,0 +1,38 @@
+# Validation Plan
+
+Nothing in this packet may claim a test passed unless it was executed successfully on the
+stated SHA. Report passed, failed, skipped, unavailable, and not-run distinctly — never
+collapse them.
+
+## Acceptance criteria verification
+
+| Criterion | Method | Environment | Command / workflow ref | Evidence requirement |
+|---|---|---|---|---|
+{{VALIDATION_ACCEPTANCE_CRITERIA_ROWS}}
+
+## Required validation gates
+
+At minimum, the implementation wave must run and report:
+
+- dependency installation from the repository's own lockfile;
+- typecheck;
+- full unit and integration tests;
+- any existing eval suites;
+- new tests added for this milestone;
+- adversarial/security tests where applicable;
+- a read-only target-mutation proof for any compiler-mode step;
+- a deterministic double-compile comparison where packet compilation is involved.
+
+{{VALIDATION_GATES_LIST}}
+
+## Read-only proof obligation
+
+For any step that runs against the target repository before implementation approval, capture
+before/after: Git status, tracked-file hashes, untracked-file set, and current branch/HEAD.
+Prove no mutation occurred.
+
+## Recording requirement
+
+Every validation run must record: exact command, SHA, environment, exit code, test count, and
+skipped count. A validation step with status `not-run` or `unavailable` must be reported as
+such, not omitted.

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "yellow-goal/request/v1",
+  "requestId": "req-node-plugin-fixture",
+  "target": {
+    "repository": "local/node-plugin-fixture",
+    "ref": "main"
+  },
+  "intent": {
+    "goal": "Add CI-verified linting to the node plugin"
+  },
+  "mode": "review-and-compile",
+  "pack": "repository-goal-packet@1"
+}

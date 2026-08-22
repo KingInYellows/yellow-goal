@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/request/v1",
+  "title": "RepositoryGoalRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "target",
+    "intent",
+    "mode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/request/v1"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "default": "AUTO"
+        },
+        "priorityPullRequest": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal"
+      ],
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 3
+        },
+        "whyNow": {
+          "type": "string"
+        },
+        "successNotes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "mode": {
+      "enum": [
+        "review-and-compile",
+        "review-only",
+        "approved-implementation"
+      ]
+    },
+    "pack": {
+      "type": "string",
+      "default": "repository-goal-packet@1"
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "properties": {
+        "readOnlyTarget": {
+          "type": "boolean",
+          "default": true
+        },
+        "allowExternalResearch": {
+          "type": "boolean",
+          "default": true
+        },
+        "allowTargetEdits": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowPush": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowMerge": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowDeploy": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowSecretReads": {
+          "const": false
+        }
+      }
+    },
+    "orchestration": {
+      "type": "object"
+    },
+    "overrides": {
+      "type": "object"
+    }
+  }
+}

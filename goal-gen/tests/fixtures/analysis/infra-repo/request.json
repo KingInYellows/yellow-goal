@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "yellow-goal/request/v1",
+  "requestId": "req-infra-repo-fixture",
+  "target": {
+    "repository": "local/infra-repo-fixture",
+    "ref": "main"
+  },
+  "intent": {
+    "goal": "Make the Terraform configuration validate cleanly"
+  },
+  "mode": "review-and-compile",
+  "pack": "repository-goal-packet@1"
+}

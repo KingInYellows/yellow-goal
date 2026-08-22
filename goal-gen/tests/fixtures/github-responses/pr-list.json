@@ -1,0 +1,28 @@
+[
+  {
+    "number": 12,
+    "title": "feat: fixture merged PR one",
+    "headRefName": "agent/feat/fixture-one",
+    "baseRefName": "main",
+    "state": "MERGED",
+    "isDraft": false,
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN",
+    "author": { "login": "fixture-user", "id": "U_fixture0000000001", "is_bot": false, "name": "" },
+    "createdAt": "2024-01-01T00:00:00Z",
+    "updatedAt": "2024-01-02T00:00:00Z"
+  },
+  {
+    "number": 11,
+    "title": "feat: fixture open PR, clean and mergeable",
+    "headRefName": "agent/feat/fixture-open",
+    "baseRefName": "main",
+    "state": "OPEN",
+    "isDraft": false,
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN",
+    "author": { "login": "fixture-user", "id": "U_fixture0000000001", "is_bot": false, "name": "" },
+    "createdAt": "2024-01-03T00:00:00Z",
+    "updatedAt": "2024-01-03T12:00:00Z"
+  }
+]

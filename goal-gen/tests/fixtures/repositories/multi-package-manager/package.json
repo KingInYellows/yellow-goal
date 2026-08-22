@@ -1,0 +1,8 @@
+{
+  "name": "fixture-multi-package-manager",
+  "version": "0.1.0",
+  "description": "Fixture: repo with npm, pip, and Go manifests all present at once.",
+  "scripts": {
+    "build": "echo fixture-node-build"
+  }
+}

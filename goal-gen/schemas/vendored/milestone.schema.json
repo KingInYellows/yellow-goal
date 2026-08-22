@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/milestone/v1",
+  "title": "MilestoneSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "goal",
+    "whyNow",
+    "scope",
+    "nonGoals",
+    "acceptanceCriteria",
+    "terminalCondition",
+    "humanGates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/milestone/v1"
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 3
+    },
+    "whyNow": {
+      "type": "string",
+      "minLength": 3
+    },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "nonGoals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/ac"
+      }
+    },
+    "terminalCondition": {
+      "type": "string",
+      "minLength": 3
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "humanGates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "ac": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "behavior",
+        "verification"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^AC-[A-Za-z0-9._-]+$"
+        },
+        "behavior": {
+          "type": "string",
+          "minLength": 3
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "command",
+                "workflow",
+                "inspection",
+                "human"
+              ]
+            },
+            "commandRef": {
+              "type": "string"
+            },
+            "workflowRef": {
+              "type": "string"
+            },
+            "evidenceRequirement": {
+              "type": "string"
+            },
+            "environment": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "yellow-goal/repository-assessment/v1",
+  "executiveJudgment": {
+    "usefulness": "Minimal Terraform configuration exercising the infra-repo detector class.",
+    "functionality": "A single null_resource is declared; no provider versions are pinned.",
+    "cohesion": "Single-file infra config, no modules.",
+    "milestoneReadiness": "Ready for a small, additive validation milestone."
+  },
+  "ratings": [
+    {
+      "area": "provider version pinning",
+      "rating": "weak",
+      "evidenceRefs": ["ev-001"],
+      "whatRaisesIt": "main.tf declares no required_providers block"
+    }
+  ],
+  "findings": [
+    {
+      "schemaVersion": "yellow-goal/finding/v1",
+      "id": "F-001",
+      "severity": "medium",
+      "classification": "missing_evidence",
+      "title": "No required_providers block declared",
+      "evidenceRefs": ["ev-001"],
+      "affectedFiles": ["main.tf"],
+      "consequence": "Provider versions are unpinned; a plan/apply could silently pick up a breaking provider update.",
+      "requiredBehavior": "main.tf's terraform block should declare a required_providers block pinning provider versions.",
+      "status": "open"
+    }
+  ],
+  "evidenceGaps": ["No CI workflow evidence was collected for this fixture; terraform validate has not been run live."],
+  "biggestConstraint": "Unpinned provider versions make the configuration's behavior over time undefined."
+}

@@ -1,0 +1,6 @@
+{
+  "name": "fixture-no-tests",
+  "version": "0.1.0",
+  "description": "Fixture: application code with no test directory and no test script.",
+  "main": "src/index.js"
+}

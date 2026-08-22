@@ -7,6 +7,16 @@
 
 ---
 
+## Repository status
+
+The build has moved well past research: **`goal-gen/`** contains the implementation — the M0
+deterministic A\* planner, the M1 single-executor core (extract → plan → confirm → execute →
+verify → replan with persistence and control gates), and the **read-only Universal Repository
+Goal Packet Compiler** (`npm run cli` inside `goal-gen/`: repository + plain-English goal →
+inspection → evidence → assessment → one milestone → verified `repository-goal-packet@1` ZIP).
+Start at [`goal-gen/README.md`](goal-gen/README.md); the documents below are the original
+research knowledge base.
+
 ## What this is
 
 This project answers three questions in depth:

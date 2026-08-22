@@ -1,0 +1,34 @@
+# {{ repoProfile.target.repository }} — Goal Packet
+
+Requested goal: {{ goalResolution.requestedGoal }}
+
+Selected goal: {{ goalResolution.selectedGoal }}
+
+Relationship: {{ goalResolution.relationship }}
+
+Inspected SHA: `{{ repoProfile.target.headSha }}`
+
+Inspected at: {{ repoProfile.target.inspectedAt }}
+
+Packet ID: {{ manifest.packetId }}
+
+## Read order
+
+1. `01_EXECUTIVE_JUDGMENT.md` — is this repository worth building on, and where does it hurt.
+2. `02_REPOSITORY_STATE.md` — what the inspector actually found, with evidence references.
+3. `03_FINDINGS.md` — the evidence-backed finding ledger.
+4. `04_GOAL_RESOLUTION.md` — how your requested goal maps to the selected milestone.
+5. `05_MILESTONE.md` — the one milestone this packet targets.
+6. `06_ORCHESTRATION.md` — the agent team that will implement it.
+7. `07_VALIDATION_PLAN.md` — how completion will be proven.
+8. `08_HUMAN_GATES.md` — what still requires your explicit approval.
+
+## What this packet does not authorize
+
+This packet does not authorize merge, deployment, secret rotation, or any push/PR action
+against `{{ repoProfile.target.repository }}`. It was compiled read-only. See
+`08_HUMAN_GATES.md`.
+
+## Evidence gaps
+
+{{EVIDENCE_GAPS_LIST}}

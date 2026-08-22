@@ -1,0 +1,17 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "fixture test job"
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "fixture lint job (allowed to fail)"
+  integration:
+    runs-on: ubuntu-latest
+    if: false
+    steps:
+      - run: echo "fixture integration job (always skipped)"

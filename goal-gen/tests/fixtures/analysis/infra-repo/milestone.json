@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "yellow-goal/milestone/v1",
+  "goal": "Add a required_providers block and wire terraform validate as a checked command",
+  "whyNow": "F-001 shows provider versions are unpinned; this is the smallest correct next step before any validation can be trusted.",
+  "scope": [
+    "Add a required_providers block to main.tf pinning provider source and version",
+    "Run terraform init -backend=false",
+    "Run terraform validate"
+  ],
+  "nonGoals": [
+    "Do not apply any infrastructure changes",
+    "Do not add new resources or modules"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-001",
+      "behavior": "terraform validate exits 0 after terraform init -backend=false",
+      "verification": {
+        "type": "command",
+        "commandRef": "validate",
+        "environment": "local"
+      }
+    }
+  ],
+  "terminalCondition": "terraform validate passes with pinned provider versions declared.",
+  "risks": ["Pinning provider versions could conflict with an existing lockfile if one exists elsewhere"],
+  "humanGates": ["approve the pinned provider version range before merge"]
+}

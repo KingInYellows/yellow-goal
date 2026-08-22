@@ -1,0 +1,36 @@
+{
+  "databaseId": 1000000001,
+  "jobs": [
+    {
+      "databaseId": 2000000001,
+      "name": "test",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2024-01-01T00:00:05Z",
+      "completedAt": "2024-01-01T00:02:00Z",
+      "steps": [
+        { "name": "Run tests", "status": "completed", "conclusion": "success", "number": 1 }
+      ]
+    },
+    {
+      "databaseId": 2000000002,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2024-01-01T00:00:05Z",
+      "completedAt": "2024-01-01T00:01:30Z",
+      "steps": [
+        { "name": "Run lint (allowed to fail)", "status": "completed", "conclusion": "success", "number": 1 }
+      ]
+    },
+    {
+      "databaseId": 2000000003,
+      "name": "integration",
+      "status": "completed",
+      "conclusion": "skipped",
+      "startedAt": null,
+      "completedAt": null,
+      "steps": []
+    }
+  ]
+}

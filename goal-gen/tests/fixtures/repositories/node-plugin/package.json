@@ -1,0 +1,16 @@
+{
+  "name": "fixture-node-plugin",
+  "version": "0.1.0",
+  "description": "Fixture: a small Node.js plugin package.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "echo fixture-build",
+    "test": "echo fixture-test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["plugin"],
+  "license": "MIT"
+}

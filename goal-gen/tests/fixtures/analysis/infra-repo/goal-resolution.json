@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "yellow-goal/goal-resolution/v1",
+  "requestedGoal": "Make the Terraform configuration validate cleanly",
+  "selectedGoal": "Add a required_providers block and wire terraform validate as a checked command",
+  "selectedMilestoneId": "M-infra-repo-validate",
+  "relationship": "refined",
+  "rationale": "Clean validation requires pinned provider versions first; this milestone adds required_providers and wires terraform validate, refining the request into an achievable first step.",
+  "evidenceRefs": ["ev-001"],
+  "preservedIntent": "terraform validate becomes part of a reproducible, provider-pinned check."
+}

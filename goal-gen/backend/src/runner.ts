@@ -47,6 +47,10 @@ async function run(args: string[]): Promise<RunSummary> {
     model: config.model,
     timeoutMs: config.actionTimeoutMs,
     noiseFilterPaths: config.noiseFilterPaths,
+    // Explicit host opt-in (never a fallback): the M1 walking skeleton runs against a throwaway
+    // scratch repo in tmpdir (ADR-0009 blast-radius posture). Unknown/absent modes now fail closed
+    // inside the executor; this line is the single place bypass is deliberately chosen.
+    permissionMode: 'bypassPermissions',
   });
   const verifier = new ShellVerifier();
   const confirm: DodConfirmer | undefined = autoConfirm

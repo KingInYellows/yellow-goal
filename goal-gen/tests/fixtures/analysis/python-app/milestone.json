@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "yellow-goal/milestone/v1",
+  "goal": "Add an explicit [build-system] table so packaging and pytest installs are reproducible",
+  "whyNow": "F-001 shows packaging isn't reproducible without a declared build backend; this is the smallest correct next step.",
+  "scope": [
+    "Add a [build-system] table to pyproject.toml using setuptools",
+    "Verify pip install -e .[dev] still works",
+    "Verify pytest still passes"
+  ],
+  "nonGoals": [
+    "Do not migrate to a different build backend (poetry/hatch)",
+    "Do not add new runtime dependencies"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-001",
+      "behavior": "pip install -e .[dev] followed by pytest exits 0",
+      "verification": {
+        "type": "command",
+        "commandRef": "test",
+        "environment": "local"
+      }
+    }
+  ],
+  "terminalCondition": "pytest passes after a clean editable install using the declared build backend.",
+  "risks": ["Wrong build-backend choice could break existing install tooling"],
+  "humanGates": ["approve the chosen build backend before merge"]
+}

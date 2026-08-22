@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/finding/v1",
+  "title": "Finding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "severity",
+    "classification",
+    "title",
+    "evidenceRefs",
+    "consequence",
+    "requiredBehavior"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/finding/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^F-[A-Za-z0-9._-]+$"
+    },
+    "severity": {
+      "enum": [
+        "blocking",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "classification": {
+      "enum": [
+        "verified_defect",
+        "strongly_supported_risk",
+        "documentation_contradiction",
+        "missing_evidence",
+        "intentional_limitation",
+        "obsolete_finding",
+        "duplicate_finding",
+        "unknown"
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "affectedFiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "consequence": {
+      "type": "string"
+    },
+    "requiredBehavior": {
+      "type": "string"
+    },
+    "regressionRequirement": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "fixed",
+        "obsolete",
+        "accepted-risk",
+        "blocked"
+      ]
+    }
+  }
+}

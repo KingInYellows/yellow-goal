@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "yellow-goal/request/v1",
+  "requestId": "req-python-app-fixture",
+  "target": {
+    "repository": "local/python-app-fixture",
+    "ref": "main"
+  },
+  "intent": {
+    "goal": "Make Python packaging reproducible for CI"
+  },
+  "mode": "review-and-compile",
+  "pack": "repository-goal-packet@1"
+}

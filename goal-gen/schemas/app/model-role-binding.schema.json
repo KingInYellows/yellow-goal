@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/app/model-role-binding/v1",
+  "title": "ModelRoleBinding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "role",
+    "modelId",
+    "provider"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/model-role-binding/v1"
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Semantic role name (e.g. lead, architecture, implementation) — never a permanent model name."
+    },
+    "modelId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact resolved model identifier (e.g. claude-opus-5)."
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

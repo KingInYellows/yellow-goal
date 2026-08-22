@@ -1,0 +1,7 @@
+---
+- name: Fixture playbook (never run)
+  hosts: fixture
+  tasks:
+    - name: Fixture task
+      debug:
+        msg: "fixture ansible task"

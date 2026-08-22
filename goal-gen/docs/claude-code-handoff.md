@@ -1,5 +1,11 @@
 # Claude Code handoff — M0 (the planner)
 
+> **HISTORICAL — this bootstrap is complete.** M0 (deterministic planner + evals) and M1
+> (single-executor core) are implemented and green, and the read-only Repository Goal Packet
+> Compiler shipped alongside them. Current state: `README.md`, `docs/prd.md` §12, and
+> `.claude/specs/`. Kept for provenance; the instructions below describe the pre-M0 repo and
+> must not be followed today.
+
 This repo was scaffolded in a planning session (specs, ADRs, and the planner eval harness). The next phase — implementing components against the specs and the eval gate — is a Claude Code job. M0 needs neither the coding-agent CLIs nor a database.
 
 **Setup:** `git init` at the project root (see CONTRIBUTING.md), then open Claude Code in the repo and run commands from `goal-gen/`. Paste the block below into a fresh Claude Code session.

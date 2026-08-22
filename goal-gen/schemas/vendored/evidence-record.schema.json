@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/evidence-record/v1",
+  "title": "EvidenceRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "sourceType",
+    "retrievedAt",
+    "contentHash",
+    "sensitivity",
+    "facts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/evidence/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^ev-[A-Za-z0-9._-]+$"
+    },
+    "sourceType": {
+      "enum": [
+        "repository-file",
+        "git-metadata",
+        "github-api",
+        "ci-log",
+        "external-primary",
+        "external-secondary",
+        "human-input"
+      ]
+    },
+    "repository": {
+      "type": "string"
+    },
+    "ref": {
+      "type": "string"
+    },
+    "targetSha": {
+      "type": "string",
+      "minLength": 7
+    },
+    "path": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "retrievedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "contentHash": {
+      "type": "string",
+      "minLength": 16
+    },
+    "sensitivity": {
+      "enum": [
+        "public",
+        "internal",
+        "protected-metadata",
+        "sensitive-content-excluded"
+      ]
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "excerpt": {
+      "type": "string"
+    },
+    "citationLabel": {
+      "type": "string"
+    }
+  }
+}

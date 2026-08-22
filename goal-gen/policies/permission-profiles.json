@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "yellow-goal/permission-profiles/v1",
+  "profiles": {
+    "inspect": {
+      "targetRead": true,
+      "targetWrite": false,
+      "outputWrite": true,
+      "providerMutation": false,
+      "secretRead": false,
+      "defaultClaudeMode": "plan"
+    },
+    "compile": {
+      "targetRead": false,
+      "targetWrite": false,
+      "outputWrite": true,
+      "providerMutation": false,
+      "secretRead": false,
+      "defaultClaudeMode": "plan"
+    },
+    "implement": {
+      "targetRead": true,
+      "targetWrite": "isolated-worktree-only",
+      "outputWrite": true,
+      "providerMutation": false,
+      "secretRead": false,
+      "defaultClaudeMode": "acceptEdits"
+    },
+    "autonomous-isolated": {
+      "targetRead": true,
+      "targetWrite": "disposable-isolated-runtime",
+      "outputWrite": true,
+      "providerMutation": "scoped",
+      "secretRead": false,
+      "defaultClaudeMode": "explicitly-approved"
+    }
+  },
+  "invariant": "unknown permission profile must be rejected"
+}

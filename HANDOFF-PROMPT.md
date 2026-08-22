@@ -1,5 +1,10 @@
 # Handoff Prompt — GOAL: documentation review & brainstorm
 
+> **SUPERSEDED — kept for provenance only.** The "decisions locked" list below (v1 = full
+> multi-executor + live dashboard) predates the accepted scope in `goal-gen/docs/prd.md`
+> §6/§12 and `goal-gen/CLAUDE.md` (v1 = M1 single-executor core, shipped; the read-only
+> Repository Goal Packet Compiler also shipped). Where this file disagrees with those, they win.
+
 > Paste everything below the line into a **fresh Claude Cowork session** with the `GOAL` project folder selected. Its job is to read the existing docs and then interview you (via the multiple-choice question tool) to make sure the documentation matches your expectations — before any building starts.
 
 ---

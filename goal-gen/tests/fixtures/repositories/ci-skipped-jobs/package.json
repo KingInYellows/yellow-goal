@@ -1,0 +1,8 @@
+{
+  "name": "fixture-ci-skipped-jobs",
+  "version": "0.1.0",
+  "description": "Fixture: CI workflow with an allowed-failure job and a job that is always skipped.",
+  "scripts": {
+    "test": "echo fixture-test"
+  }
+}

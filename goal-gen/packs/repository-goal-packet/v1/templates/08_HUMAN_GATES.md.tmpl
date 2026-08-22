@@ -1,0 +1,30 @@
+# Human Gates
+
+This packet does not authorize any of the actions below. Each requires a separate, explicit
+human approval — see ADR-0006 (irreversible actions stay human-gated) and
+`06_SECURITY_PERMISSIONS_AND_HUMAN_GATES.md` in the harness guidance.
+
+## Gates carried by this milestone
+
+{{MILESTONE_HUMAN_GATES_LIST}}
+
+## Standing gates (always apply)
+
+- approve the selected milestone before implementation begins;
+- approve implementation (permission mode `acceptEdits` or a stricter explicit allowlist —
+  never `bypassPermissions`);
+- approve any permission escalation beyond the `implement` profile;
+- approve push or PR creation (`publish` approval, separate from implementation approval);
+- approve resolution of review threads;
+- approve merge;
+- approve deployment;
+- approve any destructive operation;
+- perform secret rotation (never automated);
+- approve a production image digest, where applicable.
+
+## Fail-closed conditions
+
+Any of the following must stop the run and require a human decision before continuing:
+target SHA changes unexpectedly; a secret value is exposed; a required approval is missing; a
+required test fails; a required job is skipped; a command lacks provenance; packet validation
+fails; the output path escapes the allowed run directory.

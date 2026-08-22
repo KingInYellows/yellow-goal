@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "yellow-goal/protected-path-policy/v1",
+  "defaultPatterns": [
+    ".env",
+    ".env.*",
+    "**/.env",
+    "**/.env.*",
+    "**/*.key",
+    "**/*.pem",
+    "**/*.p12",
+    "**/*.pfx",
+    "**/*secret*",
+    "**/*token*",
+    "**/*credential*",
+    ".aws/**",
+    ".azure/**",
+    ".config/gcloud/**",
+    "config/auth.users.json"
+  ],
+  "allowedSanitizedPatterns": [
+    "**/.env.example",
+    "**/.env.sample",
+    "**/*.example",
+    "**/*.template"
+  ],
+  "rule": "record metadata without opening protected contents"
+}

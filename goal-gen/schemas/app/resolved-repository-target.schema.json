@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/app/resolved-repository-target/v1",
+  "title": "ResolvedRepositoryTarget",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "provider",
+    "identity",
+    "requestedRef",
+    "resolvedRef",
+    "sha",
+    "inspectionTimestamp",
+    "accessLevel",
+    "toolLimitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/resolved-repository-target/v1"
+    },
+    "provider": {
+      "enum": [
+        "local-git",
+        "github"
+      ]
+    },
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "OWNER/REPO for github, or an absolute/normalized local path for local-git."
+    },
+    "defaultBranch": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "requestedRef": {
+      "type": "string"
+    },
+    "resolvedRef": {
+      "type": "string"
+    },
+    "sha": {
+      "type": "string",
+      "minLength": 7,
+      "description": "Exact resolved commit SHA at inspection time."
+    },
+    "inspectionTimestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "accessLevel": {
+      "enum": [
+        "full-read",
+        "partial-read",
+        "unavailable"
+      ]
+    },
+    "toolLimitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

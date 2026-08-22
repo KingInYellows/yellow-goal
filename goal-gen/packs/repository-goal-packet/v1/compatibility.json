@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "yellow-goal/pack-compatibility/v1",
+  "pack": {
+    "id": "repository-goal-packet",
+    "version": "1.0.0"
+  },
+  "compatibleEngine": ">=0.1.0 <1.0.0",
+  "requiredSchemas": {
+    "request": "yellow-goal/request/v1",
+    "repoProfile": "yellow-goal/repo-profile/v1",
+    "evidence": "yellow-goal/evidence/v1",
+    "finding": "yellow-goal/finding/v1",
+    "goalResolution": "yellow-goal/goal-resolution/v1",
+    "milestone": "yellow-goal/milestone/v1",
+    "orchestration": "yellow-goal/orchestration/v1",
+    "manifest": "yellow-goal/packet-manifest/v1",
+    "assessment": "yellow-goal/repository-assessment/v1"
+  },
+  "note": "Duplicates the compatibility-relevant subset of pack.json (08_PACK_SYSTEM.md pack layout requires a standalone compatibility.json). pack.json remains the single canonical source; this file must be regenerated whenever compatibleEngine or requiredSchemas changes in pack.json."
+}

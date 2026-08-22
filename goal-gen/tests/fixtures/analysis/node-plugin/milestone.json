@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "yellow-goal/milestone/v1",
+  "goal": "Add a lint script and wire it into the existing test command",
+  "whyNow": "F-001 shows lint is not currently enforced; this is the smallest correct next step.",
+  "scope": [
+    "Add an eslint config",
+    "Add a \"lint\" npm script",
+    "Wire lint into the \"test\" script"
+  ],
+  "nonGoals": [
+    "Do not fix all existing lint violations in this milestone",
+    "Do not add a CI workflow"
+  ],
+  "acceptanceCriteria": [
+    {
+      "id": "AC-001",
+      "behavior": "npm run lint exits 0 on the current tree",
+      "verification": {
+        "type": "command",
+        "commandRef": "lint",
+        "environment": "local"
+      }
+    }
+  ],
+  "terminalCondition": "npm run lint and npm test both pass on the same commit.",
+  "risks": ["Existing code may have many lint violations requiring broad fixups"],
+  "humanGates": ["approve the lint rule set before merge"]
+}

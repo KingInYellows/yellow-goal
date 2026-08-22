@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "yellow-goal/repo-profile/v1",
+  "target": {
+    "repository": "local/python-app-fixture",
+    "defaultBranch": "main",
+    "requestedRef": "main",
+    "resolvedRef": "main",
+    "headSha": "1123456789abcdef0123456789abcdef01234567",
+    "inspectedAt": "2026-08-22T00:00:00.000Z"
+  },
+  "repositoryKinds": ["python"],
+  "instructionFiles": ["README.md"],
+  "commands": [
+    {
+      "id": "test",
+      "argv": ["pytest"],
+      "cwd": ".",
+      "sourceEvidenceRef": "ev-001",
+      "confidence": "verified",
+      "sideEffectClass": "workspace-only"
+    }
+  ],
+  "openPullRequests": [],
+  "issues": [],
+  "ciWorkflows": [],
+  "releaseSignals": [],
+  "protectedPaths": [],
+  "evidenceRefs": ["ev-001"]
+}

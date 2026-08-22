@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/app/external-research-record/v1",
+  "title": "ExternalResearchRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "question",
+    "sourceUrl",
+    "sourceKind",
+    "retrievedAt",
+    "summary",
+    "evidenceId"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/external-research-record/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^ext-[A-Za-z0-9._-]+$"
+    },
+    "question": {
+      "type": "string",
+      "minLength": 3
+    },
+    "sourceUrl": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceKind": {
+      "enum": [
+        "official-docs",
+        "official-repo",
+        "standard",
+        "primary-research",
+        "other"
+      ]
+    },
+    "retrievedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^ev-[A-Za-z0-9._-]+$",
+      "description": "Links to EvidenceRecord.id — external research is not itself evidence until captured as one."
+    }
+  }
+}

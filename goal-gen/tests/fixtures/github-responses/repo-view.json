@@ -1,0 +1,9 @@
+{
+  "name": "fixture-repo",
+  "owner": { "id": "O_fixture000000000001", "login": "fixture-owner" },
+  "defaultBranchRef": { "name": "main" },
+  "description": "Fixture: sanitized `gh repo view` shape for recorded-response tests.",
+  "isPrivate": true,
+  "pushedAt": "2024-01-01T00:00:00Z",
+  "url": "https://github.com/fixture-owner/fixture-repo"
+}

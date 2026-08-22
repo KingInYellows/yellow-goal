@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "yellow-goal/goal-resolution/v1",
+  "requestedGoal": "Add CI-verified linting to the node plugin",
+  "selectedGoal": "Add a lint script and wire it into the existing test command",
+  "selectedMilestoneId": "M-node-plugin-lint",
+  "relationship": "refined",
+  "rationale": "The requested CI-verified linting requires a lint script to exist first; this milestone adds it and wires it in, refining the request into an achievable first step.",
+  "evidenceRefs": ["ev-001"],
+  "preservedIntent": "Linting becomes part of the verified test path."
+}

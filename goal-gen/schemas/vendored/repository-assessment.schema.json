@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/repository-assessment/v1",
+  "title": "RepositoryAssessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "executiveJudgment",
+    "ratings",
+    "findings",
+    "evidenceGaps",
+    "biggestConstraint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/repository-assessment/v1"
+    },
+    "executiveJudgment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usefulness",
+        "functionality",
+        "cohesion",
+        "milestoneReadiness"
+      ],
+      "properties": {
+        "usefulness": {
+          "type": "string"
+        },
+        "functionality": {
+          "type": "string"
+        },
+        "cohesion": {
+          "type": "string"
+        },
+        "milestoneReadiness": {
+          "type": "string"
+        }
+      }
+    },
+    "ratings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "area",
+          "rating",
+          "evidenceRefs"
+        ],
+        "properties": {
+          "area": {
+            "type": "string"
+          },
+          "rating": {
+            "enum": [
+              "strong",
+              "adequate",
+              "fragile",
+              "weak",
+              "not-proven"
+            ]
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "whatRaisesIt": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "evidenceGaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "biggestConstraint": {
+      "type": "string",
+      "minLength": 3
+    }
+  }
+}

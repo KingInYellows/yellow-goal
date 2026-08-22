@@ -1,0 +1,32 @@
+# Generated Packet Review Prompt — {{ repoProfile.target.repository }}
+
+```text
+Review this generated packet for {{ repoProfile.target.repository }} (packet {{ manifest.packetId }},
+exact SHA {{ repoProfile.target.headSha }}) as a skeptical independent verifier.
+
+Validate:
+
+1. The target repository and exact SHA are unambiguous and match this packet's manifest.
+2. Important factual claims resolve to evidence records in evidence/evidence.jsonl.
+3. Current PR heads, checks, skipped jobs, and unresolved findings were not misrepresented.
+4. The selected goal preserves the requested outcome: "{{ goalResolution.requestedGoal }}".
+5. The relationship classification (`{{ goalResolution.relationship }}`) is justified by the
+   stated rationale, not merely asserted.
+6. The milestone is one coherent outcome rather than a backlog.
+7. Every acceptance criterion is observable and has a verification method.
+8. Every executable command has repository or human provenance — never a model invention.
+9. The orchestration plan has exclusive file ownership, explicit per-teammate model IDs, and
+   fresh-context verification with no reused implementation context.
+10. Permission defaults are safe: no unknown mode defaults to bypassPermissions, and no wave
+    uses or falls back to bypassPermissions.
+11. Human gates cover push, merge, deploy, destructive actions, and secret operations.
+12. The manifest and CHECKSUMS.sha256 verify, and no path traversal or symlink escape exists.
+13. No secret values or protected file content are present anywhere in this packet.
+
+Return exactly one of:
+- PASS
+- PASS WITH NAMED CORRECTIONS
+- REJECT
+
+Do not modify the target repository or this generated packet.
+```

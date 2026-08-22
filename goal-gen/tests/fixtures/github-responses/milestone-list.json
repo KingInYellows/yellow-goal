@@ -1,0 +1,4 @@
+[
+  { "number": 1, "title": "fixture v1", "state": "open", "dueOn": "2024-03-01T00:00:00Z", "description": "Fixture milestone" },
+  { "number": 2, "title": "fixture v0 (closed)", "state": "closed", "dueOn": null, "description": "" }
+]

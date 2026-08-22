@@ -1,0 +1,32 @@
+# Findings
+
+Every blocking or high-severity finding below resolves to at least one evidence record in
+`evidence/evidence.jsonl`. A finding without evidence is a defect in this packet, not an
+acceptable output — see `07_PACKET_CONTRACT.md` in the harness guidance and the packet
+validator.
+
+## Summary
+
+| Severity | Count |
+|---|---|
+| Blocking | {{ findingsSummary.blockingCount }} |
+| High | {{ findingsSummary.highCount }} |
+| Medium | {{ findingsSummary.mediumCount }} |
+| Low | {{ findingsSummary.lowCount }} |
+
+## Finding ledger
+
+| ID | Severity | Classification | Title | Evidence | Affected files | Status |
+|---|---|---|---|---|---|---|
+{{FINDINGS_TABLE_ROWS}}
+
+## Consequence and required behavior
+
+{{FINDINGS_DETAIL_SECTIONS}}
+
+## Evidence gaps
+
+A packet may be valid while stating an evidence gap explicitly. It is invalid if a gap is
+silently converted into an unsupported factual claim.
+
+{{EVIDENCE_GAPS_LIST}}

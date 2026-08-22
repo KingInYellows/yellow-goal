@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/app/orchestration-profile/v1",
+  "title": "OrchestrationProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "provider",
+    "roleBindings",
+    "resolvedAt",
+    "docSource"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/orchestration-profile/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+@[0-9]+$",
+      "description": "e.g. claude-fable-opus-sonnet@1 — the currently supported default."
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "roleBindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lead",
+        "architecture",
+        "security",
+        "complex-debugging",
+        "implementation",
+        "unit-tests",
+        "documentation",
+        "evidence-mapping",
+        "release-review"
+      ],
+      "properties": {
+        "lead": { "$ref": "#/$defs/binding" },
+        "architecture": { "$ref": "#/$defs/binding" },
+        "security": { "$ref": "#/$defs/binding" },
+        "complex-debugging": { "$ref": "#/$defs/binding" },
+        "implementation": { "$ref": "#/$defs/binding" },
+        "unit-tests": { "$ref": "#/$defs/binding" },
+        "documentation": { "$ref": "#/$defs/binding" },
+        "evidence-mapping": { "$ref": "#/$defs/binding" },
+        "release-review": { "$ref": "#/$defs/binding" }
+      }
+    },
+    "resolvedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "claudeCodeVersion": {
+      "type": "string"
+    },
+    "docSource": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which guidance doc/section this resolution was validated against."
+    }
+  },
+  "$defs": {
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelId",
+        "provider"
+      ],
+      "properties": {
+        "modelId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

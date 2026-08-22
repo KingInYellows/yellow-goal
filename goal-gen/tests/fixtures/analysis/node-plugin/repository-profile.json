@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "yellow-goal/repo-profile/v1",
+  "target": {
+    "repository": "local/node-plugin-fixture",
+    "defaultBranch": "main",
+    "requestedRef": "main",
+    "resolvedRef": "main",
+    "headSha": "0123456789abcdef0123456789abcdef01234567",
+    "inspectedAt": "2026-08-22T00:00:00.000Z"
+  },
+  "repositoryKinds": ["node", "plugin"],
+  "instructionFiles": ["README.md"],
+  "commands": [
+    {
+      "id": "test",
+      "argv": ["npm", "test"],
+      "cwd": ".",
+      "sourceEvidenceRef": "ev-001",
+      "confidence": "verified",
+      "sideEffectClass": "workspace-only"
+    }
+  ],
+  "openPullRequests": [],
+  "issues": [],
+  "ciWorkflows": [],
+  "releaseSignals": [],
+  "protectedPaths": [],
+  "evidenceRefs": ["ev-001"]
+}

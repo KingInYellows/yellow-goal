@@ -1,0 +1,4 @@
+[
+  { "tagName": "v0.2.0", "name": "fixture v0.2.0", "isDraft": false, "isPrerelease": false, "publishedAt": "2024-01-10T00:00:00Z" },
+  { "tagName": "v0.1.0-beta", "name": "fixture v0.1.0-beta", "isDraft": false, "isPrerelease": true, "publishedAt": "2024-01-01T00:00:00Z" }
+]

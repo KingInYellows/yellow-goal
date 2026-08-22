@@ -7,6 +7,8 @@ A self-hosted app: plain-English goal → LLM-extracted action graph → determi
 
 **v1 = M1 (single-executor core):** Claude Code (`claude -p`) only, run **serially**; extract → plan → confirm definition of done → execute → verify → replan, with a minimal live view. Multi-executor (Codex, Antigravity) + per-step routing + parallelism + full dashboard are **M2 fast-follow**; pgvector memory is **M3**. See `docs/prd.md` §6/§12.
 
+**Second subsystem — Universal Repository Goal Packet Compiler (shipped):** a **read-only** pipeline (`request create/validate` → `inspect` → `analyze` → `compile` → `packet verify`, via `npm run cli`) that turns any supported Git repository + plain-English goal into a schema-valid, tamper-evident ZIP implementation packet (`repository-goal-packet@1`). It never mutates target repositories, rejects unknown permission/orchestration profiles fail-closed, and must not import executor/orchestrator mutation code. Contract: `.claude/specs/packet-compiler.md` (read before touching `backend/src/{contracts,intake,inspection,evidence,research,analysis,packs,packets,cli}`).
+
 ## Stack (decided)
 - **Language:** TypeScript end-to-end.
 - **Frontend:** React + Vite + Tailwind + shadcn/ui. Lift `goal_ui`'s MIT planner + plan-tree/state-card components liberally where they fit (keep license headers); build the real-event run view fresh.
@@ -21,9 +23,13 @@ A self-hosted app: plain-English goal → LLM-extracted action graph → determi
 CLAUDE.md · AGENTS.md
 .claude/specs/        # component contracts (read before implementing a component)
 docs/                 # prd.md (source of truth) + decisions/ (ADRs, MADR) + design notes
-backend/src/          # api/ planner/ extractors/ executors/ db/ mcp/
-frontend/src/         # components/ pages/ lib/ (plan tree, dashboard, realtime)
-tests/                # unit + integration + evals/ (vitest + fast-check; promptfoo for extractor)
+backend/src/          # M1 core: planner/ extractors/ executors/ orchestrator/ db/
+                      # compiler: contracts/ intake/ inspection/ evidence/ research/
+                      #           analysis/ packs/ packets/ providers/ cli/
+schemas/ · policies/  # vendored JSON Schemas (+ corrections log) and permission policies
+packs/                # repository-goal-packet/v1 pack assets (templates, prompts, scripts)
+frontend/src/         # (future) components/ pages/ lib/
+tests/                # unit + contract + fixture + adversarial + integration + evals/
 ```
 
 **Repo root gotcha:** this project lives in `goal-gen/`, a *subdirectory* of the git repo rooted at the parent `yellow-goal/` (`git rev-parse --show-toplevel` → `yellow-goal`). Run `git`/`gt` from anywhere in the tree, but note: repo-level config (`.graphite.yml`, PR template) sits at the `yellow-goal` root, while project-local config (`.gitignore`, `.ruvector/`, `.claude/*.local.md`) lives in `goal-gen/`. Tools that probe `show-toplevel` for project files will look one level too high.
@@ -49,12 +55,14 @@ tests/                # unit + integration + evals/ (vitest + fast-check; prompt
 - Track work with the task list; one component spec = one work stream.
 - **Eval-driven:** keep `tests/evals/` (goal→expected-plan pairs); run before/after planner or prompt changes.
 
-## Commands (M0 planner scaffolded; frontend/lint still TBD)
+## Commands (frontend/lint still TBD)
 - Install: `npm install`
 - Dev: `TBD` (frontend `vite`, backend watch — not scaffolded yet)
-- Test: `npm test` (`vitest run`) · `npm run test:watch` (watch mode); planner properties via `fast-check`
-- Evals: `npm run eval` (all) · `npm run eval:planner` (planner gate) — `vitest` over `tests/evals/`; extractor prompt eval via `promptfoo` (M0 part 2)
+- Test: `npm test` (`vitest run`, full deterministic suite — no live network/model calls) · `npm run test:watch`
+- Evals: `npm run eval` (all) · `npm run eval:planner` (planner gate)
 - Typecheck: `npm run typecheck` (`tsc --noEmit`, strict)
+- Compiler CLI: `npm run cli -- <request create|request validate|inspect|analyze|compile|packet verify> ...`
+- M1 runner: `npm run runner -- "<goal>"` (real `claude -p`; real cost)
 - Lint/format: `TBD` (not configured yet)
 
 ## Host

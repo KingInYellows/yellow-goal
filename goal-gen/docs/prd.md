@@ -143,6 +143,22 @@ The instance is **single-user**: reachable only on your own network (or via Tail
 - **M2 — Multi-executor + dashboard (fast-follow):** add Codex + Antigravity; per-step routing; dependency-graph parallelism with **per-run container isolation**; full multi-agent dashboard + reassign. *(Phase 3)*
 - **M3 — Memory + hardening:** pgvector plan/trajectory memory + retrieval-augmented extraction; historical cost dashboards. *(Phase 4)*
 
+**Status:** M0 and M1 are implemented and green; M2/M3 remain future work.
+
+**Shipped alongside M1 — Universal Repository Goal Packet Compiler (separate subsystem):** a
+**read-only** pipeline (`npm run cli`: `request create/validate` → `inspect` → `analyze` →
+`compile` → `packet verify`) that takes any supported Git repository (local path or
+GitHub-via-`gh`) plus a plain-English goal and emits a schema-valid, tamper-evident, verified
+ZIP implementation packet (`repository-goal-packet@1`) containing reports, typed contracts, an
+append-only evidence ledger, bounded research records, a tailored master implementation prompt
+(default orchestration profile `claude-fable-opus-sonnet@1`: Fable 5 lead, Opus 5
+investigation/verification, Sonnet 5 implementation), validation plan, human gates, launch
+scripts, manifest, and checksums. Compiler mode never mutates target repositories; unknown
+permission/orchestration profiles are rejected fail-closed; actual implementation, push, merge,
+deployment, and secret operations remain separate human-approved phases. Contract:
+`.claude/specs/packet-compiler.md`; vendored schemas/policies under `schemas/` and `policies/`
+(corrections logged in `schemas/README.md`).
+
 ## 13. Risks & mitigations
 
 | Risk | Mitigation |

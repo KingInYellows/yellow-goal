@@ -22,9 +22,33 @@ import { GIT_ENV, git } from './worktree';
 /** SIGKILL escalation grace after SIGTERM on cancel/timeout (plan task 2.5). */
 const SIGKILL_GRACE_MS = 5_000;
 const DEFAULT_MAX_TURNS = 10;
-/** Permission modes the executor will honor from an LLM-authored action; anything else is ignored
- *  and forced back to bypassPermissions so a prompt-injected action can't downgrade the headless run. */
-const ALLOWED_PERMISSION_MODES = new Set(['bypassPermissions', 'acceptEdits']);
+
+/**
+ * Permission handling is FAIL-CLOSED (guidance invariant: "unknown permission profile must be
+ * rejected"; never fall back to a bypass-style mode).
+ *
+ * - The HOST configures the run's mode explicitly via `ClaudeCodeExecutorOptions.permissionMode`;
+ *   an unknown configured value throws at construction. `bypassPermissions` is never a default —
+ *   a call site that wants it must say so (ADR-0009 blast-radius posture is a host decision).
+ * - An LLM-authored action payload may only *narrow* the mode: it can request a mode from
+ *   `ACTION_REQUESTABLE_MODES` that is no more permissive than the configured mode. An absent
+ *   payload mode uses the configured mode; an unknown payload mode or an escalation attempt fails
+ *   the action closed (no spawn) instead of being coerced to anything executable.
+ *
+ * Mode names revalidated against `claude --help` (2026-08-22): the CLI accepts acceptEdits, auto,
+ * bypassPermissions, manual, dontAsk, plan. Only the three below are meaningful for headless runs.
+ */
+export type ClaudePermissionMode = 'plan' | 'acceptEdits' | 'bypassPermissions';
+const VALID_PERMISSION_MODES: ReadonlySet<string> = new Set(['plan', 'acceptEdits', 'bypassPermissions']);
+/** Modes an action payload may request. `bypassPermissions` is deliberately absent: only explicit
+ *  host configuration may select it, never LLM-authored content. */
+const ACTION_REQUESTABLE_MODES: ReadonlySet<string> = new Set(['plan', 'acceptEdits']);
+/** Permissiveness order for the narrowing rule (lower = stricter). */
+const MODE_RANK: Readonly<Record<ClaudePermissionMode, number>> = {
+  plan: 0,
+  acceptEdits: 1,
+  bypassPermissions: 2,
+};
 
 /**
  * The `--output-format json` result envelope, validated defensively. The real shape has ~20
@@ -282,6 +306,11 @@ export interface ClaudeCodeExecutorOptions {
   noiseFilterPaths?: readonly string[];
   /** `--max-turns` cap (default 10). */
   maxTurns?: number;
+  /**
+   * Explicit host-configured `--permission-mode` (default `acceptEdits`). `bypassPermissions` must
+   * be opted into explicitly by the call site — it is never a fallback. Unknown values throw.
+   */
+  permissionMode?: ClaudePermissionMode;
 }
 
 export class ClaudeCodeExecutor implements Executor {
@@ -290,6 +319,7 @@ export class ClaudeCodeExecutor implements Executor {
   private readonly timeoutMs: number;
   private readonly noiseFilterPaths: readonly string[];
   private readonly maxTurns: number;
+  private readonly permissionMode: ClaudePermissionMode;
   private seq = 0;
 
   constructor(opts: ClaudeCodeExecutorOptions = {}) {
@@ -297,6 +327,15 @@ export class ClaudeCodeExecutor implements Executor {
     this.timeoutMs = opts.timeoutMs ?? ACTION_TIMEOUT_MS;
     this.noiseFilterPaths = opts.noiseFilterPaths ?? DEFAULT_NOISE_FILTER_PATHS;
     this.maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
+    // Fail closed at construction: an unknown configured mode is a host config error, not
+    // something to coerce. The default is acceptEdits, never bypassPermissions.
+    const configured = opts.permissionMode ?? 'acceptEdits';
+    if (!VALID_PERMISSION_MODES.has(configured)) {
+      throw new Error(
+        `[executor] unknown permissionMode '${String(configured)}' — valid: ${[...VALID_PERMISSION_MODES].join(', ')} (fail-closed; bypassPermissions is never a fallback)`,
+      );
+    }
+    this.permissionMode = configured;
   }
 
   async run(action: Action, ctx: RunContext): Promise<AgentRun> {
@@ -324,8 +363,27 @@ export class ClaudeCodeExecutor implements Executor {
     const initialSha = baseline.stdout.trim();
 
     const prompt = action.payload.prompt ?? action.name;
+    // Fail-closed permission resolution (see module doc above): absent → the explicit
+    // host-configured mode; a payload may only narrow within ACTION_REQUESTABLE_MODES; anything
+    // unknown, or an attempt to escalate above the configured mode, fails the action WITHOUT
+    // spawning — it is never coerced to bypassPermissions (or any other executable mode).
     const requestedMode = action.payload.permissionMode;
-    const permissionMode = requestedMode && ALLOWED_PERMISSION_MODES.has(requestedMode) ? requestedMode : 'bypassPermissions';
+    let permissionMode: ClaudePermissionMode;
+    if (requestedMode === undefined) {
+      permissionMode = this.permissionMode;
+    } else if (
+      ACTION_REQUESTABLE_MODES.has(requestedMode) &&
+      MODE_RANK[requestedMode as ClaudePermissionMode] <= MODE_RANK[this.permissionMode]
+    ) {
+      permissionMode = requestedMode as ClaudePermissionMode;
+    } else {
+      return {
+        ...base,
+        endedAt: new Date().toISOString(),
+        costUsd: 0,
+        stderr: `[executor] rejected action permissionMode '${String(requestedMode)}' (fail-closed: unknown or more permissive than configured '${this.permissionMode}'; never coerced to bypassPermissions)`,
+      };
+    }
     const argv = [
       '-p',
       prompt,

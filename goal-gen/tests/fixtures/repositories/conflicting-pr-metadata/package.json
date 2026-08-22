@@ -1,0 +1,5 @@
+{
+  "name": "fixture-conflicting-pr-metadata",
+  "version": "0.1.0",
+  "description": "Fixture: paired with tests/fixtures/github-responses/pr-list-conflicting.json for divergent/conflicting PR state."
+}

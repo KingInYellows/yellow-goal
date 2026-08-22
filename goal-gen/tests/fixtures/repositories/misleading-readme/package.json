@@ -1,0 +1,6 @@
+{
+  "name": "fixture-misleading-readme",
+  "version": "0.1.0",
+  "description": "Fixture: JavaScript package whose README falsely claims Python support.",
+  "main": "src/index.js"
+}

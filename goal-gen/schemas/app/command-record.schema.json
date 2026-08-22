@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/app/command-record/v1",
+  "title": "CommandRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "argv",
+    "workingDir",
+    "source",
+    "evidenceRefs",
+    "confidence",
+    "sideEffectClass",
+    "executable"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/command-record/v1"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "argv": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "description": "Argument vector, never a shell string — no interpolation of untrusted text."
+    },
+    "workingDir": {
+      "type": "string",
+      "default": "."
+    },
+    "source": {
+      "enum": [
+        "manifest-script",
+        "makefile",
+        "ci-workflow",
+        "repository-overlay",
+        "human-approved",
+        "model-suggested"
+      ]
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "enum": [
+        "verified",
+        "configured",
+        "suggested",
+        "unknown"
+      ]
+    },
+    "sideEffectClass": {
+      "enum": [
+        "read-only",
+        "build",
+        "test",
+        "mutating",
+        "unknown"
+      ]
+    },
+    "executable": {
+      "type": "boolean",
+      "description": "Invariant enforced at the contract layer (zod refine), not expressible in this structural schema: a CommandRecord with source == 'model-suggested' must have executable == false."
+    }
+  }
+}

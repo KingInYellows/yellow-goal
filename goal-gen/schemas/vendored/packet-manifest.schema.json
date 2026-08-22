@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/packet-manifest/v1",
+  "title": "PacketManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "packetId",
+    "engineVersion",
+    "pack",
+    "requestId",
+    "target",
+    "inspectionStartedAt",
+    "inspectionCompletedAt",
+    "analysisModels",
+    "resolvedOrchestrationModels",
+    "tools",
+    "schemas",
+    "files",
+    "humanGates",
+    "evidenceGaps",
+    "timestampFields",
+    "targetMutationOccurred",
+    "validation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/packet-manifest/v1"
+    },
+    "packetId": {
+      "type": "string"
+    },
+    "engineVersion": {
+      "type": "string"
+    },
+    "pack": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "repository",
+        "headSha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "requestedRef": {
+          "type": "string"
+        },
+        "resolvedRef": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string"
+        }
+      }
+    },
+    "inspectionStartedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "inspectionCompletedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "analysisModels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "resolvedOrchestrationModels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tools": {
+      "type": "object"
+    },
+    "schemas": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "humanGates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidenceGaps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "timestampFields": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "predecessorPacketId": {
+      "type": "string"
+    },
+    "targetMutationOccurred": {
+      "const": false
+    },
+    "validation": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

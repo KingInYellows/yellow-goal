@@ -1,0 +1,3 @@
+# FIXTURE-NOT-A-SECRET — placeholder values only, renamed to .env at fixture materialization time.
+API_KEY=FIXTURE-NOT-A-SECRET-api-key
+DATABASE_URL=postgres://fixture:FIXTURE-NOT-A-SECRET@localhost:5432/fixturedb

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/goal-resolution/v1",
+  "title": "GoalResolution",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requestedGoal",
+    "selectedGoal",
+    "selectedMilestoneId",
+    "relationship",
+    "rationale",
+    "evidenceRefs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/goal-resolution/v1"
+    },
+    "requestedGoal": {
+      "type": "string",
+      "minLength": 3
+    },
+    "selectedGoal": {
+      "type": "string",
+      "minLength": 3
+    },
+    "selectedMilestoneId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "relationship": {
+      "enum": [
+        "exact",
+        "refined",
+        "prerequisite",
+        "blocked"
+      ]
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "preservedIntent": {
+      "type": "string"
+    },
+    "blockedBy": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

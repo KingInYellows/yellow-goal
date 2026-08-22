@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yellow-goal.local/schemas/repo-profile/v1",
+  "title": "RepoProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "target",
+    "repositoryKinds",
+    "instructionFiles",
+    "commands",
+    "evidenceRefs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "yellow-goal/repo-profile/v1"
+    },
+    "target": {
+      "type": "object",
+      "required": [
+        "repository",
+        "resolvedRef",
+        "headSha",
+        "inspectedAt"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "defaultBranch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestedRef": {
+          "type": "string"
+        },
+        "resolvedRef": {
+          "type": "string"
+        },
+        "headSha": {
+          "type": "string",
+          "minLength": 7
+        },
+        "inspectedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "repositoryKinds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "instructionFiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "manifests": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "openPullRequests": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "ciWorkflows": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "releaseSignals": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "protectedPaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "argv",
+        "sourceEvidenceRef",
+        "confidence",
+        "sideEffectClass"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": "string",
+          "default": "."
+        },
+        "sourceEvidenceRef": {
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "verified",
+            "configured",
+            "suggested",
+            "unknown"
+          ]
+        },
+        "sideEffectClass": {
+          "enum": [
+            "none",
+            "workspace-only",
+            "repository-write",
+            "external-mutation",
+            "unknown"
+          ]
+        }
+      }
+    }
+  }
+}
