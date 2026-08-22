@@ -1,0 +1,24 @@
+goal-gen/tests/evals/planner/README.md
+  s_6f4eaec029ade7::t_57badd8fb86f18 12-14
+  s_6f4eaec029ade7::t_2cf273c38d9914 58,60-63
+goal-gen/packs/repository-goal-packet/v1/scripts/launch.ps1
+  s_6f4eaec029ade7::t_89d76379bede2e 74-76,78-83
+goal-gen/packs/repository-goal-packet/v1/scripts/launch.sh
+  s_6f4eaec029ade7::t_826d2b3baf0d49 70-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "14bd1a026b49efc074b8e0137447eda8a00206f2",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
