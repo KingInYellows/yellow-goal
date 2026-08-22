@@ -1,0 +1,109 @@
+goal-gen/tests/fixtures/repositories/misleading-readme/package.json
+  s_6f4eaec029ade7::t_49ca8af64165b8 1-6
+goal-gen/tests/fixtures/repositories/ci-skipped-jobs/package.json
+  s_6f4eaec029ade7::t_0b0cd98ab8bef1 1-8
+goal-gen/tests/fixtures/repositories/ci-skipped-jobs/README.md
+  s_6f4eaec029ade7::t_47d4d4ffa40362 1-5
+goal-gen/tests/fixtures/repositories/injection-attempt/README.md
+  s_6f4eaec029ade7::t_7ed3064391292a 1-16
+goal-gen/tests/fixtures/repositories/init-fixture.test.ts
+  s_6f4eaec029ade7::t_4fe3ba8d6c8b11 1-68
+goal-gen/tests/fixtures/repositories/protected-file/__fixture-manifest.json
+  s_6f4eaec029ade7::t_64382deb6e2334 1-5
+goal-gen/tests/fixtures/github-responses/pr-list-conflicting.json
+  s_6f4eaec029ade7::t_5d0a95b5eef8a4 1-41
+goal-gen/tests/fixtures/github-responses/ci-run-jobs.json
+  s_6f4eaec029ade7::t_8ba66a4b06d002 1-3,35-36
+  s_6f4eaec029ade7::t_d274632c77c482 4-34
+goal-gen/tests/fixtures/github-responses/ci-runs.json
+  s_6f4eaec029ade7::t_37777479dcd511 1-35
+goal-gen/tests/fixtures/repositories/multi-package-manager/go.mod
+  s_6f4eaec029ade7::t_71e6447b111d81 1-3
+goal-gen/tests/fixtures/repositories/infra-repo/main.tf
+  s_6f4eaec029ade7::t_10443c4747010b 1-9
+goal-gen/tests/fixtures/repositories/python-app/README.md
+  s_6f4eaec029ade7::t_0e2bee4b5eee1a 1-11
+goal-gen/tests/fixtures/github-responses/pr-list.json
+  s_6f4eaec029ade7::t_071fdf2756c56d 1-28
+goal-gen/tests/fixtures/repositories/no-tests/package.json
+  s_6f4eaec029ade7::t_2d41abedfcbdcd 1-6
+goal-gen/tests/fixtures/repositories/node-plugin/package.json
+  s_6f4eaec029ade7::t_eec6c732123289 1-16
+goal-gen/tests/fixtures/repositories/protected-file/README.md
+  s_6f4eaec029ade7::t_529007cc1d281c 1-7
+goal-gen/tests/fixtures/github-responses/repo-view.json
+  s_6f4eaec029ade7::t_c625235b2bfe36 1-9
+goal-gen/tests/fixtures/repositories/no-tests/src/index.js
+  s_6f4eaec029ade7::t_d1fc029a243a89 1-4
+goal-gen/tests/fixtures/repositories/node-plugin/README.md
+  s_6f4eaec029ade7::t_ed8cfe489d9f4f 1-4
+goal-gen/tests/fixtures/repositories/multi-package-manager/package.json
+  s_6f4eaec029ade7::t_ed5f90c857e281 1-8
+goal-gen/tests/fixtures/repositories/multi-package-manager/README.md
+  s_6f4eaec029ade7::t_766bb93430a64f 1-5
+goal-gen/tests/inspection/git.test.ts
+  s_6f4eaec029ade7::t_eda5f163abf315 1-99,111-123,131-157
+  s_6f4eaec029ade7::t_a5b754b88e5e48 124-130
+  s_6f4eaec029ade7::t_51b9c3734f386a 100-110
+goal-gen/tests/fixtures/repositories/infra-repo/variables.tf
+  s_6f4eaec029ade7::t_efb5297ace1ea2 1-5
+goal-gen/tests/fixtures/repositories/ci-skipped-jobs/.github/workflows/ci.yml
+  s_6f4eaec029ade7::t_292bb5166145b3 1-17
+goal-gen/backend/src/inspection/git.ts
+  s_6f4eaec029ade7::t_6c87bf93dcc896 37-40
+  s_6f4eaec029ade7::t_85ffdf8cc42ba0 1-36,41-271
+goal-gen/tests/fixtures/repositories/python-app/pyproject.toml
+  s_6f4eaec029ade7::t_2c8061b6a07902 1-12
+goal-gen/tests/fixtures/repositories/infra-repo/README.md
+  s_6f4eaec029ade7::t_29b3aad0855955 1-4
+goal-gen/tests/fixtures/repositories/no-tests/README.md
+  s_6f4eaec029ade7::t_7c061bf93cdeea 1-5
+goal-gen/tests/fixtures/repositories/conflicting-pr-metadata/package.json
+  s_6f4eaec029ade7::t_1bd51ed86b03c2 1-5
+goal-gen/tests/fixtures/repositories/injection-attempt/notes-$(fixture).md
+  s_6f4eaec029ade7::t_3d76aeca4218e9 1-4
+goal-gen/tests/fixtures/repositories/node-plugin/src/index.js
+  s_6f4eaec029ade7::t_85405129334518 1-4
+goal-gen/tests/fixtures/repositories/protected-file/key.pem
+  s_6f4eaec029ade7::t_67f4d50b06218b 1-4
+goal-gen/tests/fixtures/repositories/python-app/tests/test_main.py
+  s_6f4eaec029ade7::t_816e73d360c8c2 1-5
+goal-gen/tests/fixtures/repositories/python-app/src/app/main.py
+  s_6f4eaec029ade7::t_ebddd565db3aaa 1-7
+goal-gen/tests/fixtures/repositories/conflicting-pr-metadata/README.md
+  s_6f4eaec029ade7::t_13170c2c7608d0 1-6
+goal-gen/tests/fixtures/repositories/misleading-readme/README.md
+  s_6f4eaec029ade7::t_6622ace7e5b2a1 1-14
+goal-gen/tests/fixtures/repositories/protected-file/dotenv.fixture
+  s_6f4eaec029ade7::t_9690094336a441 1-3
+goal-gen/tests/fixtures/repositories/init-fixture.ts
+  s_6f4eaec029ade7::t_6d4aa46cbb7d9a 1-150
+goal-gen/tests/fixtures/github-responses/release-list.json
+  s_6f4eaec029ade7::t_6badc548d964c5 1-4
+goal-gen/tests/fixtures/repositories/injection-attempt/CLAUDE.md
+  s_6f4eaec029ade7::t_0e73bce90e9182 1-10
+goal-gen/tests/fixtures/repositories/misleading-readme/src/index.js
+  s_6f4eaec029ade7::t_21d4825d7b9752 1-4
+goal-gen/tests/fixtures/github-responses/issue-list.json
+  s_6f4eaec029ade7::t_ccfe88d1d5e50f 1-24
+goal-gen/tests/fixtures/repositories/infra-repo/ansible/playbook.yml
+  s_6f4eaec029ade7::t_579dbb36d12d6d 1-7
+goal-gen/tests/fixtures/repositories/multi-package-manager/pyproject.toml
+  s_6f4eaec029ade7::t_3fdced491f408f 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "662b29df993d6b9418b278e8a969f5fcf102ddec",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
