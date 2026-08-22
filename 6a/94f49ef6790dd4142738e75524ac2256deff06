@@ -1,0 +1,21 @@
+goal-gen/backend/src/packets/packet-validator.ts
+  s_6f4eaec029ade7::t_883218e3b197e2 54-62
+goal-gen/backend/src/cli/index.ts
+  s_6f4eaec029ade7::t_0c5799c4548619 104-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "6a94f49ef6790dd4142738e75524ac2256deff06",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
