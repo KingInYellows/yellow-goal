@@ -1,0 +1,27 @@
+goal-gen/backend/src/packets/packet-validator.ts
+  s_6f4eaec029ade7::t_c6fb1badc5327d 293-322
+  s_6f4eaec029ade7::t_6e16e5a8b09229 345,466
+goal-gen/backend/src/packets/index.ts
+  s_6f4eaec029ade7::t_d31dc41372edc9 41-43
+goal-gen/tests/packets/stale-sha.test.ts
+  s_6f4eaec029ade7::t_e7e20c9cf651de 167-193
+  s_6f4eaec029ade7::t_da0bd927bf5bb1 9-10
+  s_6f4eaec029ade7::t_a959a1d9750c1a 33-34
+  s_6f4eaec029ade7::t_e742729f506fa4 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "7deda46b23066e18825b82c2924f5833aa4e796a",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
