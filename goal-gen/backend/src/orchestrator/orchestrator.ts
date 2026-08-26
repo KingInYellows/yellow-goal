@@ -39,6 +39,7 @@ import type {
 } from '../types';
 import { defaultRunConfig } from './guardrails';
 import { AsyncLatch } from './async-gate';
+import type { RunEventEmitter } from '../events/run-event-emitter';
 
 type PersistedRunStatus = RunStatus | 'running';
 
@@ -82,8 +83,10 @@ export interface PersistenceProvider {
   updateRunStatus(runId: string, status: PersistedRunStatus): Promise<void>;
   /** Durable event-log write (R5); this shell wires only the `AwaitingAcceptance` transition
    *  (R31, synchronous on the gate-entry path) — every other event type's write is shell 03's
-   *  async `onEvent` queue (R19). */
-  insertRunEvent(event: { runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }): Promise<void>;
+   *  async `onEvent` queue (R19). `sequence` is the run-event/v1 stream position minted by the
+   *  run's `RunEventEmitter` (RR9) — the durable log and the stream can never disagree on
+   *  ordering because both record the same mint. */
+  insertRunEvent(event: { runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown>; sequence: number }): Promise<void>;
 }
 
 /** Default no-op persistence — existing CLI/test usage that never injects `persistence` sees zero
@@ -107,6 +110,12 @@ export interface OrchestratorDeps {
   acceptanceGate?: AcceptanceGate;
   worktreeProvider?: WorktreeProvider;
   onEvent?: (event: Record<string, unknown>) => void;
+  /** Per-run run-event/v1 emitter (RR6–RR9). When provided it supersedes `onEvent`: every ad-hoc
+   *  `{ ev, ... }` emit routes through `events.handle`, the run defaults its id to
+   *  `events.runId`, and the synchronous `AwaitingAcceptance` persistence write records the
+   *  emitter-minted `sequence`. Entry points construct one emitter per run and share it with the
+   *  extractor's `onEvent` so the stream's sequence is monotonic across all sources (RR7). */
+  events?: RunEventEmitter;
   /** Cancellation: propagated to the executor; default never aborts. */
   signal?: AbortSignal;
   /** Optional persistence seam (R1-R6); defaults to a no-op. */
@@ -190,6 +199,7 @@ export class Orchestrator {
   private readonly acceptanceGate: AcceptanceGate;
   private readonly worktreeProvider: WorktreeProvider;
   private readonly emit: (event: Record<string, unknown>) => void;
+  private readonly events: RunEventEmitter | undefined;
   private readonly signal: AbortSignal;
   private readonly persistence: PersistenceProvider;
   private readonly pauseLatch: AsyncLatch;
@@ -202,7 +212,9 @@ export class Orchestrator {
     this.confirm = deps.confirm ?? stdinConfirm;
     this.acceptanceGate = deps.acceptanceGate ?? stdinAcceptanceGate;
     this.worktreeProvider = deps.worktreeProvider ?? createWorktree;
-    this.emit = deps.onEvent ?? (() => {});
+    const events = deps.events;
+    this.events = events;
+    this.emit = events !== undefined ? (event) => void events.handle(event) : deps.onEvent ?? (() => {});
     this.signal = deps.signal ?? new AbortController().signal;
     this.persistence = deps.persistence ?? noopPersistence;
     this.pauseLatch = deps.pauseLatch ?? new AsyncLatch();
@@ -268,7 +280,9 @@ export class Orchestrator {
       accumulatedCostUsd: extractCostUsd,
       failures: new Map(),
       outcomes: new Map(),
-      runId: runId ?? randomUUID(),
+      // With a run-event emitter, default to ITS id so streamed envelopes and persisted rows
+      // agree on the run's identity without every caller passing the id twice (RR6/RR9).
+      runId: runId ?? this.events?.runId ?? randomUUID(),
       runPersisted: false,
     };
     this.emit({
@@ -919,9 +933,14 @@ export class Orchestrator {
    *  R31 requires, so a concurrent `GET /runs/:id` can never observe a stale status. Both calls
    *  share one `persistence.error` op label since R31 treats this as one logical transition. */
   private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
+    // RR9: with an emitter, the gate-entry event is streamed AND persisted from ONE mint, so the
+    // durable log's `sequence` always matches the stream's. Without one (legacy `onEvent`
+    // callers), the write keeps its pre-emitter shape with a synthetic sequence of 0.
+    const payload = { goalState: state.goalSpec.goalState };
+    const envelope = this.events?.next('AwaitingAcceptance', payload);
     await this.persistBestEffort('awaitingAcceptance', async () => {
       await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
-      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload: { goalState: state.goalSpec.goalState } });
+      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload, sequence: envelope?.sequence ?? 0 });
     });
   }
 

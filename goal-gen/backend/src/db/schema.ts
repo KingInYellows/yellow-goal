@@ -10,7 +10,7 @@
  * in this repo.
  */
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
-import { bigserial, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { bigserial, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import type { WorldState } from '../planner/types';
 
 export const completionPolicyEnum = pgEnum('completion_policy', ['verify-only', 'verify+signoff', 'operator-defined']);
@@ -97,16 +97,23 @@ export const agentRuns = pgTable('agent_runs', {
   costUsd: numeric('cost_usd', { precision: 12, scale: 6, mode: 'number' }),
 });
 
-/** Event log (R5); `id` doubles as the SSE event id (R16) since bigserial is strictly increasing. */
-export const runEvents = pgTable('run_events', {
-  id: bigserial('id', { mode: 'number' }).primaryKey(),
-  runId: text('run_id').notNull().references(() => runs.id),
-  planId: text('plan_id').notNull().references(() => plans.id),
-  stepId: text('step_id').references(() => planSteps.id),
-  type: text('type').notNull(),
-  payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
-});
+/** Event log (R5); `id` doubles as the SSE event id (R16) since bigserial is strictly increasing.
+ *  `sequence` is the run-event/v1 stream position minted by the run's `RunEventEmitter` (RR9) —
+ *  unique per run, so the durable log and the streamed envelopes can never disagree on ordering. */
+export const runEvents = pgTable(
+  'run_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    runId: text('run_id').notNull().references(() => runs.id),
+    planId: text('plan_id').notNull().references(() => plans.id),
+    stepId: text('step_id').references(() => planSteps.id),
+    sequence: integer('sequence').notNull(),
+    type: text('type').notNull(),
+    payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('run_events_run_id_sequence_idx').on(table.runId, table.sequence)],
+);
 
 export type GoalSpecRow = typeof goalSpecs.$inferSelect;
 export type NewGoalSpecRow = typeof goalSpecs.$inferInsert;
