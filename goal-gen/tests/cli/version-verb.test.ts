@@ -36,4 +36,60 @@ describe('version verb (RR17)', () => {
       stderrSpy.mockRestore();
     }
   });
+
+  // A bad flag or stray positional makes Node's `parseArgs` throw a TypeError with an
+  // ERR_PARSE_ARGS_* code. The dispatcher's catch block (index.ts) maps that to the same
+  // USAGE_ERROR/exit-2 envelope as CliUsageError, rather than falling through to the generic
+  // UNEXPECTED_ERROR/exit-1 case — see the review comment this guards against.
+  it('an unsupported option exits 2 with a USAGE_ERROR envelope, nothing on stdout', async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const code = await main(['version', '--bogus']);
+      expect(code).toBe(2);
+      const stdoutText = stdoutSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+      const stderrText = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+      expect(stdoutText).toBe('');
+      const parsed = JSON.parse(stderrText.trim()) as { error: { code: string; message: string } };
+      expect(parsed.error.code).toBe('USAGE_ERROR');
+      expect(parsed.error.message).toMatch(/bogus/);
+    } finally {
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('a stray positional argument exits 2 with a USAGE_ERROR envelope, nothing on stdout', async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const code = await main(['version', 'stray']);
+      expect(code).toBe(2);
+      const stdoutText = stdoutSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+      const stderrText = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+      expect(stdoutText).toBe('');
+      const parsed = JSON.parse(stderrText.trim()) as { error: { code: string } };
+      expect(parsed.error.code).toBe('USAGE_ERROR');
+    } finally {
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
+  });
+
+  // Prove the mapping lives in the dispatcher, not a per-verb wrapper: an unrelated verb
+  // (`inspect`) gets the same treatment for the same class of parseArgs failure.
+  it('the parseArgs-to-USAGE_ERROR mapping is dispatcher-wide, not version-specific (inspect verb)', async () => {
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const code = await main(['inspect', '--bogus', 'some-request.json']);
+      expect(code).toBe(2);
+      const stderrText = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+      const parsed = JSON.parse(stderrText.trim()) as { error: { code: string } };
+      expect(parsed.error.code).toBe('USAGE_ERROR');
+    } finally {
+      stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
+    }
+  });
 });

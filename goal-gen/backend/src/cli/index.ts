@@ -116,6 +116,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       writeError('VALIDATION_FAILED', err.message, err.errors);
       return 1;
     }
+    // Node's `parseArgs` (used by every verb) throws a plain TypeError with an
+    // ERR_PARSE_ARGS_* code for bad flags/positionals — that's a CLI usage mistake, not an
+    // internal error, so it gets the same USAGE_ERROR/exit-2 envelope as CliUsageError across
+    // every verb, not just the ones with a bespoke wrapper.
+    if (err instanceof Error && typeof (err as Error & { code?: unknown }).code === 'string' && (err as Error & { code: string }).code.startsWith('ERR_PARSE_ARGS')) {
+      writeError('USAGE_ERROR', err.message);
+      return 2;
+    }
     const message = err instanceof Error ? err.message : String(err);
     // Domain errors that carry structured diagnostics in a `details` field (e.g.
     // PacketCompilationError's ValidationResult) get them surfaced so automation sees WHICH
