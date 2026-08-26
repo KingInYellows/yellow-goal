@@ -89,12 +89,22 @@ function claudeCodeEngine(config: RunConfig, onEvent: (event: Record<string, unk
   };
 }
 
+/** RR19 as a pure decision, exported for tests (the claude-code branch cannot be exercised
+ *  end-to-end without real spend): a request file's autoConfirmDod counts only for the
+ *  zero-spend stub; a real executor requires the operator's CLI --yes. */
+export function effectiveAutoConfirm(executorKind: 'claude-code' | 'stub', cliYes: boolean, requestAsk: boolean): boolean {
+  return executorKind === 'stub' ? cliYes || requestAsk : cliYes;
+}
+
 export async function runRunCommand(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
     options: {
       executor: { type: 'string' },
       yes: { type: 'boolean', short: 'y', default: false },
+      // RR18: a request file may not raise guardrail caps above the ADR-0010 defaults on its
+      // own — this flag is the operator's explicit consent to honor raised caps.
+      'allow-guardrail-override': { type: 'boolean', default: false },
       // Accepted for cross-verb consistency; `run` output is ALWAYS machine-readable JSON Lines.
       json: { type: 'boolean', default: false },
     },
@@ -110,14 +120,38 @@ export async function runRunCommand(argv: string[]): Promise<number> {
     );
   }
 
-  // Throws IntakeValidationFailure (VALIDATION_FAILED, exit 1) on a malformed request or a
-  // non-executable mode (RR4) — before any engine construction.
-  const inputs: RunInputs = requestToRunInputs(await loadRunRequest(requestPath));
-  const autoConfirm = values.yes === true || inputs.autoConfirm;
+  // Throws IntakeValidationFailure (VALIDATION_FAILED, exit 1) on a malformed request, a
+  // non-executable mode (RR4), or unconsented raised guardrails (RR18) — before any engine
+  // construction.
+  const allowGuardrailOverride = values['allow-guardrail-override'] === true;
+  const request = await loadRunRequest(requestPath);
+  const inputs: RunInputs = requestToRunInputs(request, { allowGuardrailOverride });
+  // RR19: with the real executor, the DoD gate is where the operator sees every verify command
+  // before real spend — a request FILE alone must not skip it; only the invoking operator's
+  // CLI --yes may. The zero-spend stub honors the request's autoConfirmDod as before.
+  const autoConfirm = effectiveAutoConfirm(executorKind, values.yes === true, inputs.autoConfirm);
 
   const emitter = new RunEventEmitter({
     sink: (envelope) => process.stdout.write(`${JSON.stringify(envelope)}\n`),
   });
+  // Audit envelope (RR18/RR19): the EFFECTIVE spend configuration is always the stream's first
+  // event, and the target-repository limitation is disclosed in-band, not just in the spec.
+  emitter.next('run.start', {
+    goalText: inputs.goalText,
+    executor: executorKind,
+    autoConfirm,
+    allowGuardrailOverride,
+    runConfig: inputs.runConfig,
+    targetRepository: request.target.repository,
+    // Execution happens in fresh scratch worktrees (ADR-0009); the request's target does not
+    // select the execution target yet — see spec "Out of scope".
+    targetRepositoryHonored: false,
+  });
+  if (inputs.autoConfirm && !autoConfirm) {
+    emitter.next('gate.requestAutoConfirmIgnored', {
+      reason: "request asked for autoConfirmDod, but with --executor claude-code only the operator's CLI --yes can skip the DoD gate (RR19)",
+    });
+  }
   // DoD/reconfirm gates only — sign-off is never auto-accepted (RR14). Without auto-confirm the
   // orchestrator's stdin gates apply, exactly like the runner.
   const confirm: DodConfirmer | undefined = autoConfirm

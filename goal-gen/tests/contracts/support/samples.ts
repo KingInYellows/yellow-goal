@@ -28,6 +28,10 @@ export const requestExecutionSample = {
   mode: 'approved-implementation',
   orchestration: {
     ...requestSample.orchestration,
+    // 'inspect' (inherited above) is incoherent with an executable mode; nothing maps
+    // profiles onto the run path yet (spec "Known conflations"), but the canonical sample
+    // should not contradict itself.
+    permissionProfile: 'implement',
     execution: {
       autoConfirmDod: true,
       model: 'haiku',
