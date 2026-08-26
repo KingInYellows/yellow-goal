@@ -142,9 +142,22 @@ export async function runRunCommand(argv: string[]): Promise<number> {
     // No persistence wiring (RR15) — parity with the M1 runner; DB-backed runs are a later milestone.
   });
 
-  const summary = await orchestrator.run({ goalText: inputs.goalText }).finally(() => {
+  try {
+    const summary = await orchestrator.run({ goalText: inputs.goalText });
+    return summary.status === 'succeeded' ? 0 : 1;
+  } catch (e) {
+    // Orchestrator.run() documents never-throws, but RR12's "the last stdout line is the
+    // run.summary envelope" must hold even if that contract is ever violated (e.g. a default
+    // gate rethrowing on a dead stdin). Terminate the stream, then let main()'s catch-all
+    // produce the stderr envelope and exit code.
+    emitter.next('run.summary', {
+      status: 'failed',
+      goalText: inputs.goalText,
+      reason: `run aborted by unexpected error: ${e instanceof Error ? e.message : String(e)}`,
+    });
+    throw e;
+  } finally {
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
-  });
-  return summary.status === 'succeeded' ? 0 : 1;
+  }
 }
