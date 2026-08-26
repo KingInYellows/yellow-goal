@@ -1155,15 +1155,25 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
     }),
     '',
   ];
-  process.stdout.write(`${lines.join('\n')}\n`);
+  // Prompt text goes to stderr, never stdout: since run-event/v1, stdout is a machine-parsed
+  // JSON Lines protocol stream for BOTH entry points (runner and the run verb) — interactive
+  // prose spliced into it corrupts every consumer.
+  process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return false;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await rl.question('Proceed? [y/N] ', { signal });
+    // Race against readline 'close': on EOF (stdin is /dev/null or a drained pipe) the question
+    // promise never settles at all — without this race the event loop drains and the process
+    // exits 0 with no terminal run.summary envelope.
+    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+    const answer = await Promise.race([rl.question('Proceed? [y/N] ', { signal }), closed]);
+    if (answer === null) return false; // stdin closed — non-interactive invocation declines
     return /^y(es)?$/i.test(answer.trim());
-  } catch (e) {
-    if (signal.aborted) return false; // aborted mid-prompt (SIGINT/SIGTERM) — treat as declined, not a crash
-    throw e;
+  } catch {
+    // Aborted mid-prompt (SIGINT/SIGTERM) OR a dead/non-readable stdin (EIO): both decline.
+    // Declining costs nothing and keeps Orchestrator.run()'s never-throws contract; rethrowing
+    // here crashed the stream with no terminal run.summary envelope.
+    return false;
   } finally {
     rl.close();
   }
@@ -1188,11 +1198,20 @@ export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
     }),
     '',
   ];
-  process.stdout.write(`${lines.join('\n')}\n`);
+  // stderr for the same protocol-purity reason as stdinConfirm above.
+  process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return 'reject';
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await rl.question('Accept? [y/N] ', { signal });
+    // Same EOF race as stdinConfirm — but a closed stdin here must FAIL LOUDLY, not resolve
+    // 'reject': rejection triggers the remediation loop (real spend on the claude-code path)
+    // with nobody at the keyboard. The thrown error reaches the entry point's catch, which
+    // still terminates the stream with a failed run.summary.
+    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+    const answer = await Promise.race([rl.question('Accept? [y/N] ', { signal }), closed]);
+    if (answer === null) {
+      throw new Error('stdin closed while awaiting sign-off — refusing to auto-decide a completion gate non-interactively');
+    }
     return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';
   } catch (e) {
     if (signal.aborted) return 'reject'; // aborted mid-prompt — treat as declined, not a crash
