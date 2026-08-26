@@ -68,6 +68,34 @@ describe('requestToRunInputs (RR3)', () => {
       ]);
     },
   );
+
+  it.each([
+    ['readOnlyTarget: true', { readOnlyTarget: true }],
+    ['allowTargetEdits: false', { allowTargetEdits: false }],
+  ] as const)('refuses a request whose constraints declare %s', (_label, constraints) => {
+    const request = RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      constraints,
+    });
+    let thrown: unknown;
+    try {
+      requestToRunInputs(request);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(IntakeValidationFailure);
+    expect((thrown as IntakeValidationFailure).errors).toEqual([
+      expect.objectContaining({ code: 'RUN_CONSTRAINTS_FORBID_EXECUTION', field: 'constraints' }),
+    ]);
+  });
+
+  it('still executes when constraints are present but permissive', () => {
+    const request = RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      constraints: { readOnlyTarget: false, allowTargetEdits: true },
+    });
+    expect(requestToRunInputs(request).goalText).toBe(request.intent.goal);
+  });
 });
 
 describe('execution refinement strictness (RR2)', () => {
@@ -95,6 +123,47 @@ describe('execution refinement strictness (RR2)', () => {
     const candidate = {
       ...requestExecutionSample,
       orchestration: { someFutureField: 'ok', execution: { autoConfirmDod: false } },
+    };
+    expect(RepositoryGoalRequestSchema.safeParse(candidate).success).toBe(true);
+  });
+});
+
+describe('execution refinement value bounds', () => {
+  it('rejects a non-finite maxBudgetUsd (JSON 1e400 parses to Infinity and would disable the budget guardrail)', () => {
+    const candidate = {
+      ...requestExecutionSample,
+      orchestration: {
+        execution: { guardrails: { maxBudgetUsd: Number.POSITIVE_INFINITY } },
+      },
+    };
+    expect(RepositoryGoalRequestSchema.safeParse(candidate).success).toBe(false);
+  });
+
+  it('rejects actionTimeoutMs above the Node setTimeout maximum (values past 2^31-1 clamp to 1ms)', () => {
+    const candidate = {
+      ...requestExecutionSample,
+      orchestration: {
+        execution: { guardrails: { actionTimeoutMs: 2_147_483_648 } },
+      },
+    };
+    expect(RepositoryGoalRequestSchema.safeParse(candidate).success).toBe(false);
+  });
+
+  it.each([
+    ['a flag-like value', '--dangerously-looking-flag'],
+    ['a value with whitespace', 'model name'],
+  ])('rejects %s for execution.model (value reaches the claude argv)', (_label, model) => {
+    const candidate = {
+      ...requestExecutionSample,
+      orchestration: { execution: { model } },
+    };
+    expect(RepositoryGoalRequestSchema.safeParse(candidate).success).toBe(false);
+  });
+
+  it('accepts a normal model id', () => {
+    const candidate = {
+      ...requestExecutionSample,
+      orchestration: { execution: { model: 'claude-haiku-4-5-20251001' } },
     };
     expect(RepositoryGoalRequestSchema.safeParse(candidate).success).toBe(true);
   });

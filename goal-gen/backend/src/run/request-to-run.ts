@@ -33,6 +33,22 @@ export function requestToRunInputs(request: RepositoryGoalRequest): RunInputs {
     ]);
   }
 
+  // Fail closed on explicitly-declared non-writable targets (readOnlyTarget / allowTargetEdits).
+  // Absent constraints pass: the zod schema is optional-without-defaults, so the vendored
+  // schema's documented defaults (readOnlyTarget: true) are deliberately NOT applied here —
+  // divergence noted in plans/specs/request-to-run-pipeline.md follow-ups.
+  const constraints = request.constraints;
+  if (constraints?.readOnlyTarget === true || constraints?.allowTargetEdits === false) {
+    throw new IntakeValidationFailure([
+      {
+        code: 'RUN_CONSTRAINTS_FORBID_EXECUTION',
+        message:
+          "request constraints forbid an executable run — 'readOnlyTarget: true' / 'allowTargetEdits: false' cannot combine with an executable mode",
+        field: 'constraints',
+      },
+    ]);
+  }
+
   const execution = request.orchestration?.execution;
   const overrides: Partial<RunConfig> = {
     ...(execution?.guardrails ?? {}),
