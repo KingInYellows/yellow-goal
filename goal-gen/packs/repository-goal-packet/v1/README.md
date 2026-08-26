@@ -85,6 +85,13 @@ guidance packet is architecture source, not a ready-to-ship pack — several of 
 exact required-output list, and its `.tmpl` templates use a Handlebars-style loop syntax this
 pack does not use. This README records every correction so the divergence is traceable.
 
+> **Provenance note (2026-08-26):** `yellow-goal-harness-guidance` is an unpublished internal
+> design packet by this repository's author (same copyright holder as this repo), not a
+> third-party or open-source dependency — no external license attaches to anything vendored
+> from it. References to it, its numbered documents, and internal coordination artifacts
+> ("the M1 lead's ledger", worker labels) are retained for design provenance and are not
+> publicly resolvable.
+
 ## Corrections vs. the guidance packet
 
 ### 1. `requiredOutputs` / `output-layout.json` completed to 30 files

@@ -1,7 +1,8 @@
 # NOTICE
 
-GOAL Generator — © 2026 KingInYellow. Private; license TBD (revisit open-sourcing later;
-see docs/decisions/0001-use-madr-for-decisions.md and doc 08 §5).
+GOAL Generator — © 2026 KingInYellows. Licensed under the MIT License; see the `LICENSE`
+file at the repository root. (Superseded 2026-08-26: this line previously read "Private;
+license TBD" — resolved when the repository was prepared for public release.)
 
 This project is built fresh. Its DESIGN — and, where lifted, SOME UI components and the A*
 planner approach — derives from the open-source `goal_ui` project behind goal.ruv.io, used
