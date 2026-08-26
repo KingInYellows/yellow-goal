@@ -51,7 +51,16 @@ export class RunEventEmitter {
       type,
       payload,
     };
-    this.sink(envelope);
+    try {
+      this.sink(envelope);
+    } catch (e) {
+      // A telemetry sink must never fail the run it describes (broken stdout pipe when output is
+      // piped to `head`, a future disconnected SSE client). The mint still counts — the sequence
+      // stays gapless for consumers — and the failure is surfaced on stderr, not thrown through
+      // Orchestrator.run()'s documented never-throws contract.
+      const message = e instanceof Error ? e.message : String(e);
+      process.stderr.write(`[run-event-emitter] sink failed for sequence ${envelope.sequence}: ${message}\n`);
+    }
     return envelope;
   }
 }

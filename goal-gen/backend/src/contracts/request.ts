@@ -40,11 +40,14 @@ const RequestConstraintsSchema = z
  *  not silently run with defaults. */
 const ExecutionGuardrailsSchema = z
   .object({
-    maxBudgetUsd: z.number().positive().optional(),
+    // .finite(): JSON `1e400` parses to Infinity, which passes .positive() and would disable
+    // every budget comparison; .max() on the timeout: Node clamps setTimeout delays above
+    // 2^31-1 to 1ms, silently turning a long timeout into an instant kill.
+    maxBudgetUsd: z.number().positive().finite().optional(),
     maxReplans: z.number().int().min(0).optional(),
     maxReextractions: z.number().int().min(0).optional(),
     maxRetriesPerAction: z.number().int().min(1).optional(),
-    actionTimeoutMs: z.number().int().positive().optional(),
+    actionTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
   })
   .strict();
 
@@ -55,7 +58,14 @@ const ExecutionGuardrailsSchema = z
 export const RequestExecutionSchema = z
   .object({
     autoConfirmDod: z.boolean().optional(),
-    model: z.string().min(1).optional(),
+    // Pattern-constrained because this value reaches the claude subprocess argv adjacent to
+    // --model: no leading '-', no whitespace — a crafted value must never be parseable as a
+    // separate CLI flag by the child's own arg parser.
+    model: z
+      .string()
+      .min(1)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/, 'model must start with an alphanumeric character and contain only letters, digits, and ._:-')
+      .optional(),
     guardrails: ExecutionGuardrailsSchema.optional(),
   })
   .strict();

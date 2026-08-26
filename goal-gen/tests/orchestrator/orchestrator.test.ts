@@ -137,14 +137,14 @@ function fakePersistence(): PersistenceProvider & {
   runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }>;
   agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }>;
   runStatuses: Map<string, RunStatus | 'running'>;
-  runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }>;
+  runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown>; sequence: number }>;
 } {
   const goalSpecs: Array<{ id: string; goalText: string; goalState: Partial<WorldState>; completionPolicy: GoalSpec['completionPolicy'] }> = [];
   const plans: Array<{ id: string; goalSpecId: string; replanOf?: string }> = [];
   const runs: Array<{ id: string; planId: string; status: 'running'; startedAt: string }> = [];
   const agentRuns: Array<{ id: string; planId: string; stepId: string; actionId: string }> = [];
   const runStatuses = new Map<string, RunStatus | 'running'>();
-  const runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }> = [];
+  const runEvents: Array<{ runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown>; sequence: number }> = [];
   return {
     goalSpecs,
     plans,
@@ -680,6 +680,13 @@ describe('RunSession — gate mechanics (plan Step 8, R22-R31)', () => {
     expect(extractor.expandCalls).toBe(1);
     expect(events.some((e) => e.ev === 'signoff.rejected')).toBe(true);
     expect(persistence.runStatuses.get(session.runId)).toBe('succeeded');
+    // Emitter-less path: both AwaitingAcceptance writes must mint distinct fallback sequences —
+    // a constant would collide on the DB's unique(run_id, sequence) index and silently drop the
+    // second audit row (persistBestEffort swallows the constraint violation).
+    const acceptanceSequences = persistence.runEvents
+      .filter((e) => e.runId === session.runId && e.type === 'AwaitingAcceptance')
+      .map((e) => e.sequence);
+    expect(acceptanceSequences).toEqual([0, 1]);
   });
 
   it('sign-off gate (R30): aborting while awaiting sign-off cancels without remediation', async () => {
