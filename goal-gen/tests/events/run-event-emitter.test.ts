@@ -61,6 +61,18 @@ describe('RunEventEmitter', () => {
     expect(envelope.payload).toEqual({ message: 'no ev field' });
   });
 
+  it('contains a throwing sink: nothing propagates and the mint still counts', () => {
+    const emitter = new RunEventEmitter({
+      runId: 'run-emitter-test',
+      sink: () => {
+        throw new Error('broken pipe');
+      },
+    });
+    expect(() => emitter.next('step.pass')).not.toThrow();
+    // The failed sink call must not create a sequence gap for consumers that recover.
+    expect(emitter.next('step.fail').sequence).toBe(1);
+  });
+
   it('mints its own runId when none is given', () => {
     const emitter = new RunEventEmitter({ sink: () => {} });
     expect(emitter.runId.length).toBeGreaterThan(0);

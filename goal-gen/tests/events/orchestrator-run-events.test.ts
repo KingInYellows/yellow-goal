@@ -12,7 +12,7 @@ import { StubExecutor, StubVerifier } from '../../backend/src/executors/stub-exe
 import { StubExtractor } from '../../backend/src/extractors/stub-extractor';
 import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
 import { Orchestrator } from '../../backend/src/orchestrator/orchestrator';
-import type { PersistenceProvider, WorktreeProvider } from '../../backend/src/orchestrator/orchestrator';
+import type { OrchestratorDeps, PersistenceProvider, WorktreeProvider } from '../../backend/src/orchestrator/orchestrator';
 import type { Action, GoalSpec, WorldState } from '../../backend/src/planner/types';
 
 const stubWorktree: WorktreeProvider = async (opts) => ({
@@ -100,6 +100,38 @@ describe('orchestrator with a RunEventEmitter (RR6–RR10)', () => {
     expect(summaries).toHaveLength(1);
     expect(envelopes[envelopes.length - 1]).toBe(summaries[0]);
     expect(summaries[0]!.payload).toMatchObject({ status: 'succeeded' });
+  });
+
+  it('terminates the stream with run.summary even when extraction fails (RR10)', async () => {
+    const envelopes: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ sink: (e) => envelopes.push(e) });
+    const throwingExtractor: OrchestratorDeps['extractor'] = {
+      extract: async () => {
+        throw new Error('claude unavailable');
+      },
+      expand: async () => {
+        throw new Error('unused');
+      },
+    };
+    const orch = new Orchestrator({
+      extractor: throwingExtractor,
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      confirm: async () => true,
+      acceptanceGate: async () => 'accept',
+      worktreeProvider: stubWorktree,
+      events: emitter,
+    });
+    const summary = await orch.run({ goalText: 'will fail before RunState exists' });
+    expect(summary.status).toBe('failed');
+    const summaries = envelopes.filter((e) => e.type === 'run.summary');
+    expect(summaries).toHaveLength(1);
+    expect(envelopes[envelopes.length - 1]).toBe(summaries[0]);
+    expect(summaries[0]!.payload).toMatchObject({ status: 'failed' });
+    for (const envelope of envelopes) {
+      expect(RunEventSchema.safeParse(envelope).success, JSON.stringify(envelope)).toBe(true);
+    }
   });
 
   it('defaults the run id to the emitter runId so stream and persistence agree (RR9)', async () => {
