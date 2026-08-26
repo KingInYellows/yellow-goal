@@ -131,6 +131,10 @@ invent a new event envelope.
 - HTTP endpoints, WebSocket/SSE, auth, read models (`.claude/specs/api.md`) — blocked on
   re-deriving the unrecovered R-ids; the transport decision above is this spec's only input
   to that work.
+- Executing against `target.repository`. The M1 loop runs every action in a fresh scratch
+  worktree in tmpdir (`executors/worktree.ts`, ADR-0009 blast-radius posture) — the request's
+  target selects the *compiler pipeline's* subject today, not the executor's working tree.
+  Pointing execution at the target is its own future milestone with its own safety review.
 - DB-backed `run` verb persistence (RR15), crash-resume of parked gates (original R32
   posture), multi-executor routing (M2).
 - Any change to the read-only compiler pipeline's behavior.

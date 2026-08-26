@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * Non-interactive CLI dispatcher for the repository goal packet compiler.
+ * Non-interactive CLI dispatcher for the repository goal packet compiler AND the M1 run verb.
  *
  * Commands: `request create`, `request validate <file>`, `inspect <request>`, `analyze
- * <request>`, `compile <request>`, `packet verify <path>`. `--json` selects machine-readable
- * stdout for successful command output; failures are always a single-line structured JSON object
- * on stderr with a nonzero exit code, `--json` or not, so scripts can rely on it either way.
+ * <request>`, `compile <request>`, `packet verify <path>`, `run <request>` (RR11). `--json`
+ * selects machine-readable stdout for successful command output; failures are always a
+ * single-line structured JSON object on stderr with a nonzero exit code, `--json` or not, so
+ * scripts can rely on it either way. `run` streams run-event/v1 JSON Lines on stdout instead of
+ * one object (RR12) and exits 0 only when the run succeeded.
  */
 import {
   runAnalyze,
@@ -69,6 +71,13 @@ async function dispatch(argv: string[]): Promise<number> {
       }
       throw new CliUsageError(`unknown 'packet' subcommand: ${sub ?? '(none)'} (expected verify)`);
     }
+    case 'run': {
+      // M1 subsystem verb — dynamically imported so the compiler verbs' process never loads
+      // executor/orchestrator mutation code (packet-compiler.md isolation rule). The command
+      // streams its own stdout (run-event/v1 JSON Lines) and returns the exit code directly.
+      const { runRunCommand } = await import('./run-command');
+      return runRunCommand(rest);
+    }
     case 'inspect':
       writeSuccess(await runInspect(rest));
       return 0;
@@ -80,7 +89,7 @@ async function dispatch(argv: string[]): Promise<number> {
       return 0;
     default:
       throw new CliUsageError(
-        `unknown command: ${command ?? '(none)'} (expected request|inspect|analyze|compile|packet)`,
+        `unknown command: ${command ?? '(none)'} (expected request|inspect|analyze|compile|packet|run)`,
       );
   }
 }
