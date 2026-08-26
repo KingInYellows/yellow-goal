@@ -109,3 +109,58 @@ describe('run verb (stub engine)', () => {
     expect((JSON.parse(stderrText().trim()) as { error: { code: string } }).error.code).toBe('USAGE_ERROR');
   });
 });
+
+describe('operator consent policies (RR18/RR19)', () => {
+  it('opens the stream with a run.start audit envelope: effective config + target disclosure', async () => {
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await main(['run', requestPath, '--executor', 'stub']);
+    expect(code).toBe(0);
+    const first = JSON.parse(stdoutLines()[0]!) as { type: string; payload: Record<string, unknown> };
+    expect(first.type).toBe('run.start');
+    expect(first.payload).toMatchObject({
+      executor: 'stub',
+      autoConfirm: true,
+      allowGuardrailOverride: false,
+      targetRepository: requestExecutionSample.target.repository,
+      targetRepositoryHonored: false,
+    });
+    expect(first.payload.runConfig).toMatchObject({ maxBudgetUsd: 5 });
+  });
+
+  it('refuses request-raised guardrails without --allow-guardrail-override (RR18)', async () => {
+    const requestPath = await writeRequest({
+      ...requestExecutionSample,
+      orchestration: { execution: { guardrails: { maxBudgetUsd: 500 } } },
+    });
+    const code = await main(['run', requestPath, '--executor', 'stub']);
+    expect(code).toBe(1);
+    expect(stdoutLines()).toEqual([]); // rejected before the stream opens — nothing spent
+    const parsed = JSON.parse(stderrText().trim()) as { error: { code: string; details?: unknown } };
+    expect(parsed.error.code).toBe('VALIDATION_FAILED');
+    expect(JSON.stringify(parsed.error.details)).toContain('RUN_GUARDRAILS_EXCEED_DEFAULTS');
+  });
+
+  it('honors raised guardrails with --allow-guardrail-override, visible in run.start (RR18)', async () => {
+    const requestPath = await writeRequest({
+      ...requestExecutionSample,
+      orchestration: { execution: { autoConfirmDod: true, guardrails: { maxBudgetUsd: 500 } } },
+    });
+    const code = await main(['run', requestPath, '--executor', 'stub', '--allow-guardrail-override']);
+    expect(code).toBe(0);
+    const first = JSON.parse(stdoutLines()[0]!) as { payload: { allowGuardrailOverride: boolean; runConfig: { maxBudgetUsd: number } } };
+    expect(first.payload.allowGuardrailOverride).toBe(true);
+    expect(first.payload.runConfig.maxBudgetUsd).toBe(500);
+  });
+
+  it('effectiveAutoConfirm: request-file consent counts only for the stub engine (RR19)', async () => {
+    const { effectiveAutoConfirm } = await import('../../backend/src/cli/run-command');
+    // stub: CLI --yes OR request autoConfirmDod
+    expect(effectiveAutoConfirm('stub', false, true)).toBe(true);
+    expect(effectiveAutoConfirm('stub', true, false)).toBe(true);
+    expect(effectiveAutoConfirm('stub', false, false)).toBe(false);
+    // claude-code (real spend): ONLY the operator's CLI --yes
+    expect(effectiveAutoConfirm('claude-code', false, true)).toBe(false);
+    expect(effectiveAutoConfirm('claude-code', true, false)).toBe(true);
+    expect(effectiveAutoConfirm('claude-code', true, true)).toBe(true);
+  });
+});

@@ -34,6 +34,7 @@ describe('parseRunnerArgs (RR5)', () => {
       kind: 'request',
       requestPath: 'req.json',
       autoConfirm: false,
+      allowGuardrailOverride: false,
     });
   });
 
@@ -42,11 +43,13 @@ describe('parseRunnerArgs (RR5)', () => {
       kind: 'request',
       requestPath: 'req.json',
       autoConfirm: true,
+      allowGuardrailOverride: false,
     });
     expect(parseRunnerArgs(['--request', 'req.json', '-y'])).toEqual({
       kind: 'request',
       requestPath: 'req.json',
       autoConfirm: true,
+      allowGuardrailOverride: false,
     });
   });
 
@@ -105,5 +108,30 @@ describe('runner request validation (RR4)', () => {
       },
     });
     expect(output[1]).toMatchObject({ type: 'run.summary', payload: { status: 'failed' } });
+  });
+});
+
+describe('--allow-guardrail-override (RR18)', () => {
+  it('parses with --request in either order', () => {
+    expect(parseRunnerArgs(['--allow-guardrail-override', '--request', 'req.json'])).toEqual({
+      kind: 'request',
+      requestPath: 'req.json',
+      autoConfirm: false,
+      allowGuardrailOverride: true,
+    });
+    expect(parseRunnerArgs(['--request', 'req.json', '--allow-guardrail-override', '-y'])).toEqual({
+      kind: 'request',
+      requestPath: 'req.json',
+      autoConfirm: true,
+      allowGuardrailOverride: true,
+    });
+  });
+
+  it('defaults to false', () => {
+    expect(parseRunnerArgs(['--request', 'req.json'])).toMatchObject({ allowGuardrailOverride: false });
+  });
+
+  it('is a usage error without --request (nothing to consent to)', () => {
+    expect(parseRunnerArgs(['--allow-guardrail-override', 'do a thing'])).toMatchObject({ kind: 'usage' });
   });
 });

@@ -18,11 +18,31 @@ export interface RunInputs {
   /** `intent.goal` verbatim — the compiler's goal-preservation invariant applies to runs too. */
   goalText: string;
   runConfig: RunConfig;
-  /** Auto-confirm DoD/reconfirm gates only; never the completion sign-off gate (RR14). */
+  /** Auto-confirm DoD/reconfirm gates only; never the completion sign-off gate (RR14). Note:
+   *  entry points apply RR19 on top of this — for a real executor, a request file alone cannot
+   *  auto-confirm; the invoking operator's CLI `--yes` is required. */
   autoConfirm: boolean;
 }
 
-export function requestToRunInputs(request: RepositoryGoalRequest): RunInputs {
+export interface RunMappingOptions {
+  /** RR18: a request file may LOWER guardrail caps freely, but raising any cap above the
+   *  ADR-0010 defaults requires this explicit operator opt-in (CLI `--allow-guardrail-override`).
+   *  Without it, a raised cap is a validation failure — a hostile or mistyped request file must
+   *  not be able to raise spend ceilings on its own. */
+  allowGuardrailOverride?: boolean;
+}
+
+/** Spend/time-relevant caps a request may not raise above the ADR-0010 defaults without RR18
+ *  consent. `model` is deliberately not listed: it selects unit cost, not a ceiling. */
+const RAISABLE_GUARDRAILS = [
+  'maxBudgetUsd',
+  'maxReplans',
+  'maxReextractions',
+  'maxRetriesPerAction',
+  'actionTimeoutMs',
+] as const;
+
+export function requestToRunInputs(request: RepositoryGoalRequest, options: RunMappingOptions = {}): RunInputs {
   if (request.mode !== 'approved-implementation') {
     throw new IntakeValidationFailure([
       {
@@ -99,6 +119,23 @@ export function requestToRunInputs(request: RepositoryGoalRequest): RunInputs {
     ...(execution?.guardrails ?? {}),
     ...(execution?.model !== undefined ? { model: execution.model } : {}),
   };
+
+  if (options.allowGuardrailOverride !== true) {
+    const ceilings = defaultRunConfig();
+    const raised = RAISABLE_GUARDRAILS.filter((name) => {
+      const requested = execution?.guardrails?.[name];
+      return requested !== undefined && requested > ceilings[name];
+    });
+    if (raised.length > 0) {
+      throw new IntakeValidationFailure(
+        raised.map((name) => ({
+          code: 'RUN_GUARDRAILS_EXCEED_DEFAULTS',
+          message: `guardrail '${name}' (${execution?.guardrails?.[name]}) exceeds the default ceiling (${ceilings[name]}) — raising caps requires the operator's --allow-guardrail-override`,
+          field: `orchestration.execution.guardrails.${name}`,
+        })),
+      );
+    }
+  }
 
   return {
     goalText: request.intent.goal,
