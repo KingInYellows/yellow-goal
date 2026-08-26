@@ -3,6 +3,11 @@
 > Source brainstorm: `docs/brainstorms/2026-06-23-next-work-item-brainstorm.md` (Status: Decided).
 > Detail level: **COMPREHENSIVE** — low scope/risk (throwaway, isolated) but high *technical* uncertainty; the whole point is de-risking unknown headless `claude -p` behavior before a production interface is committed.
 
+> **Status: SHIPPED** — PR #2 (`413cc94`, 2026-06-28). Both deliverables exist:
+> `tests/spikes/executor-spike.ts` and `tests/spikes/executor-spike-findings.md`. The task
+> checkboxes below were never retro-ticked; this banner (added 2026-08-26) is the plan's
+> completion record.
+
 ## Overview
 
 A single throwaway TypeScript/Node script that proves the executor + ground-truth
