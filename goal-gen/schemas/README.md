@@ -11,6 +11,13 @@ Two provenance tiers:
   `FinalHandoff`) with no guidance-packet predecessor. Authored fresh; not corrections of
   anything vendored.
 
+> **Provenance note (2026-08-26):** `yellow-goal-harness-guidance` is an unpublished internal
+> design packet by this repository's author — the same copyright holder as this repo — **not a
+> third-party or open-source dependency**. Despite the directory name, nothing under
+> `vendored/` carries an external license. Citations to the packet's numbered documents
+> (`05_…`–`09_…`, `MANUAL_REPOSITORY_GOAL_PACKET_PROMPT.md`) here and in source comments are
+> retained for design provenance and are not publicly resolvable.
+
 Markdown is never canonical. Where guidance prose (task briefs, `09_IMPLEMENTATION_MILESTONE.md`,
 `07_PACKET_CONTRACT.md`) and a vendored `.schema.json` file disagree, the schema file is
 authoritative and the prose is treated as paraphrase/intent. The corrections below are the only
