@@ -19,6 +19,29 @@ export const requestSample = {
   },
 };
 
+/** Executable-run variant (RR1/RR2): `mode: 'approved-implementation'` with the strict
+ *  `orchestration.execution` refinement populated — must stay valid under the verbatim vendored
+ *  request.schema.json (the untyped `orchestration` bucket absorbs it). */
+export const requestExecutionSample = {
+  ...requestSample,
+  requestId: 'req-sample-002',
+  mode: 'approved-implementation',
+  orchestration: {
+    ...requestSample.orchestration,
+    execution: {
+      autoConfirmDod: true,
+      model: 'haiku',
+      guardrails: {
+        maxBudgetUsd: 5,
+        maxReplans: 2,
+        maxReextractions: 1,
+        maxRetriesPerAction: 2,
+        actionTimeoutMs: 120_000,
+      },
+    },
+  },
+};
+
 export const repoProfileSample = {
   schemaVersion: 'yellow-goal/repo-profile/v1',
   target: {

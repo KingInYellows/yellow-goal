@@ -35,6 +35,33 @@ const RequestConstraintsSchema = z
   })
   .catchall(z.boolean());
 
+/** Guardrail overrides for an executable run (RR2) — every field optional, defaulting via
+ *  `defaultRunConfig()` (ADR-0010). Strict: a typo in spend-controlling config must fail closed,
+ *  not silently run with defaults. */
+const ExecutionGuardrailsSchema = z
+  .object({
+    maxBudgetUsd: z.number().positive().optional(),
+    maxReplans: z.number().int().min(0).optional(),
+    maxReextractions: z.number().int().min(0).optional(),
+    maxRetriesPerAction: z.number().int().min(1).optional(),
+    actionTimeoutMs: z.number().int().positive().optional(),
+  })
+  .strict();
+
+/** Run intent configuration (RR2, plans/specs/request-to-run-pipeline.md). Lives inside the
+ *  untyped vendored `orchestration` bucket like `permissionProfile` does, so the vendored
+ *  request.schema.json stays verbatim. Strict, unlike its passthrough parent — unknown keys
+ *  here configure real execution and must be rejected. */
+export const RequestExecutionSchema = z
+  .object({
+    autoConfirmDod: z.boolean().optional(),
+    model: z.string().min(1).optional(),
+    guardrails: ExecutionGuardrailsSchema.optional(),
+  })
+  .strict();
+
+export type RequestExecution = z.infer<typeof RequestExecutionSchema>;
+
 /** The vendored `orchestration` property is `{"type":"object"}` (no field constraints) — this
  *  narrower shape is a compatible refinement: everything it accepts still validates against the
  *  loose JSON Schema. `permissionProfile`/`orchestrationProfile` are populated by intake, not
@@ -48,6 +75,7 @@ const RequestOrchestrationSchema = z
     maxParallelWorkers: z.number().int().min(1).optional(),
     permissionProfile: z.string().optional(),
     orchestrationProfile: z.string().optional(),
+    execution: RequestExecutionSchema.optional(),
     researchBounds: z
       .object({
         maxExternalQueries: z.number().int().min(0).optional(),
