@@ -164,6 +164,9 @@ interface RunState {
    *  at least one action succeeded before clearing signoffRemediationActive (prevents reopening
    *  sign-off when all remediation actions failed due to unmet preconditions). */
   signoffRemediationSuccesses: number;
+  /** Per-run sequence source for durable event writes when no RunEventEmitter is injected —
+   *  keeps repeat writes (e.g. a reopened sign-off gate) from colliding on unique(run_id, sequence). */
+  fallbackEventSequence: number;
   /** Action ids the operator has confirmed (initial DoD + every re-confirm). A replan that surfaces
    *  an id NOT in here must be re-confirmed before its verify.command runs (PR #8 review P1). */
   confirmed: Set<string>;
@@ -248,8 +251,11 @@ export class Orchestrator {
       this.emit({ ev: 'extract.failed', message, costUsd: failedCostUsd });
       // Item 3 (Ctrl-C consistency): an abort during extraction must surface as 'cancelled', the same
       // terminal status the main loop returns for every other abort path — not 'failed'.
-      if (this.signal.aborted) return bareSummary(req.goalText, 'cancelled', 'aborted during extraction', failedCostUsd);
-      return bareSummary(req.goalText, 'failed', `extraction failed: ${message}`, failedCostUsd);
+      // RR10: these pre-RunState returns must still terminate the stream with a run.summary
+      // envelope — runner.ts deleted its unconditional post-run emit on the strength of that
+      // guarantee, so bareSummary() alone (which never emits) is not enough here.
+      if (this.signal.aborted) return this.emitBareSummary(req.goalText, 'cancelled', 'aborted during extraction', failedCostUsd);
+      return this.emitBareSummary(req.goalText, 'failed', `extraction failed: ${message}`, failedCostUsd);
     }
     // PR #8 review P2: the extractor schema permits `cost <= 0` and duplicate ids (both are deferred
     // to the planner's validateIntake throw, see extractors/schema.ts) — but re-extraction is
@@ -273,6 +279,7 @@ export class Orchestrator {
       planCursor: 0,
       signoffRemediationActive: false,
       signoffRemediationSuccesses: 0,
+      fallbackEventSequence: 0,
       confirmed: new Set(),
       replans: 0,
       replanStreak: 0,
@@ -935,13 +942,24 @@ export class Orchestrator {
   private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
     // RR9: with an emitter, the gate-entry event is streamed AND persisted from ONE mint, so the
     // durable log's `sequence` always matches the stream's. Without one (legacy `onEvent`
-    // callers), the write keeps its pre-emitter shape with a synthetic sequence of 0.
+    // callers), mint from the per-run fallback counter — a constant 0 would collide with the
+    // unique(run_id, sequence) index when the sign-off gate reopens after a rejection
+    // (reject → remediate → re-satisfy), silently losing the second audit row.
     const payload = { goalState: state.goalSpec.goalState };
     const envelope = this.events?.next('AwaitingAcceptance', payload);
+    const sequence = envelope?.sequence ?? state.fallbackEventSequence++;
     await this.persistBestEffort('awaitingAcceptance', async () => {
       await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
-      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload, sequence: envelope?.sequence ?? 0 });
+      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload, sequence });
     });
+  }
+
+  /** RR10: even failures that happen before any RunState exists (extraction threw, or the run was
+   *  aborted mid-extraction) must terminate the event stream with a run.summary envelope. */
+  private emitBareSummary(goalText: string, status: RunStatus, reason: string, costUsd: number): RunSummary {
+    const summary = bareSummary(goalText, status, reason, costUsd);
+    this.emit({ ev: 'run.summary', ...summary });
+    return summary;
   }
 
   private async persistRunStatus(state: RunState, status: PersistedRunStatus, op: string): Promise<void> {
