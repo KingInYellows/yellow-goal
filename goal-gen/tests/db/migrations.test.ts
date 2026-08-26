@@ -24,6 +24,16 @@ const migrationsFolder = fileURLToPath(new URL('../../backend/src/db/migrations'
  * NOT drizzle-kit's diff: its snapshot-vs-introspection comparison reports false drift (e.g.
  * numeric default `0` vs `'0'`), while `column_default` text from two live instances compares
  * cleanly.
+ *
+ * `constraints` and `indexes` compare `pg_get_constraintdef`/`indexdef` TEXT rather than raw
+ * catalog rows, sorted independent of any OID or creation order, so an ordinary index, a check
+ * constraint, or an FK's `onDelete`/`onUpdate` behavior added to `schema.ts` without a migration
+ * shows up as drift here too — the prior version only recorded `information_schema
+ * .table_constraints`, which excludes plain indexes and check/referential-action detail.
+ * `contype` is filtered to `c`/`f`/`p`/`u` (check, foreign key, primary key, unique); Postgres 18's
+ * auto-generated NOT NULL constraints (`contype = 'n'`) are deliberately excluded — their
+ * synthetic per-column names are redundant with `is_nullable` above, already captured in
+ * `columns`, and not worth a second, riskier representation.
  */
 async function publicSchemaFingerprint(client: PGlite) {
   const columns = await client.query(
@@ -39,15 +49,22 @@ async function publicSchemaFingerprint(client: PGlite) {
      order by typname, enumsortorder`,
   );
   const constraints = await client.query(
-    `select tc.table_name, tc.constraint_name, tc.constraint_type,
-            ccu.table_name as foreign_table, ccu.column_name as foreign_column
-     from information_schema.table_constraints tc
-     left join information_schema.constraint_column_usage ccu
-       on ccu.constraint_name = tc.constraint_name and tc.constraint_type = 'FOREIGN KEY'
-     where tc.table_schema = 'public'
-     order by tc.table_name, tc.constraint_name, foreign_table, foreign_column`,
+    `select conrelid::regclass::text as table_name, contype,
+            pg_get_constraintdef(pg_constraint.oid) as definition
+     from pg_constraint
+     join pg_class on pg_class.oid = conrelid
+     join pg_namespace on pg_namespace.oid = pg_class.relnamespace
+     where pg_namespace.nspname = 'public'
+       and contype in ('c', 'f', 'p', 'u')
+     order by table_name, contype, definition`,
   );
-  return { columns: columns.rows, enums: enums.rows, constraints: constraints.rows };
+  const indexes = await client.query(
+    `select tablename as table_name, indexdef as definition
+     from pg_indexes
+     where schemaname = 'public'
+     order by table_name, definition`,
+  );
+  return { columns: columns.rows, enums: enums.rows, constraints: constraints.rows, indexes: indexes.rows };
 }
 
 describe('journal-driven SQL migrations against PGlite', () => {
