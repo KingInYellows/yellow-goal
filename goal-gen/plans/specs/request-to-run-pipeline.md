@@ -128,6 +128,47 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
      should be renamed to say what it is when protocol v1 lands.
   3. The **protocol** version — does not exist yet; created by provider protocol v1.
 
+  **Name collision warning:** the packet `MANIFEST.json` also has an `engineVersion` field —
+  it carries №2 (`ENGINE_VERSION`, pack-format compatibility), NOT the artifact version the
+  `version` verb emits under the same name. A consumer must never equate the two; protocol v1
+  should rename one side when it defines compatibility semantics.
+
+### Operator consent & non-interactive gates (RR18–RR20)
+
+Added 2026-08-26 from the adversarial review of the `run` verb (PR #18): a request FILE is
+untrusted input relative to the invoking OPERATOR — anything that expands spend or removes
+oversight needs consent expressed on the command line, not in the file.
+
+- **RR18 — guardrail ceilings.** A request may freely LOWER guardrail caps; RAISING any
+  spend/time-relevant cap (`maxBudgetUsd`, `maxReplans`, `maxReextractions`,
+  `maxRetriesPerAction`, `actionTimeoutMs`) above the ADR-0010 defaults requires the
+  operator's explicit `--allow-guardrail-override`. Without it the mapping fails validation
+  (`RUN_GUARDRAILS_EXCEED_DEFAULTS`, one entry per offending field). `model` is not a cap
+  (it selects unit cost) and stays unrestricted. The effective `runConfig` is always emitted
+  in the stream's `run.start` audit envelope, along with the override flag, so spend
+  configuration is never invisible.
+- **RR19 — real-executor DoD consent.** With a real executor (the runner always; the `run`
+  verb under `--executor claude-code`), the DoD gate is where the operator sees every verify
+  command before real spend — the request file's `autoConfirmDod` alone cannot skip it; only
+  the CLI `--yes` can. An ignored request-file ask is surfaced in-stream
+  (`gate.requestAutoConfirmIgnored`), never silently dropped. The zero-spend stub engine
+  honors `autoConfirmDod` as-is.
+- **RR20 — non-interactive gate policy.** Gate prompts go to stderr (stdout is the protocol
+  stream). On closed/dead stdin: the DoD/reconfirm gate DECLINES (costs nothing); the
+  acceptance gate FAILS LOUDLY rather than auto-deciding — 'reject' would trigger the
+  remediation loop's real spend with nobody at the keyboard. (Mechanics shipped in the PR #18
+  review pass; recorded here as policy.)
+
+### Known conflations / deferred mappings (recorded, not resolved here)
+
+- `permissionProfile` is compiler-scoped today: the run path does not map profiles onto
+  executor permission modes (the real engine uses ADR-0009's scratch-worktree bypass opt-in
+  regardless). Profile→permissionMode mapping is provider-protocol-v1 work. The canonical
+  execution sample uses the `implement` profile for coherence, but nothing consumes it on the
+  run path yet.
+- `target.repository` is disclosed in `run.start` (`targetRepositoryHonored: false`) — see
+  "Out of scope".
+
 ## Design
 
 ### Stacked delivery

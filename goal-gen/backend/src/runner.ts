@@ -40,7 +40,7 @@ function stdoutSink(envelope: unknown): void {
 export type RunnerArgs =
   | { kind: 'usage'; message: string }
   | { kind: 'goal'; goalText: string; autoConfirm: boolean }
-  | { kind: 'request'; requestPath: string; autoConfirm: boolean };
+  | { kind: 'request'; requestPath: string; autoConfirm: boolean; allowGuardrailOverride: boolean };
 
 /**
  * Pure argv parsing, exported so tests cover it without constructing real executors. Only
@@ -50,12 +50,18 @@ export type RunnerArgs =
  */
 export function parseRunnerArgs(args: string[]): RunnerArgs {
   let autoConfirm = false;
+  let allowGuardrailOverride = false;
   let requestPath: string | undefined;
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
     if (arg === '--yes' || arg === '-y') {
       autoConfirm = true;
+      i++;
+      continue;
+    }
+    if (arg === '--allow-guardrail-override') {
+      allowGuardrailOverride = true;
       i++;
       continue;
     }
@@ -75,7 +81,11 @@ export function parseRunnerArgs(args: string[]): RunnerArgs {
     if (goalText !== '') {
       return { kind: 'usage', message: '--request and a bare goal are mutually exclusive' };
     }
-    return { kind: 'request', requestPath, autoConfirm };
+    return { kind: 'request', requestPath, autoConfirm, allowGuardrailOverride };
+  }
+  if (allowGuardrailOverride) {
+    // Bare-goal runs use the defaults; there are no request guardrails to consent to (RR18).
+    return { kind: 'usage', message: '--allow-guardrail-override is only valid with --request' };
   }
   if (goalText === '') {
     return { kind: 'usage', message: 'usage: npx tsx backend/src/runner.ts [--yes] "<goal>" | [--yes] --request <file>' };
@@ -102,13 +112,19 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
   let goalText: string;
   let config: RunConfig;
   let autoConfirm: boolean;
+  let requestAskedAutoConfirm = false;
   if (parsed.kind === 'request') {
     try {
-      const inputs = requestToRunInputs(await loadRunRequest(parsed.requestPath));
+      const inputs = requestToRunInputs(await loadRunRequest(parsed.requestPath), {
+        allowGuardrailOverride: parsed.allowGuardrailOverride,
+      });
       goalText = inputs.goalText;
       config = inputs.runConfig;
-      // CLI --yes may force auto-confirm on top of the request; it never turns it off.
-      autoConfirm = parsed.autoConfirm || inputs.autoConfirm;
+      // RR19: the runner is ALWAYS the real executor, so a request file alone cannot skip the
+      // DoD gate — only the invoking operator's CLI --yes can. The ignored ask is surfaced
+      // in-stream below, never silently dropped.
+      autoConfirm = parsed.autoConfirm;
+      requestAskedAutoConfirm = inputs.autoConfirm;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const errors = e instanceof IntakeValidationFailure ? e.errors : undefined;
@@ -121,7 +137,14 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
     autoConfirm = parsed.autoConfirm;
   }
 
-  emitter.handle({ ev: 'run.start', goalText, autoConfirm });
+  // Audit envelope (RR18/RR19): effective spend configuration first, always.
+  emitter.handle({ ev: 'run.start', goalText, autoConfirm, runConfig: config });
+  if (requestAskedAutoConfirm && !autoConfirm) {
+    emitter.handle({
+      ev: 'gate.requestAutoConfirmIgnored',
+      reason: "request asked for autoConfirmDod, but the runner is a real executor — only the operator's CLI --yes can skip the DoD gate (RR19)",
+    });
+  }
   const extractor = new LlmExtractorImpl(new ClaudeLlmClient({ model: config.model }), { onEvent: emitter.handle });
   const executor = new ClaudeCodeExecutor({
     model: config.model,

@@ -204,3 +204,48 @@ describe('loadRunRequest', () => {
     await expect(loadRunRequest(filePath)).rejects.toBeInstanceOf(IntakeValidationFailure);
   });
 });
+
+describe('guardrail ceilings (RR18)', () => {
+  const withGuardrails = (guardrails: Record<string, number>) =>
+    RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      orchestration: { execution: { guardrails } },
+    });
+
+  it('rejects raising any cap above the ADR-0010 defaults without operator consent', () => {
+    const defaults = defaultRunConfig();
+    const raised = withGuardrails({ maxBudgetUsd: defaults.maxBudgetUsd + 1, maxReplans: defaults.maxReplans + 1 });
+    let thrown: unknown;
+    try {
+      requestToRunInputs(raised);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(IntakeValidationFailure);
+    const errors = (thrown as IntakeValidationFailure).errors;
+    expect(errors).toHaveLength(2);
+    for (const error of errors) {
+      expect(error.code).toBe('RUN_GUARDRAILS_EXCEED_DEFAULTS');
+    }
+    expect(errors.map((e) => e.field)).toEqual([
+      'orchestration.execution.guardrails.maxBudgetUsd',
+      'orchestration.execution.guardrails.maxReplans',
+    ]);
+  });
+
+  it('honors raised caps when the operator passes allowGuardrailOverride', () => {
+    const defaults = defaultRunConfig();
+    const raised = withGuardrails({ maxBudgetUsd: defaults.maxBudgetUsd + 5 });
+    const inputs = requestToRunInputs(raised, { allowGuardrailOverride: true });
+    expect(inputs.runConfig.maxBudgetUsd).toBe(defaults.maxBudgetUsd + 5);
+  });
+
+  it('always allows lowering or matching the default caps', () => {
+    const defaults = defaultRunConfig();
+    const inputs = requestToRunInputs(
+      withGuardrails({ maxBudgetUsd: defaults.maxBudgetUsd, actionTimeoutMs: 1000 }),
+    );
+    expect(inputs.runConfig.maxBudgetUsd).toBe(defaults.maxBudgetUsd);
+    expect(inputs.runConfig.actionTimeoutMs).toBe(1000);
+  });
+});
