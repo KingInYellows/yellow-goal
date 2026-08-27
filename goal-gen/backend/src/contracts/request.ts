@@ -44,9 +44,14 @@ const ExecutionGuardrailsSchema = z
     // every budget comparison; .max() on the timeout: Node clamps setTimeout delays above
     // 2^31-1 to 1ms, silently turning a long timeout into an instant kill.
     maxBudgetUsd: z.number().positive().finite().optional(),
-    maxReplans: z.number().int().min(0).optional(),
-    maxReextractions: z.number().int().min(0).optional(),
-    maxRetriesPerAction: z.number().int().min(1).optional(),
+    // .max(100) on all three counters: .int() alone accepts values like 1e100 (Number.isInteger is
+    // true for such floats, since they have no fractional part), which would leave a retry/replan/
+    // re-extraction loop effectively non-terminating when a step fails without spending budget (e.g.
+    // worktree provisioning), since the $ guard never trips. 100 is a generous multiple of the
+    // ADR-0010 defaults (5 / 2 / 3), not a literal safe-integer ceiling.
+    maxReplans: z.number().int().min(0).max(100).optional(),
+    maxReextractions: z.number().int().min(0).max(100).optional(),
+    maxRetriesPerAction: z.number().int().min(1).max(100).optional(),
     actionTimeoutMs: z.number().int().positive().max(2_147_483_647).optional(),
   })
   .strict();

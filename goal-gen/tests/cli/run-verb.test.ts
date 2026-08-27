@@ -69,7 +69,7 @@ describe('run verb (stub engine)', () => {
   it('honors --yes when the request does not auto-confirm (RR14)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { autoConfirmDod: false } },
+      orchestration: { ...requestExecutionSample.orchestration, execution: { autoConfirmDod: false } },
     });
     const code = await main(['run', requestPath, '--executor', 'stub', '--yes']);
     expect(code).toBe(0);
@@ -108,6 +108,40 @@ describe('run verb (stub engine)', () => {
     expect(code).toBe(2);
     expect((JSON.parse(stderrText().trim()) as { error: { code: string } }).error.code).toBe('USAGE_ERROR');
   });
+
+  it('translates a malformed option (missing --executor value) into USAGE_ERROR, exit 2', async () => {
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await main(['run', requestPath, '--executor']);
+    expect(code).toBe(2);
+    expect(stdoutLines()).toEqual([]);
+    expect((JSON.parse(stderrText().trim()) as { error: { code: string } }).error.code).toBe('USAGE_ERROR');
+  });
+
+  it('translates an unknown flag into USAGE_ERROR, exit 2', async () => {
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await main(['run', requestPath, '--executor', 'stub', '--bogus']);
+    expect(code).toBe(2);
+    expect((JSON.parse(stderrText().trim()) as { error: { code: string } }).error.code).toBe('USAGE_ERROR');
+  });
+});
+
+describe('runFailureEnvelope (RR11 stderr envelope, pure mapping)', () => {
+  // The stub engine always succeeds (RR16), so a terminal non-success run.summary isn't
+  // reachable end-to-end through the CLI without a test-only production seam — unit-tested
+  // directly instead (see run-command.ts).
+  it('maps each non-succeeded status to a distinct machine-readable code', async () => {
+    const { runFailureEnvelope } = await import('../../backend/src/cli/run-command');
+    expect(runFailureEnvelope({ status: 'succeeded', reason: 'ok' })).toBeUndefined();
+    expect(runFailureEnvelope({ status: 'failed', reason: 'retries exhausted' })).toEqual({
+      error: { code: 'RUN_FAILED', message: 'retries exhausted' },
+    });
+    expect(runFailureEnvelope({ status: 'cancelled', reason: 'aborted' })).toEqual({
+      error: { code: 'RUN_CANCELLED', message: 'aborted' },
+    });
+    expect(runFailureEnvelope({ status: 'budget-exhausted', reason: 'budget cap $5 exceeded' })).toEqual({
+      error: { code: 'RUN_BUDGET_EXHAUSTED', message: 'budget cap $5 exceeded' },
+    });
+  });
 });
 
 describe('operator consent policies (RR18/RR19)', () => {
@@ -130,7 +164,7 @@ describe('operator consent policies (RR18/RR19)', () => {
   it('refuses request-raised guardrails without --allow-guardrail-override (RR18)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { guardrails: { maxBudgetUsd: 500 } } },
+      orchestration: { ...requestExecutionSample.orchestration, execution: { guardrails: { maxBudgetUsd: 500 } } },
     });
     const code = await main(['run', requestPath, '--executor', 'stub']);
     expect(code).toBe(1);
@@ -143,7 +177,10 @@ describe('operator consent policies (RR18/RR19)', () => {
   it('honors raised guardrails with --allow-guardrail-override, visible in run.start (RR18)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { autoConfirmDod: true, guardrails: { maxBudgetUsd: 500 } } },
+      orchestration: {
+        ...requestExecutionSample.orchestration,
+        execution: { autoConfirmDod: true, guardrails: { maxBudgetUsd: 500 } },
+      },
     });
     const code = await main(['run', requestPath, '--executor', 'stub', '--allow-guardrail-override']);
     expect(code).toBe(0);

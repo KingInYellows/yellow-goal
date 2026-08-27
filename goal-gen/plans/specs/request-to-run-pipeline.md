@@ -63,6 +63,25 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
 - **RR5 — runner consumes the request file.** `npm run runner -- --request <file>` drives the
   identical RR3 mapping. The bare-goal form (`npm run runner -- "<goal>"`) remains for
   operator back-compat, mapping onto the same defaults.
+- **RR21 — fail closed on write permission.** RR3's mapping additionally requires an executable
+  request to *affirmatively* grant target writes on two independent axes, each rejected with its
+  own `IntakeValidationFailure` code/field before any extractor/executor/worktree work:
+  1. `constraints.allowTargetEdits` must be `true`. The vendored schema
+     (`schemas/vendored/request.schema.json`) documents `readOnlyTarget: true` /
+     `allowTargetEdits: false` as the default when `constraints` is omitted; the zod contract
+     narrows those fields as optional-without-zod-defaults, so an omitted or under-specified
+     `constraints` block must not silently permit execution (`normalizeRequest` in particular
+     produces requests with no `constraints` block at all). `RUN_CONSTRAINTS_NOT_DECLARED_WRITABLE`
+     / field `constraints`.
+  2. `orchestration.permissionProfile` (`policies/permission-profiles.json`) must name a profile
+     whose `targetWrite` is truthy. Profiles that forbid target writes (`inspect`, `compile`) are
+     refused; an absent or unrecognized profile is treated as NOT declared writable (fail closed),
+     the same posture as (1). `RUN_PERMISSION_PROFILE_FORBIDS_EXECUTION` / field
+     `orchestration.permissionProfile`.
+
+  RR21 is deliberately fail-closed *rejection* only — mapping the selected profile onto the
+  executor's own permission mode (e.g. `bypassPermissions` vs. a scoped mode) is
+  provider-protocol-v1 work and stays out of scope here.
 
 ### One event shape (RR6–RR10)
 
@@ -72,6 +91,17 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
 - **RR7 — one sequence mint per run.** A single per-run emitter mints `sequence`: starts at
   0, +1 per event, monotonic across **all** sources feeding the run (extractor `onEvent`,
   orchestrator `onEvent`, entry-point wrapper). Nothing else mints sequences.
+  *Per-run scoping:* an `Orchestrator` instance is reusable across successive `run()` calls, so
+  exactly one emitter identity is claimed per call. The first call claims the constructor-injected
+  emitter as-is (callers that read `emitter.runId` after construction, and an extractor wired
+  directly to `emitter.handle`, see the identity that call actually streams under); every later
+  call — and any call whose explicit `runId` disagrees with the claimed identity — is scoped to a
+  fresh child via `RunEventEmitter.forRun()`, with its own identity and `sequence` restarting at 0.
+  Without this, a reused instance's second run silently collided with the first run's `runs` row
+  and inherited its still-advancing counter. Known residual: an extractor wired directly to the
+  parent emitter at construction keeps emitting under the first identity on later calls — the
+  entry points construct one orchestrator per process and call `run()` once, so this is not
+  reachable in production; revisit if a long-lived orchestrator ever serves many runs.
 - **RR8 — internal call sites keep their names.** The orchestrator's/extractor's ad-hoc
   `{ ev, ...rest }` objects map to envelopes as `type = ev`, `payload = rest` at the emitter
   boundary; call sites stay terse. Runner/`run`-verb stdout is one serialized envelope per
@@ -93,7 +123,14 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
   consumer never needs a second protocol.
 - **RR12 — streamed events + terminal summary.** stdout is run-event/v1 JSON Lines (RR6);
   the final line is the `run.summary` envelope. Exit 0 iff terminal status is `succeeded`;
-  exit 1 otherwise (including `failed`/`cancelled`/`budget-exhausted`).
+  exit 1 otherwise (including `failed`/`cancelled`/`budget-exhausted`). On any non-`succeeded`
+  terminal status the verb ALSO writes RR11's single-line stderr envelope
+  (`{"error":{code,message}}`), with `code` one of `RUN_FAILED` / `RUN_CANCELLED` /
+  `RUN_BUDGET_EXHAUSTED` so a consumer can tell them apart without parsing `reason` text;
+  the success path's stderr stays empty and stdout's terminal `run.summary` is unaffected
+  either way. The mandatory 60-minute run-wide wall-clock (CLAUDE.md invariant #6, ADR-0010,
+  `RUN_WALL_CLOCK_MS` in `orchestrator/guardrails.ts`) is enforced here by aborting the run's
+  `AbortController` on trip, which surfaces as an ordinary `cancelled` terminal summary.
 - **RR13 — no default executor.** `--executor claude-code|stub` is required: real spend is
   only ever an explicit choice (ADR-0015 fail-closed posture), and `stub` gives consumers and
   tests a deterministic, zero-spend path. Absent/unknown values are a `USAGE_ERROR`; nothing

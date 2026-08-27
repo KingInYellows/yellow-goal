@@ -21,16 +21,16 @@ export const requestSample = {
 
 /** Executable-run variant (RR1/RR2): `mode: 'approved-implementation'` with the strict
  *  `orchestration.execution` refinement populated — must stay valid under the verbatim vendored
- *  request.schema.json (the untyped `orchestration` bucket absorbs it). */
+ *  request.schema.json (the untyped `orchestration` bucket absorbs it). Also satisfies RR21's
+ *  fail-closed write-permission gate: explicit writable `constraints` and a `permissionProfile`
+ *  whose policy `targetWrite` is truthy (`implement`, not `requestSample`'s `inspect`). */
 export const requestExecutionSample = {
   ...requestSample,
   requestId: 'req-sample-002',
   mode: 'approved-implementation',
+  constraints: { readOnlyTarget: false, allowTargetEdits: true },
   orchestration: {
     ...requestSample.orchestration,
-    // 'inspect' (inherited above) is incoherent with an executable mode; nothing maps
-    // profiles onto the run path yet (spec "Known conflations"), but the canonical sample
-    // should not contradict itself.
     permissionProfile: 'implement',
     execution: {
       autoConfirmDod: true,
