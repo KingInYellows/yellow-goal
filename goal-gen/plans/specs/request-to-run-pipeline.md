@@ -63,6 +63,25 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
 - **RR5 — runner consumes the request file.** `npm run runner -- --request <file>` drives the
   identical RR3 mapping. The bare-goal form (`npm run runner -- "<goal>"`) remains for
   operator back-compat, mapping onto the same defaults.
+- **RR21 — fail closed on write permission.** RR3's mapping additionally requires an executable
+  request to *affirmatively* grant target writes on two independent axes, each rejected with its
+  own `IntakeValidationFailure` code/field before any extractor/executor/worktree work:
+  1. `constraints.allowTargetEdits` must be `true`. The vendored schema
+     (`schemas/vendored/request.schema.json`) documents `readOnlyTarget: true` /
+     `allowTargetEdits: false` as the default when `constraints` is omitted; the zod contract
+     narrows those fields as optional-without-zod-defaults, so an omitted or under-specified
+     `constraints` block must not silently permit execution (`normalizeRequest` in particular
+     produces requests with no `constraints` block at all). `RUN_CONSTRAINTS_NOT_DECLARED_WRITABLE`
+     / field `constraints`.
+  2. `orchestration.permissionProfile` (`policies/permission-profiles.json`) must name a profile
+     whose `targetWrite` is truthy. Profiles that forbid target writes (`inspect`, `compile`) are
+     refused; an absent or unrecognized profile is treated as NOT declared writable (fail closed),
+     the same posture as (1). `RUN_PERMISSION_PROFILE_FORBIDS_EXECUTION` / field
+     `orchestration.permissionProfile`.
+
+  RR21 is deliberately fail-closed *rejection* only — mapping the selected profile onto the
+  executor's own permission mode (e.g. `bypassPermissions` vs. a scoped mode) is
+  provider-protocol-v1 work and stays out of scope here.
 
 ### One event shape (RR6–RR10)
 

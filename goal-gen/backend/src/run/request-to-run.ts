@@ -10,7 +10,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import type { RepositoryGoalRequest } from '../contracts/request';
-import { IntakeValidationFailure, parseCanonicalRequest } from '../intake';
+import { IntakeValidationFailure, parseCanonicalRequest, permissionProfileAllowsTargetWrite } from '../intake';
 import { defaultRunConfig } from '../orchestrator/guardrails';
 import type { RunConfig } from '../types';
 
@@ -34,9 +34,6 @@ export function requestToRunInputs(request: RepositoryGoalRequest): RunInputs {
   }
 
   // Fail closed on explicitly-declared non-writable targets (readOnlyTarget / allowTargetEdits).
-  // Absent constraints pass: the zod schema is optional-without-defaults, so the vendored
-  // schema's documented defaults (readOnlyTarget: true) are deliberately NOT applied here —
-  // divergence noted in plans/specs/request-to-run-pipeline.md follow-ups.
   const constraints = request.constraints;
   if (constraints?.readOnlyTarget === true || constraints?.allowTargetEdits === false) {
     throw new IntakeValidationFailure([
@@ -45,6 +42,44 @@ export function requestToRunInputs(request: RepositoryGoalRequest): RunInputs {
         message:
           "request constraints forbid an executable run — 'readOnlyTarget: true' / 'allowTargetEdits: false' cannot combine with an executable mode",
         field: 'constraints',
+      },
+    ]);
+  }
+
+  // RR21 (plans/specs/request-to-run-pipeline.md) — default-deny on target-write declaration.
+  // The vendored schema documents readOnlyTarget: true / allowTargetEdits: false as the DEFAULT
+  // when `constraints` is omitted (schemas/vendored/request.schema.json); the zod contract above
+  // narrows it as optional-without-zod-defaults, so an omitted (or under-specified) `constraints`
+  // block must not silently pass through to execution. Only an explicit
+  // `allowTargetEdits: true` clears this gate — absence is read as read-only, not as false.
+  if (constraints?.allowTargetEdits !== true) {
+    throw new IntakeValidationFailure([
+      {
+        code: 'RUN_CONSTRAINTS_NOT_DECLARED_WRITABLE',
+        message:
+          "request constraints do not declare the target writable — an executable run requires 'constraints.allowTargetEdits: true' ('readOnlyTarget'/'allowTargetEdits' default to read-only when 'constraints' is omitted)",
+        field: 'constraints',
+      },
+    ]);
+  }
+
+  // RR21 — fail closed on the selected permission profile too (policies/permission-profiles.json).
+  // Profiles that forbid target writes ('inspect', 'compile') must not reach execution even if
+  // constraints above were satisfied, and an absent/unrecognized profile is treated as NOT
+  // declared writable (fail closed), matching the constraints guard's posture. This is
+  // deliberately fail-closed REJECTION only: mapping the profile onto the executor's own
+  // permission mode (e.g. `bypassPermissions` vs. scoped modes) is provider-protocol-v1 work and
+  // stays out of scope here.
+  const permissionProfile = request.orchestration?.permissionProfile;
+  if (permissionProfile === undefined || !permissionProfileAllowsTargetWrite(permissionProfile)) {
+    throw new IntakeValidationFailure([
+      {
+        code: 'RUN_PERMISSION_PROFILE_FORBIDS_EXECUTION',
+        message:
+          permissionProfile === undefined
+            ? "request has no 'orchestration.permissionProfile' — an executable run requires a profile that permits target writes (e.g. 'implement')"
+            : `permission profile '${permissionProfile}' forbids target writes and cannot combine with an executable mode`,
+        field: 'orchestration.permissionProfile',
       },
     ]);
   }
