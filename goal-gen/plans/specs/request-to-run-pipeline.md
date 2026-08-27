@@ -120,7 +120,14 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
   consumer never needs a second protocol.
 - **RR12 — streamed events + terminal summary.** stdout is run-event/v1 JSON Lines (RR6);
   the final line is the `run.summary` envelope. Exit 0 iff terminal status is `succeeded`;
-  exit 1 otherwise (including `failed`/`cancelled`/`budget-exhausted`).
+  exit 1 otherwise (including `failed`/`cancelled`/`budget-exhausted`). On any non-`succeeded`
+  terminal status the verb ALSO writes RR11's single-line stderr envelope
+  (`{"error":{code,message}}`), with `code` one of `RUN_FAILED` / `RUN_CANCELLED` /
+  `RUN_BUDGET_EXHAUSTED` so a consumer can tell them apart without parsing `reason` text;
+  the success path's stderr stays empty and stdout's terminal `run.summary` is unaffected
+  either way. The mandatory 60-minute run-wide wall-clock (CLAUDE.md invariant #6, ADR-0010,
+  `RUN_WALL_CLOCK_MS` in `orchestrator/guardrails.ts`) is enforced here by aborting the run's
+  `AbortController` on trip, which surfaces as an ordinary `cancelled` terminal summary.
 - **RR13 — no default executor.** `--executor claude-code|stub` is required: real spend is
   only ever an explicit choice (ADR-0015 fail-closed posture), and `stub` gives consumers and
   tests a deterministic, zero-spend path. Absent/unknown values are a `USAGE_ERROR`; nothing

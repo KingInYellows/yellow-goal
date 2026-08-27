@@ -24,9 +24,10 @@ import { ClaudeLlmClient, LlmExtractorImpl } from '../extractors/llm-extractor';
 import { StubExtractor } from '../extractors/stub-extractor';
 import { Orchestrator } from '../orchestrator/orchestrator';
 import type { DodConfirmer, OrchestratorDeps, WorktreeProvider } from '../orchestrator/orchestrator';
+import { RUN_WALL_CLOCK_MS } from '../orchestrator/guardrails';
 import type { GoalSpec } from '../planner/types';
 import { loadRunRequest, requestToRunInputs, type RunInputs } from '../run/request-to-run';
-import type { RunConfig } from '../types';
+import type { RunConfig, RunSummary } from '../types';
 import { CliUsageError } from './errors';
 
 type EngineDeps = Pick<OrchestratorDeps, 'extractor' | 'executor' | 'verifier' | 'worktreeProvider'>;
@@ -96,20 +97,51 @@ export function effectiveAutoConfirm(executorKind: 'claude-code' | 'stub', cliYe
   return executorKind === 'stub' ? cliYes || requestAsk : cliYes;
 }
 
+/** RR11's stderr envelope code per non-succeeded terminal status, so a consumer can tell
+ *  failed/cancelled/budget-exhausted apart without parsing `reason` text. */
+const RUN_FAILURE_CODES: Record<Exclude<RunSummary['status'], 'succeeded'>, string> = {
+  failed: 'RUN_FAILED',
+  cancelled: 'RUN_CANCELLED',
+  'budget-exhausted': 'RUN_BUDGET_EXHAUSTED',
+  'awaiting-acceptance': 'RUN_AWAITING_ACCEPTANCE', // defensive: run() never resolves in this status
+};
+
+/** Pure status → stderr-envelope mapping, exported for direct unit testing: the stub engine
+ *  always succeeds (RR16), so a terminal non-success `run.summary` isn't reachable end-to-end
+ *  through the CLI without a test-only production seam, which we deliberately don't add. Returns
+ *  `undefined` for 'succeeded' — the success path's stderr must stay empty. */
+export function runFailureEnvelope(summary: Pick<RunSummary, 'status' | 'reason'>): { error: { code: string; message: string } } | undefined {
+  if (summary.status === 'succeeded') return undefined;
+  return { error: { code: RUN_FAILURE_CODES[summary.status], message: summary.reason } };
+}
+
 export async function runRunCommand(argv: string[]): Promise<number> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    options: {
-      executor: { type: 'string' },
-      yes: { type: 'boolean', short: 'y', default: false },
-      // RR18: a request file may not raise guardrail caps above the ADR-0010 defaults on its
-      // own — this flag is the operator's explicit consent to honor raised caps.
-      'allow-guardrail-override': { type: 'boolean', default: false },
-      // Accepted for cross-verb consistency; `run` output is ALWAYS machine-readable JSON Lines.
-      json: { type: 'boolean', default: false },
-    },
-    allowPositionals: true,
-  });
+  // Node's parseArgs throws (rather than returning) on malformed syntax (e.g. `--executor` with
+  // no value, or an unknown flag) — translate that LOCALLY into a CliUsageError (exit 2) instead
+  // of letting it fall through to main()'s UNEXPECTED_ERROR/exit-1 catch-all. A dispatcher-wide
+  // `ERR_PARSE_ARGS_*` translation may also land in cli/index.ts on another branch; this local
+  // wrap is self-contained so the two fixes can't conflict at merge time.
+  const { values, positionals } = (() => {
+    try {
+      return parseArgs({
+        args: argv,
+        options: {
+          executor: { type: 'string' },
+          yes: { type: 'boolean', short: 'y', default: false },
+          // RR18: a request file may not raise guardrail caps above the ADR-0010 defaults on its
+          // own — this flag is the operator's explicit consent to honor raised caps.
+          'allow-guardrail-override': { type: 'boolean', default: false },
+          // Accepted for cross-verb consistency; `run` output is ALWAYS machine-readable JSON Lines.
+          json: { type: 'boolean', default: false },
+        },
+        allowPositionals: true,
+      });
+    } catch (e) {
+      const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: unknown }).code) : '';
+      if (code.startsWith('ERR_PARSE_ARGS_')) throw new CliUsageError(e instanceof Error ? e.message : String(e));
+      throw e;
+    }
+  })();
 
   const requestPath = positionals[0];
   if (!requestPath) throw new CliUsageError('run requires a <request-file> positional argument');
@@ -131,8 +163,19 @@ export async function runRunCommand(argv: string[]): Promise<number> {
   // CLI --yes may. The zero-spend stub honors the request's autoConfirmDod as before.
   const autoConfirm = effectiveAutoConfirm(executorKind, values.yes === true, inputs.autoConfirm);
 
+  // Best-effort running spend total, tallied from every emitted envelope that carries a numeric
+  // `costUsd` (e.g. `agent.run`, `extract.failed`) — the only source of incurred spend available
+  // outside Orchestrator's private RunState. Feeds the defensive fallback summary below if
+  // Orchestrator.run() ever throws before returning its own authoritative summary. Known gap: a
+  // SUCCESSFUL extraction's cost is folded into RunState directly and never emitted as an event,
+  // so it is not reflected here (see run-verb.test.ts note).
+  let observedCostUsd = 0;
   const emitter = new RunEventEmitter({
-    sink: (envelope) => process.stdout.write(`${JSON.stringify(envelope)}\n`),
+    sink: (envelope) => {
+      const cost = (envelope.payload as Record<string, unknown> | undefined)?.costUsd;
+      if (typeof cost === 'number') observedCostUsd += cost;
+      process.stdout.write(`${JSON.stringify(envelope)}\n`);
+    },
   });
   // Audit envelope (RR18/RR19): the EFFECTIVE spend configuration is always the stream's first
   // event, and the target-repository limitation is disclosed in-band, not just in the spec.
@@ -165,6 +208,11 @@ export async function runRunCommand(argv: string[]): Promise<number> {
   const abort = () => ac.abort();
   process.once('SIGINT', abort);
   process.once('SIGTERM', abort);
+  // CLAUDE.md invariant #6 / ADR-0010: the mandatory run-wide wall-clock. The orchestrator carries
+  // the abort mechanism but doesn't enforce a deadline itself (guardrails.ts) — this entry point
+  // owns the AbortController, so it owns starting the timer too. On trip, `ac.abort()` makes the
+  // orchestrator's existing signal.aborted checks return their normal 'cancelled' terminal summary.
+  const deadline = setTimeout(abort, RUN_WALL_CLOCK_MS);
 
   const engine = executorKind === 'stub' ? stubEngine(inputs.goalText) : claudeCodeEngine(inputs.runConfig, emitter.handle);
   const orchestrator = new Orchestrator({
@@ -178,19 +226,34 @@ export async function runRunCommand(argv: string[]): Promise<number> {
 
   try {
     const summary = await orchestrator.run({ goalText: inputs.goalText });
+    // RR11: every verb's failures share the same single-line stderr envelope. orchestrator.run()
+    // RESOLVES (doesn't throw) on ordinary terminal non-success — retries exhausted, cancelled,
+    // budget-exhausted — so that shared contract has to be produced here explicitly; stdout's
+    // terminal run.summary envelope is untouched either way, and the success path writes nothing
+    // to stderr.
+    const failure = runFailureEnvelope(summary);
+    if (failure) process.stderr.write(`${JSON.stringify(failure)}\n`);
     return summary.status === 'succeeded' ? 0 : 1;
   } catch (e) {
     // Orchestrator.run() documents never-throws, but RR12's "the last stdout line is the
     // run.summary envelope" must hold even if that contract is ever violated (e.g. a default
-    // gate rethrowing on a dead stdin). Terminate the stream, then let main()'s catch-all
-    // produce the stderr envelope and exit code.
+    // gate rethrowing on a dead stdin). Terminate the stream with a COMPLETE RunSummary shape
+    // (costUsd is the sink-observed running total from `emitter`'s cost tally above — see its
+    // known gap re: successful-extraction spend) so this envelope is structurally the same as any
+    // ordinary terminal event, then let main()'s catch-all produce the stderr envelope and exit
+    // code.
     emitter.next('run.summary', {
       status: 'failed',
       goalText: inputs.goalText,
+      costUsd: observedCostUsd,
+      replans: 0,
+      reextractions: 0,
+      actions: [],
       reason: `run aborted by unexpected error: ${e instanceof Error ? e.message : String(e)}`,
     });
     throw e;
   } finally {
+    clearTimeout(deadline);
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
   }
