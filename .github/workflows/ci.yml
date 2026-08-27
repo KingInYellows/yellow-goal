@@ -1,0 +1,72 @@
+# CI gates for the goal-gen engine (the project lives in goal-gen/, a subdirectory of this
+# repo — every step below runs with goal-gen/ as its working directory).
+#
+# Safety invariant: `npm test` runs vitest with include `tests/**/*.test.ts` only. Tests that
+# require a live external resource use the `*.probe.ts` suffix (tests/integration/runner.probe.ts
+# spawns a real `claude`) and must stay outside that glob — CI must never execute a real agent.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least-privilege token: without this block, same-repo PRs inherit the repository's default
+# GITHUB_TOKEN permissions (write, in this repo) for both jobs below. Jobs here only read the
+# repo and run tests/typecheck/eval, so read-only is sufficient and limits the blast radius if
+# a dependency or script were to misuse the token.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: goal-gen
+
+jobs:
+  engine:
+    name: typecheck, test, eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # persist-credentials: false — otherwise actions/checkout writes the job's GITHUB_TOKEN
+      # into .git/config, where it stays readable to every later step/process in this job.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.x
+          cache: npm
+          cache-dependency-path: goal-gen/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      # Includes the contract compatibility gate (tests/contracts/compat.test.ts, zod ↔ vendored
+      # JSON Schema) and the migration gate (tests/db/migrations.test.ts, journal-driven SQL
+      # migrations applied against embedded PGlite).
+      - run: npm test
+      - run: npm run eval
+
+  install-smoke:
+    name: pack, install, spawn
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # persist-credentials: false — otherwise actions/checkout writes the job's GITHUB_TOKEN
+      # into .git/config, where it stays readable to every later step/process in this job.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.x
+          cache: npm
+          cache-dependency-path: goal-gen/package-lock.json
+      - run: npm ci
+      # Packs the tarball, installs it into a scratch consumer directory outside the repo, and
+      # drives the installed `goal-gen` bin as an external process (JSON stdout, structured
+      # stderr, documented exit codes) — the install story a process consumer depends on.
+      - run: bash scripts/install-smoke.sh

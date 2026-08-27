@@ -4,6 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Self-hosted GOAL generator — see docs/prd.md. This is the initial scaffold (eval harness first, per ADR-0013).",
+  "bin": {
+    "goal-gen": "bin/goal-gen.mjs"
+  },
+  "files": [
+    "bin/",
+    "backend/src/",
+    "packs/",
+    "policies/",
+    "schemas/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,8 +32,10 @@
     "drizzle-orm": "^0.45.2",
     "js-yaml": "^4.1.0",
     "pg": "^8.22.0",
+    "tsx": "^4.19.0",
     "yauzl": "^3.2.0",
-    "yazl": "^3.3.1"
+    "yazl": "^3.3.1",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
@@ -31,9 +46,7 @@
     "@types/yazl": "^2.4.6",
     "drizzle-kit": "^0.31.10",
     "fast-check": "^3.23.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.0",
-    "zod": "^3.24.0"
+    "vitest": "^4.1.0"
   }
 }

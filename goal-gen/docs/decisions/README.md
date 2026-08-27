@@ -22,3 +22,5 @@ Template: [`_template.md`](_template.md).
 | [0012](0012-metrics-gate-vs-observed.md) | Success metrics: gate vs observed split | accepted |
 | [0013](0013-eval-tooling.md) | Eval tooling: Vitest + fast-check + promptfoo | accepted |
 | [0014](0014-defer-verifier-gaming-control.md) | Defer verifier-gaming control (test checksums) to M2 | accepted |
+| [0015](0015-compiler-provider-seams-and-failclosed-permissions.md) | Packet-compiler provider seams reuse `claude -p`; permission modes fail closed | accepted |
+| [0016](0016-ci-gates-and-tarball-installation.md) | CI gates in GitHub Actions; installation via npm tarball with a tsx bin shim | accepted |
