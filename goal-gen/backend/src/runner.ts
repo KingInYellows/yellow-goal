@@ -88,6 +88,8 @@ async function run(args: string[]): Promise<RunSummary> {
   let goalText: string;
   let config: RunConfig;
   let autoConfirm: boolean;
+  let repository: string | undefined;
+  let ref: string | undefined;
   if (parsed.kind === 'request') {
     try {
       const inputs = requestToRunInputs(await loadRunRequest(parsed.requestPath));
@@ -95,6 +97,8 @@ async function run(args: string[]): Promise<RunSummary> {
       config = inputs.runConfig;
       // CLI --yes may force auto-confirm on top of the request; it never turns it off.
       autoConfirm = parsed.autoConfirm || inputs.autoConfirm;
+      repository = inputs.repository;
+      ref = inputs.ref;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const errors = e instanceof IntakeValidationFailure ? e.errors : undefined;
@@ -102,6 +106,10 @@ async function run(args: string[]): Promise<RunSummary> {
       return { status: 'failed', goalText: '', costUsd: 0, replans: 0, reextractions: 0, actions: [], reason: message };
     }
   } else {
+    goalText = parsed.goalText;
+    config = defaultRunConfig();
+    autoConfirm = parsed.autoConfirm;
+  }
     goalText = parsed.goalText;
     config = defaultRunConfig();
     autoConfirm = parsed.autoConfirm;
@@ -135,7 +143,11 @@ async function run(args: string[]): Promise<RunSummary> {
   process.once('SIGTERM', abort);
 
   const orchestrator = new Orchestrator({ extractor, executor, verifier, config, onEvent: log, confirm, signal: ac.signal });
-  return orchestrator.run({ goalText }).finally(() => {
+  // TODO: worktree provisioning from the requested repository is not yet implemented — the default
+  // worktreeProvider still creates scratch repos in tmpdir (worktree.ts:6-8). This passes repoPath
+  // so the extractor has access, but execution still happens in a fresh scratch repo until the
+  // worktree provider is extended to support cloning from a source repository/ref.
+  return orchestrator.run({ goalText, config: { repoPath: repository } }).finally(() => {
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
   });

@@ -20,6 +20,10 @@ export interface RunInputs {
   runConfig: RunConfig;
   /** Auto-confirm DoD/reconfirm gates only; never the completion sign-off gate (RR14). */
   autoConfirm: boolean;
+  /** `target.repository` verbatim — the requested repository to execute against. */
+  repository: string;
+  /** `target.ref` if present — the specific ref/branch to check out. */
+  ref?: string;
 }
 
 export function requestToRunInputs(request: RepositoryGoalRequest): RunInputs {
@@ -94,6 +98,8 @@ export function requestToRunInputs(request: RepositoryGoalRequest): RunInputs {
     goalText: request.intent.goal,
     runConfig: defaultRunConfig(overrides),
     autoConfirm: execution?.autoConfirmDod === true,
+    repository: request.target.repository,
+    ref: request.target.ref,
   };
 }
 
