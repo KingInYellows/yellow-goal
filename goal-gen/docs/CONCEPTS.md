@@ -7,9 +7,9 @@ only, not a spec or catch-all.
 
 ## run-event/v1
 
-The JSON Lines protocol stream emitted on stdout by the run and version
-verb entry points to communicate machine-parsed run progress and terminal
-outcomes. Because it is machine-parsed, nothing else may write
+The JSON Lines protocol stream emitted on stdout by the M1 runner and the
+`run` verb entry points to communicate machine-parsed run progress and
+terminal outcomes. Because it is machine-parsed, nothing else may write
 human-facing prose to the same stdout stream for these entry points —
 interactive prompts and diagnostic output must go to stderr instead.
 

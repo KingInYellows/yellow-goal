@@ -33,11 +33,11 @@ emitted.
 
 - Piping `run` verb output to a JSON Lines parser broke on the prompt lines
   (`Proceed? [y/N]`, `Accept? [y/N]`) — they were not valid JSON.
-- Invoking the run/version verbs non-interactively (stdin redirected from
-  `/dev/null`, or under any process supervisor that doesn't attach a tty)
-  exited 0 with the stream cut short at `extract.done` — no `run.summary`
-  line, so a consumer waiting for the terminal envelope waited forever or
-  falsely inferred success from the exit code.
+- Invoking the M1 runner or the `run` verb non-interactively (stdin
+  redirected from `/dev/null`, or under any process supervisor that doesn't
+  attach a tty) exited 0 with the stream cut short at `extract.done` — no
+  `run.summary` line, so a consumer waiting for the terminal envelope
+  waited forever or falsely inferred success from the exit code.
 - Multi-agent review (adversarial persona, confidence 100, corroborated by
   the silent-failure-hunter persona) flagged both independently; verified
   live against the stub engine before the fix, not just from static review.
