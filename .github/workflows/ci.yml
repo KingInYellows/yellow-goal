@@ -11,6 +11,13 @@ on:
     branches: [main]
   pull_request:
 
+# Least-privilege token: without this block, same-repo PRs inherit the repository's default
+# GITHUB_TOKEN permissions (write, in this repo) for both jobs below. Jobs here only read the
+# repo and run tests/typecheck/eval, so read-only is sufficient and limits the blast radius if
+# a dependency or script were to misuse the token.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -25,7 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # persist-credentials: false — otherwise actions/checkout writes the job's GITHUB_TOKEN
+      # into .git/config, where it stays readable to every later step/process in this job.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.x
@@ -44,7 +55,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # persist-credentials: false — otherwise actions/checkout writes the job's GITHUB_TOKEN
+      # into .git/config, where it stays readable to every later step/process in this job.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22.22.x

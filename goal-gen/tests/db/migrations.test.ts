@@ -38,7 +38,8 @@ const migrationsFolder = fileURLToPath(new URL('../../backend/src/db/migrations'
 async function publicSchemaFingerprint(client: PGlite) {
   const columns = await client.query(
     `select table_name, column_name, data_type, is_nullable, column_default,
-            character_maximum_length, numeric_precision, numeric_scale, udt_name
+            character_maximum_length, numeric_precision, numeric_scale, udt_name,
+            datetime_precision
      from information_schema.columns
      where table_schema = 'public'
      order by table_name, column_name`,
