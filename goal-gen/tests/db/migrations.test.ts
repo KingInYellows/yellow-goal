@@ -50,14 +50,18 @@ async function publicSchemaFingerprint(client: PGlite) {
      order by typname, enumsortorder`,
   );
   const constraints = await client.query(
-    `select conrelid::regclass::text as table_name, contype,
+    // `conname` is selected explicitly: pg_get_constraintdef() renders the definition WITHOUT the
+    // constraint's name, so a migration that only renames a constraint would otherwise fingerprint
+    // identically to schema.ts and slip through this gate. (Index names need no such column —
+    // pg_indexes.indexdef embeds them.)
+    `select conrelid::regclass::text as table_name, conname, contype,
             pg_get_constraintdef(pg_constraint.oid) as definition
      from pg_constraint
      join pg_class on pg_class.oid = conrelid
      join pg_namespace on pg_namespace.oid = pg_class.relnamespace
      where pg_namespace.nspname = 'public'
        and contype in ('c', 'f', 'p', 'u')
-     order by table_name, contype, definition`,
+     order by table_name, conname, contype, definition`,
   );
   const indexes = await client.query(
     `select tablename as table_name, indexdef as definition
