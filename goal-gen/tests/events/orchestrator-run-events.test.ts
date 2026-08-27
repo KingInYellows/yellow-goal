@@ -156,3 +156,53 @@ describe('orchestrator with a RunEventEmitter (RR6–RR10)', () => {
     expect(persistence.statuses).toContain('awaiting-acceptance');
   });
 });
+
+describe('emitter scoping across reused Orchestrator instances (RR7)', () => {
+  it('gives each run() call its own identity and a sequence restarting at 0', async () => {
+    const envelopes: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ sink: (e) => envelopes.push(e) });
+    // One instance, two sequential runs — the reuse case RunState's doc comment declares
+    // supported. Before per-run scoping both runs shared emitter.runId while the counter kept
+    // climbing, so a persisted second run collided with the first run's row.
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: goalSpec('verify-only') }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      confirm: async () => true,
+      worktreeProvider: stubWorktree,
+      events: emitter,
+    });
+
+    expect((await orch.run({ goalText: 'one step' })).status).toBe('succeeded');
+    const firstCount = envelopes.length;
+    expect((await orch.run({ goalText: 'one step' })).status).toBe('succeeded');
+
+    const first = envelopes.slice(0, firstCount);
+    const second = envelopes.slice(firstCount);
+    expect(second.length).toBeGreaterThan(0);
+    expect(first[0]!.runId).toBe(emitter.runId);
+    expect(second[0]!.runId).not.toBe(first[0]!.runId);
+    expect(new Set(second.map((e) => e.runId)).size).toBe(1);
+    expect(second.map((e) => e.sequence)).toEqual(second.map((_, i) => i));
+  });
+
+  it('scopes a fresh identity when an explicit runId disagrees with the claimed one', async () => {
+    const envelopes: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ sink: (e) => envelopes.push(e) });
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: goalSpec('verify-only') }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      confirm: async () => true,
+      worktreeProvider: stubWorktree,
+      events: emitter,
+    });
+
+    await orch.run({ goalText: 'one step' }, 'explicit-run-id');
+    // The streamed identity must equal the id the run persists under — never a silent divergence.
+    expect(new Set(envelopes.map((e) => e.runId))).toEqual(new Set(['explicit-run-id']));
+    expect(envelopes[0]!.sequence).toBe(0);
+  });
+});

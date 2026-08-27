@@ -12,7 +12,7 @@ const policyPath = path.resolve(moduleDir, '../../../policies/permission-profile
 
 interface PermissionProfilesPolicy {
   schemaVersion: string;
-  profiles: Record<string, unknown>;
+  profiles: Record<string, { targetWrite?: boolean | string } & Record<string, unknown>>;
   invariant: string;
 }
 
@@ -30,4 +30,15 @@ export const KNOWN_PERMISSION_PROFILES: ReadonlySet<string> = new Set(Object.key
 
 export function isKnownPermissionProfile(profile: string): boolean {
   return KNOWN_PERMISSION_PROFILES.has(profile);
+}
+
+/** Whether the named permission profile permits any write to the repository target — the
+ *  policy's `targetWrite` is `false` for read-only profiles (`inspect`, `compile`), or a truthy
+ *  string (e.g. `"isolated-worktree-only"`) for profiles that permit scoped writes. Unrecognized
+ *  profile ids are treated as NOT write-permitting (fail closed, RR21) — pair with
+ *  `isKnownPermissionProfile` for a separate "unknown profile" rejection where that distinction
+ *  matters. */
+export function permissionProfileAllowsTargetWrite(profile: string): boolean {
+  const entry = policy.profiles[profile];
+  return Boolean(entry?.targetWrite);
 }

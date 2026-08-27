@@ -17,6 +17,7 @@
  */
 import { parseArgs } from 'node:util';
 import { RunEventEmitter } from '../events/run-event-emitter';
+import { createStdoutSink } from '../events/stdout-sink';
 import { ClaudeCodeExecutor } from '../executors/claude-code-executor';
 import { ShellVerifier } from '../executors/shell-verifier';
 import { StubExecutor, StubVerifier } from '../executors/stub-executor';
@@ -170,11 +171,16 @@ export async function runRunCommand(argv: string[]): Promise<number> {
   // SUCCESSFUL extraction's cost is folded into RunState directly and never emitted as an event,
   // so it is not reflected here (see run-verb.test.ts note).
   let observedCostUsd = 0;
+  // Share the runner's stream-level sink: a broken stdout pipe surfaces asynchronously as the
+  // stream's 'error' event, which the emitter's synchronous catch cannot see and which would
+  // otherwise kill the process before the terminal run.summary. createStdoutSink degrades
+  // quietly after a stream error instead.
+  const writeEnvelope = createStdoutSink();
   const emitter = new RunEventEmitter({
     sink: (envelope) => {
       const cost = (envelope.payload as Record<string, unknown> | undefined)?.costUsd;
       if (typeof cost === 'number') observedCostUsd += cost;
-      process.stdout.write(`${JSON.stringify(envelope)}\n`);
+      writeEnvelope(envelope);
     },
   });
   // Audit envelope (RR18/RR19): the EFFECTIVE spend configuration is always the stream's first

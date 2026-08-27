@@ -16,12 +16,15 @@
  * timestamp, type, payload}` envelope minted by ONE per-run `RunEventEmitter` shared by the
  * extractor, the orchestrator, and this entry (RR7) — the previous ad-hoc `{t, ev, ...}` shape
  * is gone. The last line of every run, success or failure, is the `run.summary` envelope (RR10).
+ * A broken stdout pipe (EPIPE) is handled at the stream level by `createStdoutSink`
+ * (`events/stdout-sink.ts`, shared with the `run` verb), not by the emitter — see its doc comment.
  *
  *   --yes, -y   auto-confirm the definition-of-done gate (non-interactive; for automation/the
  *               probe). Sign-off is deliberately NOT auto-accepted (see below).
  */
 import { pathToFileURL } from 'node:url';
 import { RunEventEmitter } from './events/run-event-emitter';
+import { createStdoutSink } from './events/stdout-sink';
 import { ClaudeCodeExecutor } from './executors/claude-code-executor';
 import { ShellVerifier } from './executors/shell-verifier';
 import { ClaudeLlmClient, LlmExtractorImpl } from './extractors/llm-extractor';
@@ -32,10 +35,11 @@ import type { DodConfirmer } from './orchestrator/orchestrator';
 import { loadRunRequest, requestToRunInputs } from './run/request-to-run';
 import type { RunConfig, RunSummary } from './types';
 
-/** One run-event/v1 envelope per stdout line. */
-function stdoutSink(envelope: unknown): void {
-  process.stdout.write(`${JSON.stringify(envelope)}\n`);
-}
+// Both protocol entry points share one stream-level sink (see its doc comment for the EPIPE
+// reason). Re-exported here because this module was its original home and tests import it here.
+export { createStdoutSink } from './events/stdout-sink';
+
+const stdoutSink = createStdoutSink();
 
 export type RunnerArgs =
   | { kind: 'usage'; message: string }

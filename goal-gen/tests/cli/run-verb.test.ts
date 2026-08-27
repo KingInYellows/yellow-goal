@@ -69,7 +69,7 @@ describe('run verb (stub engine)', () => {
   it('honors --yes when the request does not auto-confirm (RR14)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { autoConfirmDod: false } },
+      orchestration: { ...requestExecutionSample.orchestration, execution: { autoConfirmDod: false } },
     });
     const code = await main(['run', requestPath, '--executor', 'stub', '--yes']);
     expect(code).toBe(0);
@@ -164,7 +164,7 @@ describe('operator consent policies (RR18/RR19)', () => {
   it('refuses request-raised guardrails without --allow-guardrail-override (RR18)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { guardrails: { maxBudgetUsd: 500 } } },
+      orchestration: { ...requestExecutionSample.orchestration, execution: { guardrails: { maxBudgetUsd: 500 } } },
     });
     const code = await main(['run', requestPath, '--executor', 'stub']);
     expect(code).toBe(1);
@@ -177,7 +177,10 @@ describe('operator consent policies (RR18/RR19)', () => {
   it('honors raised guardrails with --allow-guardrail-override, visible in run.start (RR18)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { autoConfirmDod: true, guardrails: { maxBudgetUsd: 500 } } },
+      orchestration: {
+        ...requestExecutionSample.orchestration,
+        execution: { autoConfirmDod: true, guardrails: { maxBudgetUsd: 500 } },
+      },
     });
     const code = await main(['run', requestPath, '--executor', 'stub', '--allow-guardrail-override']);
     expect(code).toBe(0);
