@@ -46,6 +46,8 @@ describe('requestToRunInputs (RR3)', () => {
     const request = RepositoryGoalRequestSchema.parse({
       ...requestSample,
       mode: 'approved-implementation',
+      constraints: { readOnlyTarget: false, allowTargetEdits: true },
+      orchestration: { ...requestSample.orchestration, permissionProfile: 'implement' },
     });
     const inputs = requestToRunInputs(request);
     expect(inputs.runConfig).toEqual(defaultRunConfig());
@@ -93,6 +95,90 @@ describe('requestToRunInputs (RR3)', () => {
     const request = RepositoryGoalRequestSchema.parse({
       ...requestExecutionSample,
       constraints: { readOnlyTarget: false, allowTargetEdits: true },
+    });
+    expect(requestToRunInputs(request).goalText).toBe(request.intent.goal);
+  });
+
+  it('refuses an otherwise-executable request whose constraints are absent (RR21 default-deny)', () => {
+    const { constraints: _omit, ...withoutConstraints } = requestExecutionSample;
+    const request = RepositoryGoalRequestSchema.parse(withoutConstraints);
+    let thrown: unknown;
+    try {
+      requestToRunInputs(request);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(IntakeValidationFailure);
+    expect((thrown as IntakeValidationFailure).errors).toEqual([
+      expect.objectContaining({ code: 'RUN_CONSTRAINTS_NOT_DECLARED_WRITABLE', field: 'constraints' }),
+    ]);
+  });
+
+  it('refuses constraints that omit allowTargetEdits, even with readOnlyTarget: false (RR21 default-deny)', () => {
+    const request = RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      constraints: { readOnlyTarget: false },
+    });
+    let thrown: unknown;
+    try {
+      requestToRunInputs(request);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(IntakeValidationFailure);
+    expect((thrown as IntakeValidationFailure).errors).toEqual([
+      expect.objectContaining({ code: 'RUN_CONSTRAINTS_NOT_DECLARED_WRITABLE', field: 'constraints' }),
+    ]);
+  });
+
+  it.each(['inspect', 'compile'])(
+    "refuses an otherwise-executable request using permission profile '%s' (RR21 fail-closed profile)",
+    (permissionProfile) => {
+      const request = RepositoryGoalRequestSchema.parse({
+        ...requestExecutionSample,
+        orchestration: { ...requestExecutionSample.orchestration, permissionProfile },
+      });
+      let thrown: unknown;
+      try {
+        requestToRunInputs(request);
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(IntakeValidationFailure);
+      expect((thrown as IntakeValidationFailure).errors).toEqual([
+        expect.objectContaining({
+          code: 'RUN_PERMISSION_PROFILE_FORBIDS_EXECUTION',
+          field: 'orchestration.permissionProfile',
+        }),
+      ]);
+    },
+  );
+
+  it('refuses an otherwise-executable request with no permissionProfile declared (RR21 fail-closed profile)', () => {
+    const { permissionProfile: _omit, ...orchestrationWithoutProfile } = requestExecutionSample.orchestration;
+    const request = RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      orchestration: orchestrationWithoutProfile,
+    });
+    let thrown: unknown;
+    try {
+      requestToRunInputs(request);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(IntakeValidationFailure);
+    expect((thrown as IntakeValidationFailure).errors).toEqual([
+      expect.objectContaining({
+        code: 'RUN_PERMISSION_PROFILE_FORBIDS_EXECUTION',
+        field: 'orchestration.permissionProfile',
+      }),
+    ]);
+  });
+
+  it("still executes with permission profile 'autonomous-isolated' (truthy but scoped targetWrite)", () => {
+    const request = RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      orchestration: { ...requestExecutionSample.orchestration, permissionProfile: 'autonomous-isolated' },
     });
     expect(requestToRunInputs(request).goalText).toBe(request.intent.goal);
   });
@@ -202,5 +288,34 @@ describe('loadRunRequest', () => {
   it('throws IntakeValidationFailure on a schema-invalid request', async () => {
     const filePath = await write('invalid.json', JSON.stringify({ ...requestSample, mode: 'yolo' }));
     await expect(loadRunRequest(filePath)).rejects.toBeInstanceOf(IntakeValidationFailure);
+  });
+});
+
+describe('execution refinement counter bounds', () => {
+  it.each(['maxReplans', 'maxReextractions', 'maxRetriesPerAction'] as const)(
+    // .int() alone accepts values like 1e100 (Number.isInteger is true for such floats), which
+    // would leave a retry/replan/re-extraction loop effectively non-terminating.
+    'rejects %s above the operational ceiling (1e100 is an "integer" .int() alone would accept)',
+    (field) => {
+      const candidate = {
+        ...requestExecutionSample,
+        orchestration: {
+          execution: { guardrails: { [field]: 1e100 } },
+        },
+      };
+      expect(RepositoryGoalRequestSchema.safeParse(candidate).success).toBe(false);
+    },
+  );
+
+  it('accepts counters at the ceiling', () => {
+    const candidate = {
+      ...requestExecutionSample,
+      orchestration: {
+        execution: {
+          guardrails: { maxReplans: 100, maxReextractions: 100, maxRetriesPerAction: 100 },
+        },
+      },
+    };
+    expect(RepositoryGoalRequestSchema.safeParse(candidate).success).toBe(true);
   });
 });
