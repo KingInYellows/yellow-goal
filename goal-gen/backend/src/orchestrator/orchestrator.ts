@@ -201,8 +201,12 @@ export class Orchestrator {
   private readonly confirm: DodConfirmer;
   private readonly acceptanceGate: AcceptanceGate;
   private readonly worktreeProvider: WorktreeProvider;
-  private readonly emit: (event: Record<string, unknown>) => void;
-  private readonly events: RunEventEmitter | undefined;
+  private emit: (event: Record<string, unknown>) => void;
+  private events: RunEventEmitter | undefined;
+  /** RR7: true once this instance's injected `events` identity has been claimed by a `run()` call
+   *  — set so a REUSED instance's next call scopes a fresh child emitter (see top of `run()`)
+   *  instead of colliding on the same runId/sequence. */
+  private eventsClaimed = false;
   private readonly signal: AbortSignal;
   private readonly persistence: PersistenceProvider;
   private readonly pauseLatch: AsyncLatch;
@@ -233,6 +237,20 @@ export class Orchestrator {
    * that omit it get a fresh `crypto.randomUUID()` per call, preserving current behavior.
    */
   async run(req: ExtractRequest, runId?: string): Promise<RunSummary> {
+    // RR7: exactly one emitter identity is claimed per run() call. The FIRST call on a fresh
+    // instance claims the constructor-injected `events` AS-IS — so `new Orchestrator({ events })`
+    // callers who read `emitter.runId` right after construction, and an extractor wired to
+    // `emitter.handle` directly (see runner.ts), see the identity this run actually streams under.
+    // Every SUBSEQUENT call on a reused instance/emitter — and any call whose explicit `runId`
+    // disagrees with the claimed identity — is scoped to a fresh child (`forRun`) with its own
+    // identity and a sequence restarting at 0, so a second run() can never collide with the first's
+    // persisted `runs` row or inherit its still-advancing sequence counter.
+    if (this.events !== undefined) {
+      const reuseInjected = !this.eventsClaimed && (runId === undefined || runId === this.events.runId);
+      this.events = reuseInjected ? this.events : this.events.forRun(runId);
+      this.eventsClaimed = true;
+      this.emit = (event) => void this.events!.handle(event);
+    }
     // --- EXTRACT ---
     let goalSpec: GoalSpec;
     let extractCostUsd = 0;
@@ -1150,10 +1168,12 @@ function bareSummary(goalText: string, status: RunStatus, reason: string, costUs
   return { status, goalText, costUsd, replans: 0, reextractions: 0, actions: [], reason };
 }
 
-/** Default confirm-DoD gate: pretty-print the DoD to stdout, read one y/n line from stdin.
+/** Default confirm-DoD gate: pretty-print the DoD to STDERR, read one y/n line from stdin.
  *  Races the prompt against `signal` (SIGINT/SIGTERM) so an abort while waiting on stdin stops the
  *  prompt immediately instead of leaving the run stuck until the operator types something (PR #10
- *  review P2) — treated the same as a rejected confirmation ('cancelled', not a hang or a throw). */
+ *  review P2) — treated the same as a rejected confirmation ('cancelled', not a hang or a throw).
+ *  RR12: stdout is exclusively the run-event/v1 JSON Lines stream, so this prompt (and readline's
+ *  own echo) must never write there — every line on stdout must parse as one envelope. */
 export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   const { createInterface } = await import('node:readline/promises');
   const lines = [
@@ -1173,9 +1193,9 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
     }),
     '',
   ];
-  process.stdout.write(`${lines.join('\n')}\n`);
+  process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return false;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
     const answer = await rl.question('Proceed? [y/N] ', { signal });
     return /^y(es)?$/i.test(answer.trim());
@@ -1187,8 +1207,11 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   }
 };
 
-/** Default sign-off gate (R30): pretty-print the DoD, read one accept/reject line from stdin.
- *  Same abort-race shape as `stdinConfirm`, but the declined path is 'reject', not `false`. */
+/** Default sign-off gate (R30): pretty-print the DoD to STDERR, read one accept/reject line from
+ *  stdin. Same abort-race shape as `stdinConfirm`, but the declined path is 'reject', not `false`.
+ *  RR12: same stdout-exclusivity reason as `stdinConfirm` — every `verify+signoff`/
+ *  `operator-defined` run reaches this gate, so leaving it on stdout would corrupt the JSON Lines
+ *  stream on every such run, not just an edge case. */
 export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
   const { createInterface } = await import('node:readline/promises');
   const lines = [
@@ -1206,9 +1229,9 @@ export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
     }),
     '',
   ];
-  process.stdout.write(`${lines.join('\n')}\n`);
+  process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return 'reject';
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
     const answer = await rl.question('Accept? [y/N] ', { signal });
     return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';

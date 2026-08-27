@@ -3,9 +3,11 @@
  * Every envelope must validate against BOTH the zod contract and the vendored JSON Schema —
  * the same dual-oracle rule the compat gate applies to the other contracts.
  */
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { describe, expect, it, vi } from 'vitest';
 import { RunEventSchema } from '../../backend/src/contracts/run-event';
 import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
+import { createStdoutSink } from '../../backend/src/runner';
 import { validateAgainstJsonSchema } from '../contracts/support/json-schema-checker';
 import { loadVendoredSchema } from '../contracts/support/load-schema';
 
@@ -77,5 +79,47 @@ describe('RunEventEmitter', () => {
     const emitter = new RunEventEmitter({ sink: () => {} });
     expect(emitter.runId.length).toBeGreaterThan(0);
     expect(emitter.next('x').runId).toBe(emitter.runId);
+  });
+});
+
+// `process.stdout.write()` reports a broken pipe (EPIPE) asynchronously via the stream's 'error'
+// event rather than a throw, so the emitter's synchronous try/catch above cannot contain it —
+// `createStdoutSink` (runner.ts) handles it at the stream boundary instead. These tests drive a
+// fake stream to prove that boundary actually survives an async stream error.
+describe('createStdoutSink (async stream-error containment, runner.ts)', () => {
+  function fakeStream() {
+    const written: string[] = [];
+    const stream = Object.assign(new EventEmitter(), { write: (chunk: string) => (written.push(chunk), true) });
+    return { stream: stream as unknown as NodeJS.WritableStream, written };
+  }
+
+  it('writes one JSON-lines envelope per call', () => {
+    const { stream, written } = fakeStream();
+    const sink = createStdoutSink(stream);
+    sink({ type: 'run.start' });
+    expect(written).toEqual([`${JSON.stringify({ type: 'run.start' })}\n`]);
+  });
+
+  it('does not crash on an async stream error and degrades quietly afterward', () => {
+    const { stream, written } = fakeStream();
+    const sink = createStdoutSink(stream);
+    sink({ type: 'run.start' });
+    const epipe = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    // A stream `emit('error', ...)` with no listener throws synchronously in Node — this asserts
+    // createStdoutSink's own listener is what prevents that process-killing crash.
+    expect(() => stream.emit('error', epipe)).not.toThrow();
+    sink({ type: 'run.summary', status: 'failed' });
+    // The post-error write is dropped, not retried against a pipe that cannot un-close.
+    expect(written).toEqual([`${JSON.stringify({ type: 'run.start' })}\n`]);
+  });
+
+  it('surfaces a non-EPIPE stream error on stderr without throwing', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const { stream } = fakeStream();
+    createStdoutSink(stream);
+    const err = Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    expect(() => stream.emit('error', err)).not.toThrow();
+    expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('disk full'))).toBe(true);
+    stderrSpy.mockRestore();
   });
 });

@@ -14,7 +14,9 @@ import { RunEventSchemaVersion, type RunEvent } from '../contracts/run-event';
 export interface RunEventEmitterOptions {
   /** Minted here when absent — entry points pass the same id to `Orchestrator.run()`. */
   runId?: string;
-  /** Receives every minted envelope, in sequence order (e.g. a JSON-lines stdout writer). */
+  /** Receives every minted envelope, in sequence order (e.g. a JSON-lines stdout writer). Must
+   *  guard its own asynchronous failure modes (e.g. EPIPE on a broken stdout pipe) — `next()`'s
+   *  catch below only contains a sink that throws synchronously. */
   sink: (envelope: RunEvent) => void;
   /** Injectable for deterministic tests; defaults to wall clock. */
   clock?: () => Date;
@@ -54,13 +56,25 @@ export class RunEventEmitter {
     try {
       this.sink(envelope);
     } catch (e) {
-      // A telemetry sink must never fail the run it describes (broken stdout pipe when output is
-      // piped to `head`, a future disconnected SSE client). The mint still counts — the sequence
-      // stays gapless for consumers — and the failure is surfaced on stderr, not thrown through
-      // Orchestrator.run()'s documented never-throws contract.
+      // A synchronously-throwing sink must never fail the run it describes. The mint still counts
+      // — the sequence stays gapless for consumers — and the failure is surfaced on stderr, not
+      // thrown through Orchestrator.run()'s documented never-throws contract. This only contains a
+      // sink that throws directly: Node reports a broken stdout pipe (EPIPE) via the stream's
+      // asynchronous 'error' event, not a throw from `write()`, so it never reaches this catch —
+      // the sink implementation itself must guard against that (see runner.ts's
+      // `createStdoutSink`, which degrades quietly after a stream error instead of relying on
+      // this catch).
       const message = e instanceof Error ? e.message : String(e);
       process.stderr.write(`[run-event-emitter] sink failed for sequence ${envelope.sequence}: ${message}\n`);
     }
     return envelope;
+  }
+
+  /** Scope a fresh per-run emitter sharing this instance's `sink`/`clock` (RR7): its own identity
+   *  (minted if `runId` is omitted) and a sequence counter that restarts at 0 — used by
+   *  `Orchestrator` so a reused instance's second `run()` call can never collide with the first's
+   *  identity or inherit its already-advanced counter. */
+  forRun(runId?: string): RunEventEmitter {
+    return new RunEventEmitter({ runId, sink: this.sink, clock: this.clock });
   }
 }

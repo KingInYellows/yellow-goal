@@ -16,6 +16,8 @@
  * timestamp, type, payload}` envelope minted by ONE per-run `RunEventEmitter` shared by the
  * extractor, the orchestrator, and this entry (RR7) — the previous ad-hoc `{t, ev, ...}` shape
  * is gone. The last line of every run, success or failure, is the `run.summary` envelope (RR10).
+ * A broken stdout pipe (EPIPE) is handled at the stream level by `createStdoutSink` below, not by
+ * the emitter — see its doc comment.
  *
  *   --yes, -y   auto-confirm the definition-of-done gate (non-interactive; for automation/the
  *               probe). Sign-off is deliberately NOT auto-accepted (see below).
@@ -32,10 +34,31 @@ import type { DodConfirmer } from './orchestrator/orchestrator';
 import { loadRunRequest, requestToRunInputs } from './run/request-to-run';
 import type { RunConfig, RunSummary } from './types';
 
-/** One run-event/v1 envelope per stdout line. */
-function stdoutSink(envelope: unknown): void {
-  process.stdout.write(`${JSON.stringify(envelope)}\n`);
+/**
+ * Wraps a writable stream as a run-event/v1 sink (one JSON Lines envelope per call). Node reports
+ * a broken pipe (EPIPE — e.g. stdout piped to `head`, or a disconnected reader) asynchronously via
+ * the stream's 'error' event, not as a throw from `write()`; left unlistened, Node's default
+ * behavior is to throw and kill the process before the terminal `run.summary` can be produced —
+ * the emitter's synchronous try/catch (run-event-emitter.ts) can't see it either. Handled once
+ * here, at the stream boundary: after any stream error the sink degrades quietly (drops further
+ * writes) rather than retrying a pipe that cannot un-close and cannot throw repeatedly. Exported
+ * so tests can drive a fake stream instead of the real `process.stdout`.
+ */
+export function createStdoutSink(stream: NodeJS.WritableStream = process.stdout): (envelope: unknown) => void {
+  let broken = false;
+  stream.on('error', (err: NodeJS.ErrnoException) => {
+    broken = true;
+    if (err.code !== 'EPIPE') {
+      process.stderr.write(`[runner] stdout error: ${err.message}\n`);
+    }
+  });
+  return (envelope: unknown): void => {
+    if (broken) return;
+    stream.write(`${JSON.stringify(envelope)}\n`);
+  };
 }
+
+const stdoutSink = createStdoutSink();
 
 export type RunnerArgs =
   | { kind: 'usage'; message: string }
