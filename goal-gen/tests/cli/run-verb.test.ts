@@ -109,6 +109,16 @@ describe('run verb (stub engine)', () => {
     expect((JSON.parse(stderrText().trim()) as { error: { code: string } }).error.code).toBe('USAGE_ERROR');
   });
 
+  it('rejects extra positionals with USAGE_ERROR, exit 2', async () => {
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await main(['run', requestPath, 'accidental.json', '--executor', 'stub']);
+    expect(code).toBe(2);
+    expect(stdoutLines()).toEqual([]);
+    const parsed = JSON.parse(stderrText().trim()) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('USAGE_ERROR');
+    expect(parsed.error.message).toContain('exactly one');
+  });
+
   it('translates a malformed option (missing --executor value) into USAGE_ERROR, exit 2', async () => {
     const requestPath = await writeRequest(requestExecutionSample);
     const code = await main(['run', requestPath, '--executor']);

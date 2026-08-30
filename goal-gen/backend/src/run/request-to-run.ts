@@ -22,6 +22,10 @@ export interface RunInputs {
    *  entry points apply RR19 on top of this — for a real executor, a request file alone cannot
    *  auto-confirm; the invoking operator's CLI `--yes` is required. */
   autoConfirm: boolean;
+  /** `target.repository` verbatim — the requested repository to execute against. */
+  repository: string;
+  /** `target.ref` if present — the specific ref/branch to check out. */
+  ref?: string;
 }
 
 export interface RunMappingOptions {
@@ -131,6 +135,8 @@ export function requestToRunInputs(request: RepositoryGoalRequest, options: RunM
     goalText: request.intent.goal,
     runConfig: defaultRunConfig(overrides),
     autoConfirm: execution?.autoConfirmDod === true,
+    repository: request.target.repository,
+    ref: request.target.ref,
   };
 }
 

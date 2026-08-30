@@ -101,8 +101,8 @@ export function parseRunnerArgs(args: string[]): RunnerArgs {
  *  the early usage/request failures below, which never reach the orchestrator — ends the stream
  *  with a `run.summary` envelope (RR10); orchestrator paths emit it from `summary()` itself. */
 async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitter({ sink: stdoutSink })): Promise<RunSummary> {
-  const failedSummary = (reason: string): RunSummary => {
-    const summary: RunSummary = { status: 'failed', goalText: '', costUsd: 0, replans: 0, reextractions: 0, actions: [], reason };
+  const failedSummary = (reason: string, failedGoalText = ''): RunSummary => {
+    const summary: RunSummary = { status: 'failed', goalText: failedGoalText, costUsd: 0, replans: 0, reextractions: 0, actions: [], reason };
     emitter.handle({ ev: 'run.summary', ...summary });
     return summary;
   };
@@ -117,6 +117,8 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
   let config: RunConfig;
   let autoConfirm: boolean;
   let requestAskedAutoConfirm = false;
+  let repository: string | undefined;
+  let ref: string | undefined;
   if (parsed.kind === 'request') {
     try {
       const inputs = requestToRunInputs(await loadRunRequest(parsed.requestPath), {
@@ -129,6 +131,8 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
       // in-stream below, never silently dropped.
       autoConfirm = parsed.autoConfirm;
       requestAskedAutoConfirm = inputs.autoConfirm;
+      repository = inputs.repository;
+      ref = inputs.ref;
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const errors = e instanceof IntakeValidationFailure ? e.errors : undefined;
@@ -177,10 +181,22 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
 
   // `events` supersedes onEvent; the run's id defaults to emitter.runId so stream and summary agree.
   const orchestrator = new Orchestrator({ extractor, executor, verifier, config, events: emitter, confirm, signal: ac.signal });
-  return orchestrator.run({ goalText }).finally(() => {
+  // TODO: worktree provisioning from the requested repository is not yet implemented — the default
+  // worktreeProvider still creates scratch repos in tmpdir (worktree.ts:6-8). This passes repoPath
+  // so the extractor has access, but execution still happens in a fresh scratch repo until the
+  // worktree provider is extended to support cloning from a source repository/ref.
+  try {
+    return await orchestrator.run({ goalText, config: { repoPath: repository } });
+  } catch (e) {
+    // stdinAcceptanceGate throws on closed stdin at sign-off (non-interactive) — still terminate
+    // the stream with run.summary (RR10) instead of an unhandled rejection after real spend.
+    const reason = `run aborted by unexpected error: ${e instanceof Error ? e.message : String(e)}`;
+    emitter.handle({ ev: 'error', message: reason });
+    return failedSummary(reason, goalText);
+  } finally {
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
-  });
+  }
 }
 
 // Auto-run only when invoked as the entry script (so tests can import without side effects).

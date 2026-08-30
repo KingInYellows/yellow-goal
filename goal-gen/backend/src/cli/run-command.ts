@@ -144,6 +144,9 @@ export async function runRunCommand(argv: string[]): Promise<number> {
     }
   })();
 
+  if (positionals.length > 1) {
+    throw new CliUsageError('run accepts exactly one <request-file> positional argument');
+  }
   const requestPath = positionals[0];
   if (!requestPath) throw new CliUsageError('run requires a <request-file> positional argument');
   const executorKind = values.executor;
