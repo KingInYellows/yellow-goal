@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_WALL_CLOCK_MS } from '../orchestrator/guardrails';
 
 /**
  * RepositoryGoalRequest — mirrors goal-gen/schemas/vendored/request.schema.json exactly (nested
@@ -35,6 +36,50 @@ const RequestConstraintsSchema = z
   })
   .catchall(z.boolean());
 
+/** Guardrail overrides for an executable run (RR2) — every field optional, defaulting via
+ *  `defaultRunConfig()` (ADR-0010). Strict: a typo in spend-controlling config must fail closed,
+ *  not silently run with defaults. */
+const ExecutionGuardrailsSchema = z
+  .object({
+    // .finite(): JSON `1e400` parses to Infinity, which passes .positive() and would disable
+    // every budget comparison; .max() on the timeout: Node clamps setTimeout delays above
+    // 2^31-1 to 1ms, silently turning a long timeout into an instant kill.
+    maxBudgetUsd: z.number().positive().finite().optional(),
+    // .max(100) on all three counters: .int() alone accepts values like 1e100 (Number.isInteger is
+    // true for such floats, since they have no fractional part), which would leave a retry/replan/
+    // re-extraction loop effectively non-terminating when a step fails without spending budget (e.g.
+    // worktree provisioning), since the $ guard never trips. 100 is a generous multiple of the
+    // ADR-0010 defaults (5 / 2 / 3), not a literal safe-integer ceiling.
+    maxReplans: z.number().int().min(0).max(100).optional(),
+    maxReextractions: z.number().int().min(0).max(100).optional(),
+    maxRetriesPerAction: z.number().int().min(1).max(100).optional(),
+    // Capped at the ADR-0010 run wall-clock (orchestrator enforcement deferred in v1) — not Node's
+    // setTimeout maximum, which would let one hung child dominate the process for weeks.
+    actionTimeoutMs: z.number().int().positive().max(MAX_WALL_CLOCK_MS).optional(),
+  })
+  .strict();
+
+/** Run intent configuration (RR2, plans/specs/request-to-run-pipeline.md). Lives inside the
+ *  untyped vendored `orchestration` bucket like `permissionProfile` does, so the vendored
+ *  request.schema.json stays verbatim. Strict, unlike its passthrough parent — unknown keys
+ *  here configure real execution and must be rejected. */
+export const RequestExecutionSchema = z
+  .object({
+    autoConfirmDod: z.boolean().optional(),
+    // Pattern-constrained because this value reaches the claude subprocess argv adjacent to
+    // --model: no leading '-', no whitespace — a crafted value must never be parseable as a
+    // separate CLI flag by the child's own arg parser.
+    model: z
+      .string()
+      .min(1)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/, 'model must start with an alphanumeric character and contain only letters, digits, and ._:-')
+      .optional(),
+    guardrails: ExecutionGuardrailsSchema.optional(),
+  })
+  .strict();
+
+export type RequestExecution = z.infer<typeof RequestExecutionSchema>;
+
 /** The vendored `orchestration` property is `{"type":"object"}` (no field constraints) — this
  *  narrower shape is a compatible refinement: everything it accepts still validates against the
  *  loose JSON Schema. `permissionProfile`/`orchestrationProfile` are populated by intake, not
@@ -48,6 +93,7 @@ const RequestOrchestrationSchema = z
     maxParallelWorkers: z.number().int().min(1).optional(),
     permissionProfile: z.string().optional(),
     orchestrationProfile: z.string().optional(),
+    execution: RequestExecutionSchema.optional(),
     researchBounds: z
       .object({
         maxExternalQueries: z.number().int().min(0).optional(),

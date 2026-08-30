@@ -15,6 +15,9 @@ export const MAX_RETRIES_PER_ACTION = 3;
 export const MAX_SAME_SUBGOAL_FAILURES = 2;
 /** Per-action timeout (10 min). Separate from the deferred 60-min wall-clock guardrail. */
 export const ACTION_TIMEOUT_MS = 600_000;
+/** Run-level wall-clock cap (ADR-0010). Orchestrator enforcement is deferred in v1, but request
+ *  overrides must not exceed it — a per-action timeout above the run cap is never meaningful. */
+export const MAX_WALL_CLOCK_MS = 3_600_000;
 
 /** Default executor model alias — `haiku` keeps the per-action context floor (~$0.08) low (spike §4). */
 export const DEFAULT_MODEL = 'haiku';

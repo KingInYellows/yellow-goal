@@ -40,6 +40,14 @@ const cases: CompatCase[] = [
   },
   {
     kind: 'vendored',
+    name: 'RepositoryGoalRequest (execution refinement, RR2)',
+    schemaFile: 'request',
+    zodSchema: contracts.RepositoryGoalRequestSchema,
+    sample: samples.requestExecutionSample,
+    breakKey: 'mode',
+  },
+  {
+    kind: 'vendored',
     name: 'RepoProfile',
     schemaFile: 'repo-profile',
     zodSchema: contracts.RepoProfileSchema,
