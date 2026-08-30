@@ -3,7 +3,8 @@
  * Non-interactive CLI dispatcher for the repository goal packet compiler AND the M1 run verb.
  *
  * Commands: `request create`, `request validate <file>`, `inspect <request>`, `analyze
- * <request>`, `compile <request>`, `packet verify <path>`, `run <request>` (RR11). `--json`
+ * <request>`, `compile <request>`, `packet verify <path>`, `run <request>` (RR11),
+ * `version` (RR17, identity probe only). `--json`
  * selects machine-readable stdout for successful command output; failures are always a
  * single-line structured JSON object on stderr with a nonzero exit code, `--json` or not, so
  * scripts can rely on it either way. `run` streams run-event/v1 JSON Lines on stdout instead of
@@ -16,6 +17,7 @@ import {
   runPacketVerify,
   runRequestCreate,
   runRequestValidate,
+  runVersion,
   type CommandOutput,
 } from './commands';
 import { CliUsageError, NotWiredError } from './errors';
@@ -71,6 +73,10 @@ async function dispatch(argv: string[]): Promise<number> {
       }
       throw new CliUsageError(`unknown 'packet' subcommand: ${sub ?? '(none)'} (expected verify)`);
     }
+    case 'version':
+      // Identity probe only (RR17) — non-normative; see runVersion's contract note.
+      writeSuccess(await runVersion(rest));
+      return 0;
     case 'run': {
       // M1 subsystem verb — dynamically imported so the compiler verbs' process never loads
       // executor/orchestrator mutation code (packet-compiler.md isolation rule). The command
@@ -89,7 +95,7 @@ async function dispatch(argv: string[]): Promise<number> {
       return 0;
     default:
       throw new CliUsageError(
-        `unknown command: ${command ?? '(none)'} (expected request|inspect|analyze|compile|packet|run)`,
+        `unknown command: ${command ?? '(none)'} (expected request|inspect|analyze|compile|packet|run|version)`,
       );
   }
 }
@@ -109,6 +115,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     if (err instanceof IntakeValidationFailure) {
       writeError('VALIDATION_FAILED', err.message, err.errors);
       return 1;
+    }
+    // Node's `parseArgs` (used by every verb) throws a plain TypeError with an
+    // ERR_PARSE_ARGS_* code for bad flags/positionals — that's a CLI usage mistake, not an
+    // internal error, so it gets the same USAGE_ERROR/exit-2 envelope as CliUsageError across
+    // every verb, not just the ones with a bespoke wrapper.
+    if (err instanceof Error && typeof (err as Error & { code?: unknown }).code === 'string' && (err as Error & { code: string }).code.startsWith('ERR_PARSE_ARGS')) {
+      writeError('USAGE_ERROR', err.message);
+      return 2;
     }
     const message = err instanceof Error ? err.message : String(err);
     // Domain errors that carry structured diagnostics in a `details` field (e.g.

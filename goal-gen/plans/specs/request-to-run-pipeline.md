@@ -145,6 +145,31 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
   `--executor stub`; the real-executor path stays covered by `tests/integration/
   runner.probe.ts` (outside the vitest glob, operator-invoked only).
 
+### Version identity probe (RR17)
+
+- **RR17 — identity, not semantics.** `version [--json]` emits `{ "engineVersion": "…" }`,
+  where `engineVersion` is the **package artifact version** (package.json — what a tarball
+  install pins). The verb is deliberately non-normative: it answers "which engine artifact is
+  on the other side of the process boundary", nothing more. What a consumer may *infer* from
+  the value — compatibility ranges, capability sets, schema versions — is defined by provider
+  protocol v1 (step 4), not by this verb. This split exists so step 3's bridge can prove
+  genuine (not simulated) structured incompatible-version handling against a real probe
+  without step 4's semantics being preempted.
+
+  **Three distinct versions exist and are all currently the string `0.1.0` — do not conflate
+  them** (divergence is guaranteed; they will not move in lockstep):
+  1. `package.json` `version` — the engine **artifact** identity. This is what RR17 emits and
+     what the consumer pins.
+  2. `ENGINE_VERSION` (`backend/src/packets/compiler.ts`) — the **pack/packet-format**
+     compatibility version (`loadPack` consumes it). It is not the engine's identity and
+     should be renamed to say what it is when protocol v1 lands.
+  3. The **protocol** version — does not exist yet; created by provider protocol v1.
+
+  **Name collision warning:** the packet `MANIFEST.json` also has an `engineVersion` field —
+  it carries №2 (`ENGINE_VERSION`, pack-format compatibility), NOT the artifact version the
+  `version` verb emits under the same name. A consumer must never equate the two; protocol v1
+  should rename one side when it defines compatibility semantics.
+
 ### Operator consent & non-interactive gates (RR18–RR20)
 
 Added 2026-08-26 from the adversarial review of the `run` verb (PR #18): a request FILE is
@@ -191,6 +216,7 @@ oversight needs consent expressed on the command line, not in the file.
 | 2 | `agent/feat/run-request-contract` | RR1–RR5 |
 | 3 | `agent/feat/run-event-v1` | RR6–RR10 |
 | 4 | `agent/feat/run-verb` | RR11–RR16 |
+| 5 | `agent/feat/version-verb` | RR17 |
 
 ### Provider-protocol seed (six-step order, step 4)
 

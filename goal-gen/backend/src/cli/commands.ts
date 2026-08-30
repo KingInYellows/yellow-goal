@@ -291,3 +291,34 @@ export async function runPacketVerify(argv: string[]): Promise<CommandOutput<Pac
   const result = await fn(args);
   return { json: values.json === true, output: result };
 }
+
+// ---------------------------------------------------------------------------
+// version — engine artifact identity (RR17)
+// ---------------------------------------------------------------------------
+
+export interface VersionOutput {
+  engineVersion: string;
+}
+
+/**
+ * Identity probe ONLY — deliberately non-normative (RR17, plans/specs/
+ * request-to-run-pipeline.md). `engineVersion` is the goal-gen package artifact version
+ * (package.json — what a tarball install pins), which is exactly what an external process
+ * consumer can hold constant. It is NOT `packets/compiler.ts`'s `ENGINE_VERSION` (that string
+ * tracks pack/packet-format compatibility) and NOT a protocol version (none exists yet).
+ * Compatibility semantics — what a consumer may infer from this value — are defined by
+ * provider protocol v1, not here.
+ */
+export async function runVersion(argv: string[]): Promise<CommandOutput<VersionOutput>> {
+  const { values } = parseArgs({
+    args: argv,
+    options: { json: { type: 'boolean', default: false } },
+    allowPositionals: false,
+  });
+  const raw = await readFile(new URL('../../../package.json', import.meta.url), 'utf8');
+  const pkg = JSON.parse(raw) as { version?: unknown };
+  if (typeof pkg.version !== 'string' || pkg.version === '') {
+    throw new Error('package.json has no version — cannot report engine identity');
+  }
+  return { json: values.json === true, output: { engineVersion: pkg.version } };
+}

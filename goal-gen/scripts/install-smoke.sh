@@ -30,6 +30,12 @@ mkdir -p "$target"
 git -C "$target" init -q
 git -C "$target" -c user.name=smoke -c user.email=smoke@invalid commit -q --allow-empty -m init
 
+# 4a. version → exit 0 and an engineVersion matching the packed artifact (RR17: the installed
+#     tarball must self-identify — this is the probe an external consumer pins against).
+out="$("$bin" version --json)"
+expected_version="$(node -p "require('./package.json').version")"
+node -e "const o=JSON.parse(process.argv[1]); if(o.engineVersion!==process.argv[2]) throw new Error('expected engineVersion '+process.argv[2]+', got: '+process.argv[1])" "$out" "$expected_version"
+
 # 4. request create → exit 0, JSON stdout, request file written.
 out="$("$bin" request create --repo "$target" --goal "install smoke" --output "$workdir/request.json" --json)"
 node -e "const o=JSON.parse(process.argv[1]); if(!o.requestId) throw new Error('request create output missing requestId')" "$out"
