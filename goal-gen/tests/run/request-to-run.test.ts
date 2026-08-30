@@ -31,6 +31,8 @@ describe('requestToRunInputs (RR3)', () => {
         model: 'haiku',
       }),
     );
+    expect(inputs.repository).toBe(requestExecutionSample.target.repository);
+    expect(inputs.ref).toBe(requestExecutionSample.target.ref);
   });
 
   it('preserves the goal text verbatim — no trimming or rewriting', () => {
@@ -52,6 +54,8 @@ describe('requestToRunInputs (RR3)', () => {
     const inputs = requestToRunInputs(request);
     expect(inputs.runConfig).toEqual(defaultRunConfig());
     expect(inputs.autoConfirm).toBe(false);
+    expect(inputs.repository).toBe(requestSample.target.repository);
+    expect(inputs.ref).toBe(requestSample.target.ref);
   });
 
   it.each(['review-and-compile', 'review-only'] as const)(
@@ -181,6 +185,21 @@ describe('requestToRunInputs (RR3)', () => {
       orchestration: { ...requestExecutionSample.orchestration, permissionProfile: 'autonomous-isolated' },
     });
     expect(requestToRunInputs(request).goalText).toBe(request.intent.goal);
+  });
+
+  it('extracts repository and handles optional ref', () => {
+    const withRef = RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      target: { repository: '/path/to/repo', ref: 'feature-branch' },
+    });
+    const withoutRef = RepositoryGoalRequestSchema.parse({
+      ...requestExecutionSample,
+      target: { repository: '/path/to/repo' },
+    });
+    expect(requestToRunInputs(withRef).repository).toBe('/path/to/repo');
+    expect(requestToRunInputs(withRef).ref).toBe('feature-branch');
+    expect(requestToRunInputs(withoutRef).repository).toBe('/path/to/repo');
+    expect(requestToRunInputs(withoutRef).ref).toBeUndefined();
   });
 });
 
