@@ -39,6 +39,7 @@ import type {
 } from '../types';
 import { defaultRunConfig } from './guardrails';
 import { AsyncLatch } from './async-gate';
+import type { RunEventEmitter } from '../events/run-event-emitter';
 
 type PersistedRunStatus = RunStatus | 'running';
 
@@ -82,8 +83,10 @@ export interface PersistenceProvider {
   updateRunStatus(runId: string, status: PersistedRunStatus): Promise<void>;
   /** Durable event-log write (R5); this shell wires only the `AwaitingAcceptance` transition
    *  (R31, synchronous on the gate-entry path) — every other event type's write is shell 03's
-   *  async `onEvent` queue (R19). */
-  insertRunEvent(event: { runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown> }): Promise<void>;
+   *  async `onEvent` queue (R19). `sequence` is the run-event/v1 stream position minted by the
+   *  run's `RunEventEmitter` (RR9) — the durable log and the stream can never disagree on
+   *  ordering because both record the same mint. */
+  insertRunEvent(event: { runId: string; planId: string; stepId?: string; type: string; payload: Record<string, unknown>; sequence: number }): Promise<void>;
 }
 
 /** Default no-op persistence — existing CLI/test usage that never injects `persistence` sees zero
@@ -107,6 +110,12 @@ export interface OrchestratorDeps {
   acceptanceGate?: AcceptanceGate;
   worktreeProvider?: WorktreeProvider;
   onEvent?: (event: Record<string, unknown>) => void;
+  /** Per-run run-event/v1 emitter (RR6–RR9). When provided it supersedes `onEvent`: every ad-hoc
+   *  `{ ev, ... }` emit routes through `events.handle`, the run defaults its id to
+   *  `events.runId`, and the synchronous `AwaitingAcceptance` persistence write records the
+   *  emitter-minted `sequence`. Entry points construct one emitter per run and share it with the
+   *  extractor's `onEvent` so the stream's sequence is monotonic across all sources (RR7). */
+  events?: RunEventEmitter;
   /** Cancellation: propagated to the executor; default never aborts. */
   signal?: AbortSignal;
   /** Optional persistence seam (R1-R6); defaults to a no-op. */
@@ -155,6 +164,9 @@ interface RunState {
    *  at least one action succeeded before clearing signoffRemediationActive (prevents reopening
    *  sign-off when all remediation actions failed due to unmet preconditions). */
   signoffRemediationSuccesses: number;
+  /** Per-run sequence source for durable event writes when no RunEventEmitter is injected —
+   *  keeps repeat writes (e.g. a reopened sign-off gate) from colliding on unique(run_id, sequence). */
+  fallbackEventSequence: number;
   /** Action ids the operator has confirmed (initial DoD + every re-confirm). A replan that surfaces
    *  an id NOT in here must be re-confirmed before its verify.command runs (PR #8 review P1). */
   confirmed: Set<string>;
@@ -189,7 +201,12 @@ export class Orchestrator {
   private readonly confirm: DodConfirmer;
   private readonly acceptanceGate: AcceptanceGate;
   private readonly worktreeProvider: WorktreeProvider;
-  private readonly emit: (event: Record<string, unknown>) => void;
+  private emit: (event: Record<string, unknown>) => void;
+  private events: RunEventEmitter | undefined;
+  /** RR7: true once this instance's injected `events` identity has been claimed by a `run()` call
+   *  — set so a REUSED instance's next call scopes a fresh child emitter (see top of `run()`)
+   *  instead of colliding on the same runId/sequence. */
+  private eventsClaimed = false;
   private readonly signal: AbortSignal;
   private readonly persistence: PersistenceProvider;
   private readonly pauseLatch: AsyncLatch;
@@ -202,7 +219,9 @@ export class Orchestrator {
     this.confirm = deps.confirm ?? stdinConfirm;
     this.acceptanceGate = deps.acceptanceGate ?? stdinAcceptanceGate;
     this.worktreeProvider = deps.worktreeProvider ?? createWorktree;
-    this.emit = deps.onEvent ?? (() => {});
+    const events = deps.events;
+    this.events = events;
+    this.emit = events !== undefined ? (event) => void events.handle(event) : deps.onEvent ?? (() => {});
     this.signal = deps.signal ?? new AbortController().signal;
     this.persistence = deps.persistence ?? noopPersistence;
     this.pauseLatch = deps.pauseLatch ?? new AsyncLatch();
@@ -218,6 +237,20 @@ export class Orchestrator {
    * that omit it get a fresh `crypto.randomUUID()` per call, preserving current behavior.
    */
   async run(req: ExtractRequest, runId?: string): Promise<RunSummary> {
+    // RR7: exactly one emitter identity is claimed per run() call. The FIRST call on a fresh
+    // instance claims the constructor-injected `events` AS-IS — so `new Orchestrator({ events })`
+    // callers who read `emitter.runId` right after construction, and an extractor wired to
+    // `emitter.handle` directly (see runner.ts), see the identity this run actually streams under.
+    // Every SUBSEQUENT call on a reused instance/emitter — and any call whose explicit `runId`
+    // disagrees with the claimed identity — is scoped to a fresh child (`forRun`) with its own
+    // identity and a sequence restarting at 0, so a second run() can never collide with the first's
+    // persisted `runs` row or inherit its still-advancing sequence counter.
+    if (this.events !== undefined) {
+      const reuseInjected = !this.eventsClaimed && (runId === undefined || runId === this.events.runId);
+      this.events = reuseInjected ? this.events : this.events.forRun(runId);
+      this.eventsClaimed = true;
+      this.emit = (event) => void this.events!.handle(event);
+    }
     // --- EXTRACT ---
     let goalSpec: GoalSpec;
     let extractCostUsd = 0;
@@ -236,8 +269,11 @@ export class Orchestrator {
       this.emit({ ev: 'extract.failed', message, costUsd: failedCostUsd });
       // Item 3 (Ctrl-C consistency): an abort during extraction must surface as 'cancelled', the same
       // terminal status the main loop returns for every other abort path — not 'failed'.
-      if (this.signal.aborted) return bareSummary(req.goalText, 'cancelled', 'aborted during extraction', failedCostUsd);
-      return bareSummary(req.goalText, 'failed', `extraction failed: ${message}`, failedCostUsd);
+      // RR10: these pre-RunState returns must still terminate the stream with a run.summary
+      // envelope — runner.ts deleted its unconditional post-run emit on the strength of that
+      // guarantee, so bareSummary() alone (which never emits) is not enough here.
+      if (this.signal.aborted) return this.emitBareSummary(req.goalText, 'cancelled', 'aborted during extraction', failedCostUsd);
+      return this.emitBareSummary(req.goalText, 'failed', `extraction failed: ${message}`, failedCostUsd);
     }
     // PR #8 review P2: the extractor schema permits `cost <= 0` and duplicate ids (both are deferred
     // to the planner's validateIntake throw, see extractors/schema.ts) — but re-extraction is
@@ -261,6 +297,7 @@ export class Orchestrator {
       planCursor: 0,
       signoffRemediationActive: false,
       signoffRemediationSuccesses: 0,
+      fallbackEventSequence: 0,
       confirmed: new Set(),
       replans: 0,
       replanStreak: 0,
@@ -268,7 +305,9 @@ export class Orchestrator {
       accumulatedCostUsd: extractCostUsd,
       failures: new Map(),
       outcomes: new Map(),
-      runId: runId ?? randomUUID(),
+      // With a run-event emitter, default to ITS id so streamed envelopes and persisted rows
+      // agree on the run's identity without every caller passing the id twice (RR6/RR9).
+      runId: runId ?? this.events?.runId ?? randomUUID(),
       runPersisted: false,
     };
     this.emit({
@@ -919,10 +958,26 @@ export class Orchestrator {
    *  R31 requires, so a concurrent `GET /runs/:id` can never observe a stale status. Both calls
    *  share one `persistence.error` op label since R31 treats this as one logical transition. */
   private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
+    // RR9: with an emitter, the gate-entry event is streamed AND persisted from ONE mint, so the
+    // durable log's `sequence` always matches the stream's. Without one (legacy `onEvent`
+    // callers), mint from the per-run fallback counter — a constant 0 would collide with the
+    // unique(run_id, sequence) index when the sign-off gate reopens after a rejection
+    // (reject → remediate → re-satisfy), silently losing the second audit row.
+    const payload = { goalState: state.goalSpec.goalState };
+    const envelope = this.events?.next('AwaitingAcceptance', payload);
+    const sequence = envelope?.sequence ?? state.fallbackEventSequence++;
     await this.persistBestEffort('awaitingAcceptance', async () => {
       await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
-      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload: { goalState: state.goalSpec.goalState } });
+      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload, sequence });
     });
+  }
+
+  /** RR10: even failures that happen before any RunState exists (extraction threw, or the run was
+   *  aborted mid-extraction) must terminate the event stream with a run.summary envelope. */
+  private emitBareSummary(goalText: string, status: RunStatus, reason: string, costUsd: number): RunSummary {
+    const summary = bareSummary(goalText, status, reason, costUsd);
+    this.emit({ ev: 'run.summary', ...summary });
+    return summary;
   }
 
   private async persistRunStatus(state: RunState, status: PersistedRunStatus, op: string): Promise<void> {
@@ -1113,10 +1168,12 @@ function bareSummary(goalText: string, status: RunStatus, reason: string, costUs
   return { status, goalText, costUsd, replans: 0, reextractions: 0, actions: [], reason };
 }
 
-/** Default confirm-DoD gate: pretty-print the DoD to stdout, read one y/n line from stdin.
+/** Default confirm-DoD gate: pretty-print the DoD to STDERR, read one y/n line from stdin.
  *  Races the prompt against `signal` (SIGINT/SIGTERM) so an abort while waiting on stdin stops the
  *  prompt immediately instead of leaving the run stuck until the operator types something (PR #10
- *  review P2) — treated the same as a rejected confirmation ('cancelled', not a hang or a throw). */
+ *  review P2) — treated the same as a rejected confirmation ('cancelled', not a hang or a throw).
+ *  RR12: stdout is exclusively the run-event/v1 JSON Lines stream, so this prompt (and readline's
+ *  own echo) must never write there — every line on stdout must parse as one envelope. */
 export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   const { createInterface } = await import('node:readline/promises');
   const lines = [
@@ -1136,9 +1193,9 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
     }),
     '',
   ];
-  process.stdout.write(`${lines.join('\n')}\n`);
+  process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return false;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
     const answer = await rl.question('Proceed? [y/N] ', { signal });
     return /^y(es)?$/i.test(answer.trim());
@@ -1150,8 +1207,11 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   }
 };
 
-/** Default sign-off gate (R30): pretty-print the DoD, read one accept/reject line from stdin.
- *  Same abort-race shape as `stdinConfirm`, but the declined path is 'reject', not `false`. */
+/** Default sign-off gate (R30): pretty-print the DoD to STDERR, read one accept/reject line from
+ *  stdin. Same abort-race shape as `stdinConfirm`, but the declined path is 'reject', not `false`.
+ *  RR12: same stdout-exclusivity reason as `stdinConfirm` — every `verify+signoff`/
+ *  `operator-defined` run reaches this gate, so leaving it on stdout would corrupt the JSON Lines
+ *  stream on every such run, not just an edge case. */
 export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
   const { createInterface } = await import('node:readline/promises');
   const lines = [
@@ -1169,9 +1229,9 @@ export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
     }),
     '',
   ];
-  process.stdout.write(`${lines.join('\n')}\n`);
+  process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return 'reject';
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
     const answer = await rl.question('Accept? [y/N] ', { signal });
     return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';
