@@ -67,9 +67,14 @@ function capturePersistence(): PersistenceProvider & { runEvents: CapturedRunEve
   };
 }
 
-function build(policy: GoalSpec['completionPolicy'], persistence?: PersistenceProvider) {
+function build(policy: GoalSpec['completionPolicy'], persistence?: PersistenceProvider, onEnvelope?: (event: RunEvent) => void) {
   const envelopes: RunEvent[] = [];
-  const emitter = new RunEventEmitter({ sink: (e) => envelopes.push(e) });
+  const emitter = new RunEventEmitter({
+    sink: (event) => {
+      envelopes.push(event);
+      onEnvelope?.(event);
+    },
+  });
   const orch = new Orchestrator({
     extractor: new StubExtractor({ goalSpec: goalSpec(policy) }),
     executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
@@ -145,7 +150,12 @@ describe('orchestrator with a RunEventEmitter (RR6–RR10)', () => {
 
   it('persists AwaitingAcceptance with the exact sequence of its streamed envelope (RR9)', async () => {
     const persistence = capturePersistence();
-    const { orch, envelopes } = build('verify+signoff', persistence);
+    let statusWhenAwaitingAcceptanceStreamed: string | undefined;
+    const { orch, envelopes } = build('verify+signoff', persistence, (event) => {
+      if (event.type === 'AwaitingAcceptance') {
+        statusWhenAwaitingAcceptanceStreamed = persistence.statuses.at(-1);
+      }
+    });
     const summary = await orch.run({ goalText: 'one step' });
     expect(summary.status).toBe('succeeded');
 
@@ -155,6 +165,7 @@ describe('orchestrator with a RunEventEmitter (RR6–RR10)', () => {
     expect(persisted).toHaveLength(1);
     expect(persisted[0]!.sequence).toBe(streamed[0]!.sequence);
     expect(persistence.statuses).toContain('awaiting-acceptance');
+    expect(statusWhenAwaitingAcceptanceStreamed).toBe('awaiting-acceptance');
   });
 });
 

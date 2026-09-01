@@ -960,16 +960,20 @@ export class Orchestrator {
    *  R31 requires, so a concurrent `GET /runs/:id` can never observe a stale status. Both calls
    *  share one `persistence.error` op label since R31 treats this as one logical transition. */
   private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
-    // RR9: with an emitter, the gate-entry event is streamed AND persisted from ONE mint, so the
-    // durable log's `sequence` always matches the stream's. Without one (legacy `onEvent`
-    // callers), mint from the per-run fallback counter — a constant 0 would collide with the
-    // unique(run_id, sequence) index when the sign-off gate reopens after a rejection
-    // (reject → remediate → re-satisfy), silently losing the second audit row.
     const payload = { goalState: state.goalSpec.goalState };
-    const envelope = this.events?.next('AwaitingAcceptance', payload);
-    const sequence = envelope?.sequence ?? state.fallbackEventSequence++;
     await this.persistBestEffort('awaitingAcceptance', async () => {
+      // R31: publish the gate-entry event only after the durable status is visible. A live sink
+      // may react synchronously and query the run, so minting before this await would expose the
+      // gate while the run still appeared to be `running`.
       await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
+
+      // RR9: with an emitter, the gate-entry event is streamed AND persisted from ONE mint, so
+      // the durable log's `sequence` always matches the stream's. Without one (legacy `onEvent`
+      // callers), mint from the per-run fallback counter — a constant 0 would collide with the
+      // unique(run_id, sequence) index when the sign-off gate reopens after a rejection
+      // (reject → remediate → re-satisfy), silently losing the second audit row.
+      const envelope = this.events?.next('AwaitingAcceptance', payload);
+      const sequence = envelope?.sequence ?? state.fallbackEventSequence++;
       await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload, sequence });
     });
   }
