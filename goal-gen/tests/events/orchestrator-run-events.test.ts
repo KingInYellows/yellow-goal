@@ -167,6 +167,47 @@ describe('orchestrator with a RunEventEmitter (RR6–RR10)', () => {
     expect(persistence.statuses).toContain('awaiting-acceptance');
     expect(statusWhenAwaitingAcceptanceStreamed).toBe('awaiting-acceptance');
   });
+
+  it('arms the acceptance gate before publishing AwaitingAcceptance', async () => {
+    const envelopes: RunEvent[] = [];
+    let acceptedFromSink: boolean | undefined;
+    let session!: RunSession;
+    const emitter = new RunEventEmitter({
+      sink: (event) => {
+        envelopes.push(event);
+        if (event.type === 'AwaitingAcceptance') acceptedFromSink = session.resolveGate('accept');
+      },
+    });
+    session = new RunSession({
+      extractor: new StubExtractor({ goalSpec: goalSpec('verify+signoff') }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      worktreeProvider: stubWorktree,
+      events: emitter,
+    });
+
+    const pending = session.run({ goalText: 'one step' });
+    await vi.waitFor(() => expect(session.pendingGateKind()).toBe('dod'));
+    expect(session.resolveGate(true)).toBe(true);
+    expect((await pending).status).toBe('succeeded');
+    expect(acceptedFromSink).toBe(true);
+    expect(envelopes.some((event) => event.type === 'AwaitingAcceptance')).toBe(true);
+  });
+
+  it('still publishes AwaitingAcceptance when the status write fails', async () => {
+    const persistence = capturePersistence();
+    persistence.updateRunStatus = async (_runId, status) => {
+      if (status === 'awaiting-acceptance') throw new Error('database unavailable');
+      persistence.statuses.push(status);
+    };
+    const { orch, envelopes } = build('verify+signoff', persistence);
+
+    expect((await orch.run({ goalText: 'one step' })).status).toBe('succeeded');
+    expect(envelopes.some((event) => event.type === 'persistence.error')).toBe(true);
+    expect(envelopes.some((event) => event.type === 'AwaitingAcceptance')).toBe(true);
+    expect(persistence.runEvents.some((event) => event.type === 'AwaitingAcceptance')).toBe(true);
+  });
 });
 
 describe('single-run event ownership (RR7)', () => {

@@ -362,11 +362,13 @@ export class Orchestrator {
         // declaring success. On rejection, continue through the bounded re-extraction ladder.
         const policy = state.goalSpec.completionPolicy;
         if (policy === 'verify+signoff' || policy === 'operator-defined') {
-          // R31: the awaiting-acceptance status/event write happens on this AWAITED gate-entry path
-          // (not via the lazy onEvent drain R19 uses for other events, since that async queue is a
-          // later shell), so a concurrent GET /runs/:id can never observe a stale non-awaiting status.
-          await this.persistAwaitingAcceptance(state, plan);
-          const decision = await this.acceptanceGate(this.buildDod(state, plan), this.signal);
+          // R31: make the status durable before exposing the gate. Arm the gate before publishing
+          // AwaitingAcceptance so an event-driven consumer can resolve it synchronously without
+          // losing the decision, then await the event-row write before the run may proceed.
+          await this.persistAwaitingAcceptanceStatus(state);
+          const pendingDecision = this.acceptanceGate(this.buildDod(state, plan), this.signal);
+          await this.publishAwaitingAcceptance(state, plan);
+          const decision = await pendingDecision;
           if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted during sign-off');
           if (decision === 'accept') {
             return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');
@@ -955,27 +957,29 @@ export class Orchestrator {
     await this.persistBestEffort('insertAgentRun', () => this.persistence.insertAgentRun(agentRun, runId));
   }
 
-  /** R30/R31: transition the run to `awaiting-acceptance` and persist the event, both awaited
-   *  BEFORE the acceptance gate opens — the ordering (not just the individual awaits) is what
-   *  R31 requires, so a concurrent `GET /runs/:id` can never observe a stale status. Both calls
-   *  share one `persistence.error` op label since R31 treats this as one logical transition. */
-  private async persistAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
-    const payload = { goalState: state.goalSpec.goalState };
-    await this.persistBestEffort('awaitingAcceptance', async () => {
-      // R31: publish the gate-entry event only after the durable status is visible. A live sink
-      // may react synchronously and query the run, so minting before this await would expose the
-      // gate while the run still appeared to be `running`.
-      await this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance');
+  /** R30/R31 phase 1: attempt the durable status transition before the gate is exposed. */
+  private async persistAwaitingAcceptanceStatus(state: RunState): Promise<void> {
+    await this.persistBestEffort('awaitingAcceptance', () =>
+      this.persistence.updateRunStatus(state.runId, 'awaiting-acceptance'),
+    );
+  }
 
-      // RR9: with an emitter, the gate-entry event is streamed AND persisted from ONE mint, so
-      // the durable log's `sequence` always matches the stream's. Without one (legacy `onEvent`
-      // callers), mint from the per-run fallback counter — a constant 0 would collide with the
-      // unique(run_id, sequence) index when the sign-off gate reopens after a rejection
-      // (reject → remediate → re-satisfy), silently losing the second audit row.
-      const envelope = this.events?.next('AwaitingAcceptance', payload);
-      const sequence = envelope?.sequence ?? state.fallbackEventSequence++;
-      await this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload, sequence });
-    });
+  /** R30/R31 phase 3: publish only after the acceptance gate is armed, then persist the exact
+   *  minted sequence. This is deliberately separate from the best-effort status write: a
+   *  transient persistence failure must not suppress the transport event and strand an
+   *  event-driven consumer. */
+  private async publishAwaitingAcceptance(state: RunState, plan: Plan): Promise<void> {
+    const payload = { goalState: state.goalSpec.goalState };
+    // RR9: with an emitter, the gate-entry event is streamed AND persisted from ONE mint, so the
+    // durable log's `sequence` always matches the stream's. Without one (legacy `onEvent`
+    // callers), mint from the per-run fallback counter — a constant 0 would collide with the
+    // unique(run_id, sequence) index when the sign-off gate reopens after a rejection
+    // (reject → remediate → re-satisfy), silently losing the second audit row.
+    const envelope = this.events?.next('AwaitingAcceptance', payload);
+    const sequence = envelope?.sequence ?? state.fallbackEventSequence++;
+    await this.persistBestEffort('awaitingAcceptance', () =>
+      this.persistence.insertRunEvent({ runId: state.runId, planId: plan.id, type: 'AwaitingAcceptance', payload, sequence }),
+    );
   }
 
   /** RR10: even failures that happen before any RunState exists (extraction threw, or the run was
