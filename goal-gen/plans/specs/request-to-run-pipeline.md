@@ -91,17 +91,14 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
 - **RR7 — one sequence mint per run.** A single per-run emitter mints `sequence`: starts at
   0, +1 per event, monotonic across **all** sources feeding the run (extractor `onEvent`,
   orchestrator `onEvent`, entry-point wrapper). Nothing else mints sequences.
-  *Per-run scoping:* an `Orchestrator` instance is reusable across successive `run()` calls, so
-  exactly one emitter identity is claimed per call. The first call claims the constructor-injected
-  emitter as-is (callers that read `emitter.runId` after construction, and an extractor wired
-  directly to `emitter.handle`, see the identity that call actually streams under); every later
-  call — and any call whose explicit `runId` disagrees with the claimed identity — is scoped to a
-  fresh child via `RunEventEmitter.forRun()`, with its own identity and `sequence` restarting at 0.
-  Without this, a reused instance's second run silently collided with the first run's `runs` row
-  and inherited its still-advancing counter. Known residual: an extractor wired directly to the
-  parent emitter at construction keeps emitting under the first identity on later calls — the
-  entry points construct one orchestrator per process and call `run()` once, so this is not
-  reachable in production; revisit if a long-lived orchestrator ever serves many runs.
+  *Per-run ownership:* an event-wired `Orchestrator` instance owns exactly one run. The first call
+  claims the constructor-injected emitter as-is. A concurrent or later call, or a call whose
+  explicit `runId` disagrees with that emitter, fails before extraction and emits its error plus
+  terminal summary through a separate child emitter. This fail-closed rule is required because an
+  extractor may hold the injected emitter's callback directly; swapping only the orchestrator's
+  callback would split one run across two identities. `RunSession` maintains a 1:1 lifetime with
+  `Orchestrator` and derives its default `runId` from the injected emitter. Emitter-less legacy
+  orchestrators remain reusable across successive calls.
 - **RR8 — internal call sites keep their names.** The orchestrator's/extractor's ad-hoc
   `{ ev, ...rest }` objects map to envelopes as `type = ev`, `payload = rest` at the emitter
   boundary; call sites stay terse. Runner/`run`-verb stdout is one serialized envelope per

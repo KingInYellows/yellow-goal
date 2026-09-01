@@ -61,6 +61,10 @@ describe('RunEventEmitter', () => {
     const envelope = emitter.handle({ message: 'no ev field' });
     expect(envelope.type).toBe('unknown');
     expect(envelope.payload).toEqual({ message: 'no ev field' });
+
+    const invalidType = emitter.handle({ ev: 42, message: 'non-string ev field' });
+    expect(invalidType.type).toBe('unknown');
+    expect(invalidType.payload).toEqual({ ev: 42, message: 'non-string ev field' });
   });
 
   it('contains a throwing sink: nothing propagates and the mint still counts', () => {

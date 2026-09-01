@@ -39,8 +39,8 @@ export class RunEventEmitter {
    *  rather than being dropped: a malformed emit must stay visible in the stream. */
   handle = (event: Record<string, unknown>): RunEvent => {
     const { ev, ...rest } = event;
-    const type = typeof ev === 'string' && ev !== '' ? ev : 'unknown';
-    return this.next(type, rest);
+    const validType = typeof ev === 'string' && ev !== '';
+    return this.next(validType ? ev : 'unknown', validType ? rest : event);
   };
 
   /** Mint, sink, and return the next envelope. */

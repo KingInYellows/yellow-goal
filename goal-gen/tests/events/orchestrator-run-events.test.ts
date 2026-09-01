@@ -5,7 +5,7 @@
  * `AwaitingAcceptance` durable write recording the exact sequence its streamed envelope was
  * minted with (RR9). Deterministic, zero spend.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RunEventSchema, type RunEvent } from '../../backend/src/contracts/run-event';
 import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
 import { StubExecutor, StubVerifier } from '../../backend/src/executors/stub-executor';
@@ -13,6 +13,7 @@ import { StubExtractor } from '../../backend/src/extractors/stub-extractor';
 import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
 import { Orchestrator } from '../../backend/src/orchestrator/orchestrator';
 import type { OrchestratorDeps, PersistenceProvider, WorktreeProvider } from '../../backend/src/orchestrator/orchestrator';
+import { RunSession } from '../../backend/src/orchestrator/run-session';
 import type { Action, GoalSpec, WorldState } from '../../backend/src/planner/types';
 
 const stubWorktree: WorktreeProvider = async (opts) => ({
@@ -158,6 +159,27 @@ describe('orchestrator with a RunEventEmitter (RR6–RR10)', () => {
 });
 
 describe('single-run event ownership (RR7)', () => {
+  it('derives a RunSession id from its injected emitter and completes under that identity', async () => {
+    const envelopes: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ runId: 'session-event-owner', sink: (event) => envelopes.push(event) });
+    const session = new RunSession({
+      extractor: new StubExtractor({ goalSpec: goalSpec('verify-only') }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      worktreeProvider: stubWorktree,
+      events: emitter,
+    });
+
+    expect(session.runId).toBe(emitter.runId);
+    const pending = session.run({ goalText: 'one step' });
+    await vi.waitFor(() => expect(session.pendingGateKind()).toBe('dod'));
+    expect(session.resolveGate(true)).toBe(true);
+    expect((await pending).status).toBe('succeeded');
+    expect(new Set(envelopes.map((event) => event.runId))).toEqual(new Set([emitter.runId]));
+    expect(envelopes.at(-1)?.type).toBe('run.summary');
+  });
+
   it('fails a concurrent call on a separate emitter without changing the active run owner', async () => {
     const envelopes: RunEvent[] = [];
     const emitter = new RunEventEmitter({ sink: (e) => envelopes.push(e) });

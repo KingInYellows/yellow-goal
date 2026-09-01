@@ -245,7 +245,7 @@ export class Orchestrator {
         const reason = identityMismatch
           ? `runId ${runId} does not match the injected event owner ${this.events.runId}`
           : 'an event-wired Orchestrator instance may run only once';
-        const rejectedEvents = this.events.forRun(runId);
+        const rejectedEvents = this.events.forRun(identityMismatch ? runId : undefined);
         rejectedEvents.handle({ ev: 'error', code: 'RUN_EVENT_OWNER_CONFLICT', message: reason });
         const summary = bareSummary(req.goalText, 'failed', reason);
         rejectedEvents.handle({ ev: 'run.summary', ...summary });
