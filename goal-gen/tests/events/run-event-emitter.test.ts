@@ -71,7 +71,8 @@ describe('RunEventEmitter', () => {
       },
     });
     expect(() => emitter.next('step.pass')).not.toThrow();
-    // The failed sink call must not create a sequence gap for consumers that recover.
+    // The failed delivery still consumed its minted sequence. A recovered transport can observe
+    // the gap, which is safer than reusing a sequence that persistence may already have recorded.
     expect(emitter.next('step.fail').sequence).toBe(1);
   });
 

@@ -202,10 +202,10 @@ export class Orchestrator {
   private readonly acceptanceGate: AcceptanceGate;
   private readonly worktreeProvider: WorktreeProvider;
   private emit: (event: Record<string, unknown>) => void;
-  private events: RunEventEmitter | undefined;
-  /** RR7: true once this instance's injected `events` identity has been claimed by a `run()` call
-   *  — set so a REUSED instance's next call scopes a fresh child emitter (see top of `run()`)
-   *  instead of colliding on the same runId/sequence. */
+  private readonly events: RunEventEmitter | undefined;
+  /** RR7: an event-wired orchestrator has exactly one run owner. Extractors may hold the injected
+   *  emitter's bound callback, so reusing or concurrently invoking this instance cannot safely
+   *  swap emitters. Later calls fail before extraction on a separate rejection emitter. */
   private eventsClaimed = false;
   private readonly signal: AbortSignal;
   private readonly persistence: PersistenceProvider;
@@ -230,26 +230,28 @@ export class Orchestrator {
   /**
    * Run the full loop for one goal and return its terminal summary. Never throws.
    *
-   * `runId` is minted per CALL (R3), not per-instance: `RunState`'s doc comment states this
-   * orchestrator instance is reusable across successive `run()` calls, so a constructor-time
-   * runId would collide on worktree branch names (`${runId}-${safeId}-${attempts}`) across two
-   * calls on the same instance. The future API layer passes its minted UUID here (R4); CLI/tests
-   * that omit it get a fresh `crypto.randomUUID()` per call, preserving current behavior.
+   * Without an injected event emitter, `runId` is minted per call (R3) and this instance remains
+   * reusable across successive calls. With an emitter, the orchestrator is single-run because the
+   * extractor may already hold that emitter's callback. The caller must either omit `runId` or
+   * pass the emitter's identity.
    */
   async run(req: ExtractRequest, runId?: string): Promise<RunSummary> {
-    // RR7: exactly one emitter identity is claimed per run() call. The FIRST call on a fresh
-    // instance claims the constructor-injected `events` AS-IS — so `new Orchestrator({ events })`
-    // callers who read `emitter.runId` right after construction, and an extractor wired to
-    // `emitter.handle` directly (see runner.ts), see the identity this run actually streams under.
-    // Every SUBSEQUENT call on a reused instance/emitter — and any call whose explicit `runId`
-    // disagrees with the claimed identity — is scoped to a fresh child (`forRun`) with its own
-    // identity and a sequence restarting at 0, so a second run() can never collide with the first's
-    // persisted `runs` row or inherit its still-advancing sequence counter.
+    // RR7: exactly one emitter identity is claimed by this orchestrator. Reuse, concurrent calls,
+    // and an explicit identity mismatch fail before extraction. Their error and terminal summary
+    // use a separate emitter so the claimed run's identity and sequence cannot be mutated.
     if (this.events !== undefined) {
-      const reuseInjected = !this.eventsClaimed && (runId === undefined || runId === this.events.runId);
-      this.events = reuseInjected ? this.events : this.events.forRun(runId);
+      const identityMismatch = runId !== undefined && runId !== this.events.runId;
+      if (this.eventsClaimed || identityMismatch) {
+        const reason = identityMismatch
+          ? `runId ${runId} does not match the injected event owner ${this.events.runId}`
+          : 'an event-wired Orchestrator instance may run only once';
+        const rejectedEvents = this.events.forRun(runId);
+        rejectedEvents.handle({ ev: 'error', code: 'RUN_EVENT_OWNER_CONFLICT', message: reason });
+        const summary = bareSummary(req.goalText, 'failed', reason);
+        rejectedEvents.handle({ ev: 'run.summary', ...summary });
+        return summary;
+      }
       this.eventsClaimed = true;
-      this.emit = (event) => void this.events!.handle(event);
     }
     // --- EXTRACT ---
     let goalSpec: GoalSpec;

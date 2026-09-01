@@ -157,15 +157,29 @@ describe('orchestrator with a RunEventEmitter (RR6–RR10)', () => {
   });
 });
 
-describe('emitter scoping across reused Orchestrator instances (RR7)', () => {
-  it('gives each run() call its own identity and a sequence restarting at 0', async () => {
+describe('single-run event ownership (RR7)', () => {
+  it('fails a concurrent call on a separate emitter without changing the active run owner', async () => {
     const envelopes: RunEvent[] = [];
     const emitter = new RunEventEmitter({ sink: (e) => envelopes.push(e) });
-    // One instance, two sequential runs — the reuse case RunState's doc comment declares
-    // supported. Before per-run scoping both runs shared emitter.runId while the counter kept
-    // climbing, so a persisted second run collided with the first run's row.
+    const baseExtractor = new StubExtractor({ goalSpec: goalSpec('verify-only') });
+    let markExtractStarted: (() => void) | undefined;
+    let releaseExtract: (() => void) | undefined;
+    const extractStarted = new Promise<void>((resolve) => {
+      markExtractStarted = resolve;
+    });
+    const extractGate = new Promise<void>((resolve) => {
+      releaseExtract = resolve;
+    });
+    const extractor: OrchestratorDeps['extractor'] = {
+      extract: async (req) => {
+        markExtractStarted?.();
+        await extractGate;
+        return baseExtractor.extract(req);
+      },
+      expand: (evidence, current, pool, signal) => baseExtractor.expand(evidence, current, pool, signal),
+    };
     const orch = new Orchestrator({
-      extractor: new StubExtractor({ goalSpec: goalSpec('verify-only') }),
+      extractor,
       executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
       verifier: new StubVerifier({}),
       config: defaultRunConfig(),
@@ -174,24 +188,41 @@ describe('emitter scoping across reused Orchestrator instances (RR7)', () => {
       events: emitter,
     });
 
-    expect((await orch.run({ goalText: 'one step' })).status).toBe('succeeded');
-    const firstCount = envelopes.length;
-    expect((await orch.run({ goalText: 'one step' })).status).toBe('succeeded');
+    const activeRun = orch.run({ goalText: 'first run' });
+    await extractStarted;
+    const rejected = await orch.run({ goalText: 'overlapping run' });
+    expect(rejected).toMatchObject({ status: 'failed', reason: expect.stringContaining('may run only once') });
 
-    const first = envelopes.slice(0, firstCount);
-    const second = envelopes.slice(firstCount);
-    expect(second.length).toBeGreaterThan(0);
-    expect(first[0]!.runId).toBe(emitter.runId);
-    expect(second[0]!.runId).not.toBe(first[0]!.runId);
-    expect(new Set(second.map((e) => e.runId)).size).toBe(1);
-    expect(second.map((e) => e.sequence)).toEqual(second.map((_, i) => i));
+    const rejectedRunId = envelopes[0]?.runId;
+    expect(rejectedRunId).toBeDefined();
+    expect(rejectedRunId).not.toBe(emitter.runId);
+    expect(envelopes).toMatchObject([
+      { runId: rejectedRunId, sequence: 0, type: 'error', payload: { code: 'RUN_EVENT_OWNER_CONFLICT' } },
+      { runId: rejectedRunId, sequence: 1, type: 'run.summary', payload: { status: 'failed' } },
+    ]);
+
+    releaseExtract?.();
+    expect((await activeRun).status).toBe('succeeded');
+    const activeEnvelopes = envelopes.filter((event) => event.runId === emitter.runId);
+    expect(activeEnvelopes.length).toBeGreaterThan(0);
+    expect(activeEnvelopes.map((event) => event.sequence)).toEqual(activeEnvelopes.map((_, index) => index));
+    expect(activeEnvelopes.at(-1)?.type).toBe('run.summary');
   });
 
-  it('scopes a fresh identity when an explicit runId disagrees with the claimed one', async () => {
+  it('fails an explicit runId mismatch before calling the extractor', async () => {
     const envelopes: RunEvent[] = [];
     const emitter = new RunEventEmitter({ sink: (e) => envelopes.push(e) });
+    const baseExtractor = new StubExtractor({ goalSpec: goalSpec('verify-only') });
+    let extractCalls = 0;
+    const extractor: OrchestratorDeps['extractor'] = {
+      extract: (req) => {
+        extractCalls++;
+        return baseExtractor.extract(req);
+      },
+      expand: (evidence, current, pool, signal) => baseExtractor.expand(evidence, current, pool, signal),
+    };
     const orch = new Orchestrator({
-      extractor: new StubExtractor({ goalSpec: goalSpec('verify-only') }),
+      extractor,
       executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
       verifier: new StubVerifier({}),
       config: defaultRunConfig(),
@@ -200,9 +231,11 @@ describe('emitter scoping across reused Orchestrator instances (RR7)', () => {
       events: emitter,
     });
 
-    await orch.run({ goalText: 'one step' }, 'explicit-run-id');
-    // The streamed identity must equal the id the run persists under — never a silent divergence.
+    const summary = await orch.run({ goalText: 'one step' }, 'explicit-run-id');
+    expect(summary).toMatchObject({ status: 'failed', reason: expect.stringContaining('does not match') });
+    expect(extractCalls).toBe(0);
     expect(new Set(envelopes.map((e) => e.runId))).toEqual(new Set(['explicit-run-id']));
-    expect(envelopes[0]!.sequence).toBe(0);
+    expect(envelopes.map((event) => event.sequence)).toEqual([0, 1]);
+    expect(envelopes.map((event) => event.type)).toEqual(['error', 'run.summary']);
   });
 });

@@ -56,9 +56,10 @@ export class RunEventEmitter {
     try {
       this.sink(envelope);
     } catch (e) {
-      // A synchronously-throwing sink must never fail the run it describes. The mint still counts
-      // — the sequence stays gapless for consumers — and the failure is surfaced on stderr, not
-      // thrown through Orchestrator.run()'s documented never-throws contract. This only contains a
+      // A synchronously-throwing sink must never fail the run it describes. The mint still counts,
+      // so an unhealthy transport can leave an observable sequence gap if it later recovers. The
+      // failure is surfaced on stderr, not thrown through Orchestrator.run()'s documented
+      // never-throws contract. This only contains a
       // sink that throws directly: Node reports a broken stdout pipe (EPIPE) via the stream's
       // asynchronous 'error' event, not a throw from `write()`, so it never reaches this catch —
       // the sink implementation itself must guard against that (see runner.ts's
@@ -71,9 +72,7 @@ export class RunEventEmitter {
   }
 
   /** Scope a fresh per-run emitter sharing this instance's `sink`/`clock` (RR7): its own identity
-   *  (minted if `runId` is omitted) and a sequence counter that restarts at 0 — used by
-   *  `Orchestrator` so a reused instance's second `run()` call can never collide with the first's
-   *  identity or inherit its already-advanced counter. */
+   *  (minted if `runId` is omitted) and a sequence counter that restarts at 0. */
   forRun(runId?: string): RunEventEmitter {
     return new RunEventEmitter({ runId, sink: this.sink, clock: this.clock });
   }
