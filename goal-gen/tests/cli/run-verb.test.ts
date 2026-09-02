@@ -274,3 +274,41 @@ describe('engine construction seam (fail-closed ordering)', () => {
     expect(stdoutLines()).toEqual([]);
   });
 });
+
+describe('failure containment at the entry point', () => {
+  it('a throwing engine factory still yields a terminal run.summary, RUN_FAILED, exit 1, and releases timers/listeners', async () => {
+    const sigintBefore = process.listenerCount('SIGINT');
+    const stdoutErrBefore = process.stdout.listenerCount('error');
+    const factory = vi.fn<EngineFactory>(() => {
+      throw new Error('engine exploded');
+    });
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await runRunCommand([requestPath, '--executor', 'stub'], { engineFactory: factory });
+    expect(code).toBe(1);
+    const lines = stdoutLines();
+    const last = JSON.parse(lines[lines.length - 1]!) as { type: string; payload: { status: string; reason: string } };
+    expect(last.type).toBe('run.summary');
+    expect(last.payload.status).toBe('failed');
+    expect(last.payload.reason).toContain('engine exploded');
+    const err = JSON.parse(stderrText().trim()) as { error: { code: string; message: string } };
+    expect(err.error.code).toBe('RUN_FAILED');
+    expect(err.error.message).toContain('engine exploded');
+    // Nothing leaked: the wall-clock timer and signal handlers are released even on this path.
+    expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
+    expect(process.stdout.listenerCount('error')).toBe(stdoutErrBefore);
+  });
+
+  it('a non-EPIPE stdout error fails the run with RUN_STDOUT_TRANSPORT_FAILED even though orchestration succeeded', async () => {
+    const factory = vi.fn<EngineFactory>((kind, inputs, onEvent) => {
+      // The sink is live by the time the factory runs; simulate the redirected file filling up.
+      process.stdout.emit('error', Object.assign(new Error('no space left on device'), { code: 'ENOSPC' }));
+      return defaultEngineFactory(kind, inputs, onEvent);
+    });
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await runRunCommand([requestPath, '--executor', 'stub'], { engineFactory: factory });
+    expect(code).toBe(1);
+    const err = JSON.parse(stderrText().trim()) as { error: { code: string; message: string } };
+    expect(err.error.code).toBe('RUN_STDOUT_TRANSPORT_FAILED');
+    expect(err.error.message).toContain('ENOSPC');
+  });
+});

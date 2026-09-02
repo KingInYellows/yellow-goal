@@ -368,7 +368,18 @@ export class Orchestrator {
           await this.persistAwaitingAcceptanceStatus(state);
           const pendingDecision = this.acceptanceGate(this.buildDod(state, plan), this.signal);
           await this.publishAwaitingAcceptance(state, plan);
-          const decision = await pendingDecision;
+          let decision: Awaited<ReturnType<AcceptanceGate>>;
+          try {
+            decision = await pendingDecision;
+          } catch (e) {
+            // A gate that cannot decide (stdinAcceptanceGate on a closed stdin refuses to
+            // auto-decide, by design) must not cost the operator the completed work: terminate
+            // with the REAL RunState — actions, spend, replans — as a 'failed' summary instead of
+            // letting the throw escape run() and forcing entry points to synthesize an empty one.
+            const message = e instanceof Error ? e.message : String(e);
+            this.emit({ ev: 'signoff.failed', message });
+            return this.terminalSummary(state, 'failed', `sign-off gate failed: ${message}`);
+          }
           if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted during sign-off');
           if (decision === 'accept') {
             return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');

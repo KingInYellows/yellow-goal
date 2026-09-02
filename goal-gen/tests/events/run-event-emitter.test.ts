@@ -118,13 +118,27 @@ describe('createStdoutSink (async stream-error containment, events/stdout-sink.t
     expect(written).toEqual([`${JSON.stringify({ type: 'run.start' })}\n`]);
   });
 
-  it('surfaces a non-EPIPE stream error on stderr without throwing', () => {
+  it('records a non-EPIPE stream error as transportError — no throw, nothing on stderr', () => {
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const { stream } = fakeStream();
-    createStdoutSink(stream);
+    const { stream, written } = fakeStream();
+    const sink = createStdoutSink(stream);
     const err = Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    expect(sink.transportError).toBeUndefined();
     expect(() => stream.emit('error', err)).not.toThrow();
-    expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('disk full'))).toBe(true);
+    expect(sink.transportError).toBe(err);
+    // stderr is reserved for the entry point's single-line structured envelope.
+    expect(stderrSpy).not.toHaveBeenCalled();
+    sink({ type: 'run.summary' });
+    expect(written).toEqual([]);
     stderrSpy.mockRestore();
+  });
+
+  it('dispose() detaches the stream error listener so per-run sinks do not accumulate', () => {
+    const { stream } = fakeStream();
+    const before = (stream as unknown as EventEmitter).listenerCount('error');
+    const sink = createStdoutSink(stream);
+    expect((stream as unknown as EventEmitter).listenerCount('error')).toBe(before + 1);
+    sink.dispose();
+    expect((stream as unknown as EventEmitter).listenerCount('error')).toBe(before);
   });
 });

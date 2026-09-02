@@ -17,7 +17,7 @@
  */
 import { parseArgs } from 'node:util';
 import { RunEventEmitter } from '../events/run-event-emitter';
-import { createStdoutSink } from '../events/stdout-sink';
+import { createStdoutSink, transportFailureEnvelope } from '../events/stdout-sink';
 import { ClaudeCodeExecutor } from '../executors/claude-code-executor';
 import { ShellVerifier } from '../executors/shell-verifier';
 import { StubExecutor, StubVerifier } from '../executors/stub-executor';
@@ -242,17 +242,18 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
   // orchestrator's existing signal.aborted checks return their normal 'cancelled' terminal summary.
   const deadline = setTimeout(abort, RUN_WALL_CLOCK_MS);
 
-  const engine = (options.engineFactory ?? defaultEngineFactory)(executorKind, inputs, emitter.handle);
-  const orchestrator = new Orchestrator({
-    ...engine,
-    config: inputs.runConfig,
-    events: emitter,
-    confirm,
-    signal: ac.signal,
-    // No persistence wiring (RR15) — parity with the M1 runner; DB-backed runs are a later milestone.
-  });
-
   try {
+    // Construction happens INSIDE the try so a throwing factory/constructor still reaches the
+    // finally (timer + signal listeners released) and the catch (terminal envelope) below.
+    const engine = (options.engineFactory ?? defaultEngineFactory)(executorKind, inputs, emitter.handle);
+    const orchestrator = new Orchestrator({
+      ...engine,
+      config: inputs.runConfig,
+      events: emitter,
+      confirm,
+      signal: ac.signal,
+      // No persistence wiring (RR15) — parity with the M1 runner; DB-backed runs are a later milestone.
+    });
     const summary = await orchestrator.run({ goalText: inputs.goalText });
     // RR11: every verb's failures share the same single-line stderr envelope. orchestrator.run()
     // RESOLVES (doesn't throw) on ordinary terminal non-success — retries exhausted, cancelled,
@@ -260,16 +261,25 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
     // terminal run.summary envelope is untouched either way, and the success path writes nothing
     // to stderr.
     const failure = runFailureEnvelope(summary);
-    if (failure) process.stderr.write(`${JSON.stringify(failure)}\n`);
-    return summary.status === 'succeeded' ? 0 : 1;
+    if (failure) {
+      process.stderr.write(`${JSON.stringify(failure)}\n`);
+      return 1;
+    }
+    // A non-EPIPE stdout error means the consumer did not receive the whole stream (possibly not
+    // even run.summary): never report success for a run nobody could observe.
+    if (writeEnvelope.transportError) {
+      process.stderr.write(`${JSON.stringify(transportFailureEnvelope(writeEnvelope.transportError))}\n`);
+      return 1;
+    }
+    return 0;
   } catch (e) {
     // Orchestrator.run() documents never-throws, but RR12's "the last stdout line is the
-    // run.summary envelope" must hold even if that contract is ever violated (e.g. a default
-    // gate rethrowing on a dead stdin). Terminate the stream with a COMPLETE RunSummary shape
-    // (costUsd is the sink-observed running total from `emitter`'s cost tally above — see its
-    // known gap re: successful-extraction spend) so this envelope is structurally the same as any
-    // ordinary terminal event, then let main()'s catch-all produce the stderr envelope and exit
-    // code.
+    // run.summary envelope" must hold even if that contract is ever violated (or the engine
+    // factory / Orchestrator constructor throws). Terminate the stream with a COMPLETE RunSummary
+    // shape (costUsd is the sink-observed running total from `emitter`'s cost tally above — see
+    // its known gap re: successful-extraction spend), then report the SAME classification on
+    // stderr — RUN_FAILED, exit 1 — so stdout and stderr never disagree about how the run ended.
+    const reason = `run aborted by unexpected error: ${e instanceof Error ? e.message : String(e)}`;
     emitter.next('run.summary', {
       status: 'failed',
       goalText: inputs.goalText,
@@ -277,12 +287,14 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
       replans: 0,
       reextractions: 0,
       actions: [],
-      reason: `run aborted by unexpected error: ${e instanceof Error ? e.message : String(e)}`,
+      reason,
     });
-    throw e;
+    process.stderr.write(`${JSON.stringify(runFailureEnvelope({ status: 'failed', reason }))}\n`);
+    return 1;
   } finally {
     clearTimeout(deadline);
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
+    writeEnvelope.dispose();
   }
 }

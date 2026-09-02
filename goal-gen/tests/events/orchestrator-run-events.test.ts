@@ -313,3 +313,34 @@ describe('single-run event ownership (RR7)', () => {
     expect(envelopes.map((event) => event.type)).toEqual(['error', 'run.summary']);
   });
 });
+
+describe('sign-off gate that cannot decide (closed stdin) — work is preserved', () => {
+  it('ends the run as failed with the real RunState instead of escaping run()', async () => {
+    const envelopes: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ sink: (event) => envelopes.push(event) });
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: goalSpec('verify+signoff') }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0.25 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      confirm: async () => true,
+      acceptanceGate: async () => {
+        throw new Error('stdin closed while awaiting sign-off');
+      },
+      worktreeProvider: stubWorktree,
+      events: emitter,
+    });
+    const summary = await orch.run({ goalText: 'preserve my work' });
+    expect(summary.status).toBe('failed');
+    expect(summary.reason).toContain('sign-off gate failed');
+    expect(summary.reason).toContain('stdin closed');
+    // The completed step and its spend survive into the terminal summary.
+    expect(summary.actions.length).toBeGreaterThan(0);
+    expect(summary.costUsd).toBeGreaterThan(0);
+    expect(envelopes.some((e) => e.type === 'signoff.failed')).toBe(true);
+    const last = envelopes[envelopes.length - 1]!;
+    expect(last.type).toBe('run.summary');
+    expect(last.payload).toMatchObject({ status: 'failed' });
+    expect(envelopes.every((e) => RunEventSchema.safeParse(e).success)).toBe(true);
+  });
+});

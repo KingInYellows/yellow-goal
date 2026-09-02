@@ -123,7 +123,13 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
   exit 1 otherwise (including `failed`/`cancelled`/`budget-exhausted`). On any non-`succeeded`
   terminal status the verb ALSO writes RR11's single-line stderr envelope
   (`{"error":{code,message}}`), with `code` one of `RUN_FAILED` / `RUN_CANCELLED` /
-  `RUN_BUDGET_EXHAUSTED` so a consumer can tell them apart without parsing `reason` text;
+  `RUN_BUDGET_EXHAUSTED` so a consumer can tell them apart without parsing `reason` text
+  (`RUN_FAILED` also covers the defensive path where `Orchestrator.run()` or engine construction
+  throws — stdout and stderr then agree on the classification). A non-EPIPE stdout error (e.g.
+  `ENOSPC` on a redirected file) truncates the stream, so the entry point reports
+  `RUN_STDOUT_TRANSPORT_FAILED` and exits 1 even if orchestration itself succeeded — nobody could
+  observe that success. A sign-off gate that cannot decide (closed stdin) ends the run as `failed`
+  with the real RunState preserved (`signoff.failed` event), never by escaping `run()`;
   the success path's stderr stays empty and stdout's terminal `run.summary` is unaffected
   either way. The mandatory 60-minute run-wide wall-clock (CLAUDE.md invariant #6, ADR-0010,
   `RUN_WALL_CLOCK_MS` in `orchestrator/guardrails.ts`) is enforced here by aborting the run's

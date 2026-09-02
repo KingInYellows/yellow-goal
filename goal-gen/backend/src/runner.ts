@@ -24,7 +24,7 @@
  */
 import { pathToFileURL } from 'node:url';
 import { RunEventEmitter } from './events/run-event-emitter';
-import { createStdoutSink } from './events/stdout-sink';
+import { createStdoutSink, transportFailureEnvelope } from './events/stdout-sink';
 import { ClaudeCodeExecutor } from './executors/claude-code-executor';
 import { ShellVerifier } from './executors/shell-verifier';
 import { ClaudeLlmClient, LlmExtractorImpl } from './extractors/llm-extractor';
@@ -195,7 +195,13 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
 // `run()` guarantees the terminal `run.summary` envelope on every path — nothing to emit here.
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const summary = await run(process.argv.slice(2));
-  process.exitCode = summary.status === 'succeeded' ? 0 : 1;
+  let exitCode = summary.status === 'succeeded' ? 0 : 1;
+  if (stdoutSink.transportError) {
+    // The stream was truncated by a non-EPIPE stdout error: the operator never saw the whole run.
+    process.stderr.write(`${JSON.stringify(transportFailureEnvelope(stdoutSink.transportError))}\n`);
+    exitCode = 1;
+  }
+  process.exitCode = exitCode;
 }
 
 export { run };
