@@ -54,7 +54,7 @@ describe('db/schema — table creation', () => {
       status: 'succeeded',
       startedAt: new Date().toISOString(),
     });
-    await db.insert(runEvents).values({ runId: 'run_1', planId: 'plan_1', type: 'test.event', payload: {} });
+    await db.insert(runEvents).values({ runId: 'run_1', planId: 'plan_1', sequence: 0, type: 'test.event', payload: {} });
 
     expect(await db.select().from(goalSpecs)).toHaveLength(1);
     expect(await db.select().from(plans)).toHaveLength(1);

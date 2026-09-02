@@ -6,7 +6,9 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { RunEventSchema, type RunEvent } from '../../backend/src/contracts/run-event';
+import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
 import { parseRunnerArgs, run } from '../../backend/src/runner';
 import { requestSample } from '../contracts/support/samples';
 
@@ -79,7 +81,6 @@ describe('runner request validation (RR4)', () => {
   let dir: string | undefined;
 
   afterEach(async () => {
-    vi.restoreAllMocks();
     if (dir !== undefined) await rm(dir, { recursive: true, force: true });
   });
 
@@ -87,20 +88,22 @@ describe('runner request validation (RR4)', () => {
     dir = await mkdtemp(path.join(tmpdir(), 'runner-validation-'));
     const requestPath = path.join(dir, 'request.json');
     await writeFile(requestPath, JSON.stringify(requestSample));
-    const output: string[] = [];
-    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
-      output.push(String(chunk));
-      return true;
-    });
+    const output: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ runId: 'runner-validation', sink: (event) => output.push(event) });
 
-    const summary = await run(['--request', requestPath]);
+    const summary = await run(['--request', requestPath], emitter);
 
     expect(summary.status).toBe('failed');
-    expect(output).toHaveLength(1);
-    expect(JSON.parse(output[0] ?? '{}')).toMatchObject({
-      ev: 'error',
-      code: 'VALIDATION_FAILED',
-      errors: [expect.objectContaining({ code: 'RUN_MODE_NOT_EXECUTABLE', field: 'mode' })],
+    expect(output).toHaveLength(2);
+    expect(output.every((event) => RunEventSchema.safeParse(event).success)).toBe(true);
+    expect(output.map((event) => event.sequence)).toEqual([0, 1]);
+    expect(output[0]).toMatchObject({
+      type: 'error',
+      payload: {
+        code: 'VALIDATION_FAILED',
+        errors: [expect.objectContaining({ code: 'RUN_MODE_NOT_EXECUTABLE', field: 'mode' })],
+      },
     });
+    expect(output[1]).toMatchObject({ type: 'run.summary', payload: { status: 'failed' } });
   });
 });

@@ -91,6 +91,14 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
 - **RR7 — one sequence mint per run.** A single per-run emitter mints `sequence`: starts at
   0, +1 per event, monotonic across **all** sources feeding the run (extractor `onEvent`,
   orchestrator `onEvent`, entry-point wrapper). Nothing else mints sequences.
+  *Per-run ownership:* an event-wired `Orchestrator` instance owns exactly one run. The first call
+  claims the constructor-injected emitter as-is. A concurrent or later call, or a call whose
+  explicit `runId` disagrees with that emitter, fails before extraction and emits its error plus
+  terminal summary through a separate child emitter. This fail-closed rule is required because an
+  extractor may hold the injected emitter's callback directly; swapping only the orchestrator's
+  callback would split one run across two identities. `RunSession` maintains a 1:1 lifetime with
+  `Orchestrator` and derives its default `runId` from the injected emitter. Emitter-less legacy
+  orchestrators remain reusable across successive calls.
 - **RR8 — internal call sites keep their names.** The orchestrator's/extractor's ad-hoc
   `{ ev, ...rest }` objects map to envelopes as `type = ev`, `payload = rest` at the emitter
   boundary; call sites stay terse. Runner/`run`-verb stdout is one serialized envelope per

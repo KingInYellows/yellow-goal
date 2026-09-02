@@ -38,7 +38,7 @@ export class RunSession {
 
   constructor(deps: RunSessionDeps) {
     const { runId, ...rest } = deps;
-    this.runId = runId ?? randomUUID();
+    this.runId = runId ?? rest.events?.runId ?? randomUUID();
 
     const confirm: DodConfirmer = async (_dod, signal, kind) => this.gate.openBoolean(kind, signal);
     const acceptanceGate: AcceptanceGate = async (_dod, signal) => this.gate.openAccept(signal);
