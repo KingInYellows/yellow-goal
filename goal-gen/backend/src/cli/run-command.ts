@@ -17,6 +17,7 @@
  */
 import { parseArgs } from 'node:util';
 import { RunEventEmitter } from '../events/run-event-emitter';
+import { createStdoutSink } from '../events/stdout-sink';
 import { ClaudeCodeExecutor } from '../executors/claude-code-executor';
 import { ShellVerifier } from '../executors/shell-verifier';
 import { StubExecutor, StubVerifier } from '../executors/stub-executor';
@@ -90,6 +91,20 @@ function claudeCodeEngine(config: RunConfig, onEvent: (event: Record<string, unk
   };
 }
 
+/** The ONE place an engine is constructed. Exported as an injectable seam so tests can PROVE (not
+ *  merely observe via missing stdout) that nothing is built before a request has passed every
+ *  fail-closed gate — RR4 mode, RR18 guardrail consent, RR21 write permission, usage errors:
+ *  `runRunCommand` accepts an override and run-verb.test.ts asserts the factory is never invoked
+ *  for an invalid request. Production always resolves to this default. */
+export type EngineFactory = (
+  kind: 'claude-code' | 'stub',
+  inputs: RunInputs,
+  onEvent: (event: Record<string, unknown>) => void,
+) => EngineDeps;
+
+export const defaultEngineFactory: EngineFactory = (kind, inputs, onEvent) =>
+  kind === 'stub' ? stubEngine(inputs.goalText) : claudeCodeEngine(inputs.runConfig, onEvent);
+
 /** RR19 as a pure decision, exported for tests (the claude-code branch cannot be exercised
  *  end-to-end without real spend): a request file's autoConfirmDod counts only for the
  *  zero-spend stub; a real executor requires the operator's CLI --yes. */
@@ -115,7 +130,12 @@ export function runFailureEnvelope(summary: Pick<RunSummary, 'status' | 'reason'
   return { error: { code: RUN_FAILURE_CODES[summary.status], message: summary.reason } };
 }
 
-export async function runRunCommand(argv: string[]): Promise<number> {
+export interface RunCommandOptions {
+  /** Test seam only — see `defaultEngineFactory`. */
+  engineFactory?: EngineFactory;
+}
+
+export async function runRunCommand(argv: string[], options: RunCommandOptions = {}): Promise<number> {
   // Node's parseArgs throws (rather than returning) on malformed syntax (e.g. `--executor` with
   // no value, or an unknown flag) — translate that LOCALLY into a CliUsageError (exit 2) instead
   // of letting it fall through to main()'s UNEXPECTED_ERROR/exit-1 catch-all. A dispatcher-wide
@@ -143,6 +163,9 @@ export async function runRunCommand(argv: string[]): Promise<number> {
     }
   })();
 
+  if (positionals.length > 1) {
+    throw new CliUsageError('run accepts exactly one <request-file> positional argument');
+  }
   const requestPath = positionals[0];
   if (!requestPath) throw new CliUsageError('run requires a <request-file> positional argument');
   const executorKind = values.executor;
@@ -170,11 +193,16 @@ export async function runRunCommand(argv: string[]): Promise<number> {
   // SUCCESSFUL extraction's cost is folded into RunState directly and never emitted as an event,
   // so it is not reflected here (see run-verb.test.ts note).
   let observedCostUsd = 0;
+  // Share the runner's stream-level sink: a broken stdout pipe surfaces asynchronously as the
+  // stream's 'error' event, which the emitter's synchronous catch cannot see and which would
+  // otherwise kill the process before the terminal run.summary. createStdoutSink degrades
+  // quietly after a stream error instead.
+  const writeEnvelope = createStdoutSink();
   const emitter = new RunEventEmitter({
     sink: (envelope) => {
       const cost = (envelope.payload as Record<string, unknown> | undefined)?.costUsd;
       if (typeof cost === 'number') observedCostUsd += cost;
-      process.stdout.write(`${JSON.stringify(envelope)}\n`);
+      writeEnvelope(envelope);
     },
   });
   // Audit envelope (RR18/RR19): the EFFECTIVE spend configuration is always the stream's first
@@ -214,7 +242,7 @@ export async function runRunCommand(argv: string[]): Promise<number> {
   // orchestrator's existing signal.aborted checks return their normal 'cancelled' terminal summary.
   const deadline = setTimeout(abort, RUN_WALL_CLOCK_MS);
 
-  const engine = executorKind === 'stub' ? stubEngine(inputs.goalText) : claudeCodeEngine(inputs.runConfig, emitter.handle);
+  const engine = (options.engineFactory ?? defaultEngineFactory)(executorKind, inputs, emitter.handle);
   const orchestrator = new Orchestrator({
     ...engine,
     config: inputs.runConfig,

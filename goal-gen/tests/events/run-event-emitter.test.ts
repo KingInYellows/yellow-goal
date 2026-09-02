@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { RunEventSchema } from '../../backend/src/contracts/run-event';
 import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
-import { createStdoutSink } from '../../backend/src/runner';
+import { createStdoutSink } from '../../backend/src/events/stdout-sink';
 import { validateAgainstJsonSchema } from '../contracts/support/json-schema-checker';
 import { loadVendoredSchema } from '../contracts/support/load-schema';
 
@@ -89,9 +89,9 @@ describe('RunEventEmitter', () => {
 
 // `process.stdout.write()` reports a broken pipe (EPIPE) asynchronously via the stream's 'error'
 // event rather than a throw, so the emitter's synchronous try/catch above cannot contain it —
-// `createStdoutSink` (runner.ts) handles it at the stream boundary instead. These tests drive a
+// `createStdoutSink` (events/stdout-sink.ts) handles it at the stream boundary instead. These tests drive a
 // fake stream to prove that boundary actually survives an async stream error.
-describe('createStdoutSink (async stream-error containment, runner.ts)', () => {
+describe('createStdoutSink (async stream-error containment, events/stdout-sink.ts)', () => {
   function fakeStream() {
     const written: string[] = [];
     const stream = Object.assign(new EventEmitter(), { write: (chunk: string) => (written.push(chunk), true) });

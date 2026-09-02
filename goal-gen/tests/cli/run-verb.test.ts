@@ -10,6 +10,10 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunEventSchema } from '../../backend/src/contracts/run-event';
 import { main } from '../../backend/src/cli/index';
+import { CliUsageError } from '../../backend/src/cli/errors';
+import { defaultEngineFactory, runRunCommand, type EngineFactory } from '../../backend/src/cli/run-command';
+import { IntakeValidationFailure } from '../../backend/src/intake';
+import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
 import { requestExecutionSample, requestSample } from '../contracts/support/samples';
 
 let tempDir: string;
@@ -69,7 +73,8 @@ describe('run verb (stub engine)', () => {
   it('honors --yes when the request does not auto-confirm (RR14)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { autoConfirmDod: false } },
+      // Spread the sample's orchestration: replacing it wholesale would drop permissionProfile (RR21).
+      orchestration: { ...requestExecutionSample.orchestration, execution: { autoConfirmDod: false } },
     });
     const code = await main(['run', requestPath, '--executor', 'stub', '--yes']);
     expect(code).toBe(0);
@@ -107,6 +112,16 @@ describe('run verb (stub engine)', () => {
     const code = await main(['run', '--executor', 'stub']);
     expect(code).toBe(2);
     expect((JSON.parse(stderrText().trim()) as { error: { code: string } }).error.code).toBe('USAGE_ERROR');
+  });
+
+  it('rejects extra positionals with USAGE_ERROR, exit 2 — before the request file is read', async () => {
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await main(['run', requestPath, 'accidental.json', '--executor', 'stub']);
+    expect(code).toBe(2);
+    expect(stdoutLines()).toEqual([]);
+    const parsed = JSON.parse(stderrText().trim()) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('USAGE_ERROR');
+    expect(parsed.error.message).toContain('exactly one');
   });
 
   it('translates a malformed option (missing --executor value) into USAGE_ERROR, exit 2', async () => {
@@ -164,7 +179,7 @@ describe('operator consent policies (RR18/RR19)', () => {
   it('refuses request-raised guardrails without --allow-guardrail-override (RR18)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { guardrails: { maxBudgetUsd: 500 } } },
+      orchestration: { ...requestExecutionSample.orchestration, execution: { guardrails: { maxBudgetUsd: 500 } } },
     });
     const code = await main(['run', requestPath, '--executor', 'stub']);
     expect(code).toBe(1);
@@ -177,7 +192,10 @@ describe('operator consent policies (RR18/RR19)', () => {
   it('honors raised guardrails with --allow-guardrail-override, visible in run.start (RR18)', async () => {
     const requestPath = await writeRequest({
       ...requestExecutionSample,
-      orchestration: { execution: { autoConfirmDod: true, guardrails: { maxBudgetUsd: 500 } } },
+      orchestration: {
+        ...requestExecutionSample.orchestration,
+        execution: { autoConfirmDod: true, guardrails: { maxBudgetUsd: 500 } },
+      },
     });
     const code = await main(['run', requestPath, '--executor', 'stub', '--allow-guardrail-override']);
     expect(code).toBe(0);
@@ -196,5 +214,63 @@ describe('operator consent policies (RR18/RR19)', () => {
     expect(effectiveAutoConfirm('claude-code', false, true)).toBe(false);
     expect(effectiveAutoConfirm('claude-code', true, false)).toBe(true);
     expect(effectiveAutoConfirm('claude-code', true, true)).toBe(true);
+  });
+});
+
+/** The fail-closed ordering the spec promises ("before any extractor/executor/worktree work") is
+ *  proven through the exported construction seam, not inferred from an empty stdout: an invalid
+ *  request must never reach `defaultEngineFactory` (or any override), and a valid one reaches it
+ *  exactly once, after validation. */
+describe('engine construction seam (fail-closed ordering)', () => {
+  it('constructs exactly one engine, after validation, for a valid request (positive control)', async () => {
+    const factory = vi.fn<EngineFactory>(defaultEngineFactory);
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await runRunCommand([requestPath, '--executor', 'stub'], { engineFactory: factory });
+    expect(code).toBe(0);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(factory).toHaveBeenCalledWith(
+      'stub',
+      expect.objectContaining({ goalText: requestExecutionSample.intent.goal }),
+      expect.any(Function),
+    );
+    // The audit envelope (run.start) is the first event and precedes construction.
+    expect((JSON.parse(stdoutLines()[0]!) as { type: string }).type).toBe('run.start');
+  });
+
+  it('never constructs an engine for a request whose mode is not executable (RR4)', async () => {
+    const factory = vi.fn<EngineFactory>(defaultEngineFactory);
+    const requestPath = await writeRequest(requestSample); // mode: review-and-compile
+    await expect(runRunCommand([requestPath, '--executor', 'stub'], { engineFactory: factory })).rejects.toBeInstanceOf(
+      IntakeValidationFailure,
+    );
+    expect(factory).not.toHaveBeenCalled();
+    expect(stdoutLines()).toEqual([]);
+  });
+
+  it('never constructs an engine when raised guardrails lack operator consent (RR18)', async () => {
+    const factory = vi.fn<EngineFactory>(defaultEngineFactory);
+    const requestPath = await writeRequest({
+      ...requestExecutionSample,
+      orchestration: {
+        ...requestExecutionSample.orchestration,
+        execution: { guardrails: { maxBudgetUsd: defaultRunConfig().maxBudgetUsd + 1 } },
+      },
+    });
+    await expect(runRunCommand([requestPath, '--executor', 'stub'], { engineFactory: factory })).rejects.toBeInstanceOf(
+      IntakeValidationFailure,
+    );
+    expect(factory).not.toHaveBeenCalled();
+    expect(stdoutLines()).toEqual([]);
+  });
+
+  it('never constructs an engine on a usage error — even with --executor claude-code (RR13)', async () => {
+    const factory = vi.fn<EngineFactory>(defaultEngineFactory);
+    const requestPath = await writeRequest(requestExecutionSample);
+    await expect(runRunCommand([requestPath, 'extra.json', '--executor', 'claude-code'], { engineFactory: factory })).rejects.toBeInstanceOf(
+      CliUsageError,
+    );
+    await expect(runRunCommand([requestPath], { engineFactory: factory })).rejects.toBeInstanceOf(CliUsageError);
+    expect(factory).not.toHaveBeenCalled();
+    expect(stdoutLines()).toEqual([]);
   });
 });

@@ -16,14 +16,15 @@
  * timestamp, type, payload}` envelope minted by ONE per-run `RunEventEmitter` shared by the
  * extractor, the orchestrator, and this entry (RR7) — the previous ad-hoc `{t, ev, ...}` shape
  * is gone. The last line of every run, success or failure, is the `run.summary` envelope (RR10).
- * A broken stdout pipe (EPIPE) is handled at the stream level by `createStdoutSink` below, not by
- * the emitter — see its doc comment.
+ * A broken stdout pipe (EPIPE) is handled at the stream level by the shared `createStdoutSink`
+ * (events/stdout-sink.ts), not by the emitter — see its doc comment.
  *
  *   --yes, -y   auto-confirm the definition-of-done gate (non-interactive; for automation/the
  *               probe). Sign-off is deliberately NOT auto-accepted (see below).
  */
 import { pathToFileURL } from 'node:url';
 import { RunEventEmitter } from './events/run-event-emitter';
+import { createStdoutSink } from './events/stdout-sink';
 import { ClaudeCodeExecutor } from './executors/claude-code-executor';
 import { ShellVerifier } from './executors/shell-verifier';
 import { ClaudeLlmClient, LlmExtractorImpl } from './extractors/llm-extractor';
@@ -33,30 +34,6 @@ import { Orchestrator } from './orchestrator/orchestrator';
 import type { DodConfirmer } from './orchestrator/orchestrator';
 import { loadRunRequest, requestToRunInputs } from './run/request-to-run';
 import type { RunConfig, RunSummary } from './types';
-
-/**
- * Wraps a writable stream as a run-event/v1 sink (one JSON Lines envelope per call). Node reports
- * a broken pipe (EPIPE — e.g. stdout piped to `head`, or a disconnected reader) asynchronously via
- * the stream's 'error' event, not as a throw from `write()`; left unlistened, Node's default
- * behavior is to throw and kill the process before the terminal `run.summary` can be produced —
- * the emitter's synchronous try/catch (run-event-emitter.ts) can't see it either. Handled once
- * here, at the stream boundary: after any stream error the sink degrades quietly (drops further
- * writes) rather than retrying a pipe that cannot un-close and cannot throw repeatedly. Exported
- * so tests can drive a fake stream instead of the real `process.stdout`.
- */
-export function createStdoutSink(stream: NodeJS.WritableStream = process.stdout): (envelope: unknown) => void {
-  let broken = false;
-  stream.on('error', (err: NodeJS.ErrnoException) => {
-    broken = true;
-    if (err.code !== 'EPIPE') {
-      process.stderr.write(`[runner] stdout error: ${err.message}\n`);
-    }
-  });
-  return (envelope: unknown): void => {
-    if (broken) return;
-    stream.write(`${JSON.stringify(envelope)}\n`);
-  };
-}
 
 const stdoutSink = createStdoutSink();
 
@@ -123,8 +100,8 @@ export function parseRunnerArgs(args: string[]): RunnerArgs {
  *  the early usage/request failures below, which never reach the orchestrator — ends the stream
  *  with a `run.summary` envelope (RR10); orchestrator paths emit it from `summary()` itself. */
 async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitter({ sink: stdoutSink })): Promise<RunSummary> {
-  const failedSummary = (reason: string): RunSummary => {
-    const summary: RunSummary = { status: 'failed', goalText: '', costUsd: 0, replans: 0, reextractions: 0, actions: [], reason };
+  const failedSummary = (reason: string, failedGoalText = ''): RunSummary => {
+    const summary: RunSummary = { status: 'failed', goalText: failedGoalText, costUsd: 0, replans: 0, reextractions: 0, actions: [], reason };
     emitter.handle({ ev: 'run.summary', ...summary });
     return summary;
   };
@@ -199,10 +176,19 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
 
   // `events` supersedes onEvent; the run's id defaults to emitter.runId so stream and summary agree.
   const orchestrator = new Orchestrator({ extractor, executor, verifier, config, events: emitter, confirm, signal: ac.signal });
-  return orchestrator.run({ goalText }).finally(() => {
+  try {
+    return await orchestrator.run({ goalText });
+  } catch (e) {
+    // stdinAcceptanceGate throws on a closed stdin at sign-off (non-interactive invocation) —
+    // still terminate the stream with a run.summary envelope (RR10) instead of an unhandled
+    // rejection after real spend. Execution still happens in scratch worktrees (ADR-0009).
+    const reason = `run aborted by unexpected error: ${e instanceof Error ? e.message : String(e)}`;
+    emitter.handle({ ev: 'error', message: reason });
+    return failedSummary(reason, goalText);
+  } finally {
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
-  });
+  }
 }
 
 // Auto-run only when invoked as the entry script (so tests can import without side effects).
