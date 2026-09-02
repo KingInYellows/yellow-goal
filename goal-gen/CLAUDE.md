@@ -22,14 +22,18 @@ A self-hosted app: plain-English goal → LLM-extracted action graph → determi
 ```
 CLAUDE.md · AGENTS.md
 .claude/specs/        # component contracts (read before implementing a component)
-docs/                 # prd.md (source of truth) + decisions/ (ADRs, MADR) + design notes
-backend/src/          # M1 core: planner/ extractors/ executors/ orchestrator/ db/
+docs/                 # prd.md (source of truth) + decisions/ (ADRs, MADR) + solutions/ (compounded learnings)
+plans/                # active plans + specs/ (requirement specs with stable R-/RR-ids, e.g. request-to-run-pipeline.md)
+backend/src/          # M1 core: planner/ extractors/ executors/ orchestrator/ db/ run/ events/ paths/
                       # compiler: contracts/ intake/ inspection/ evidence/ research/
                       #           analysis/ packs/ packets/ providers/ cli/
+bin/goal-gen.mjs      # installed-package entry (tsx shim, ADR-0016) — same contract as `npm run cli --`
+scripts/              # install-smoke.sh (pack → install → spawn gate; runs in CI)
 schemas/ · policies/  # vendored JSON Schemas (+ corrections log) and permission policies
 packs/                # repository-goal-packet/v1 pack assets (templates, prompts, scripts)
 frontend/src/         # (future) components/ pages/ lib/
-tests/                # unit + contract + fixture + adversarial + integration + evals/
+tests/                # unit + contract + fixture + adversarial + integration + db/ (migration gate) + evals/
+../.github/workflows/ci.yml   # CI lives at the repo root; every step uses working-directory: goal-gen
 ```
 
 **Repo root gotcha:** this project lives in `goal-gen/`, a *subdirectory* of the git repo rooted at the parent `yellow-goal/` (`git rev-parse --show-toplevel` → `yellow-goal`). Run `git`/`gt` from anywhere in the tree, but note: repo-level config (`.graphite.yml`, PR template) sits at the `yellow-goal` root, while project-local config (`.gitignore`, `.ruvector/`, `.claude/*.local.md`) lives in `goal-gen/`. Tools that probe `show-toplevel` for project files will look one level too high.
@@ -48,6 +52,7 @@ tests/                # unit + contract + fixture + adversarial + integration + 
 - Small, pure functions in the planner; side effects only in executors/db.
 - Secrets via environment only — never commit keys; never put secrets in this file.
 - No destructive git ops (force-push, hard reset, branch delete) without explicit approval.
+- Never edit a test, fixture, or `verify` to make it pass — flag it; if behavior must change, update the spec (and supersede the ADR) first.
 
 ## Workflow (how to build this with Claude Code)
 - Explore → **Plan Mode** for any multi-file work → code → commit; review diffs in a fresh subagent.
@@ -56,14 +61,23 @@ tests/                # unit + contract + fixture + adversarial + integration + 
 - **Eval-driven:** keep `tests/evals/` (goal→expected-plan pairs); run before/after planner or prompt changes.
 
 ## Commands (frontend/lint still TBD)
-- Install: `npm install`
+- Install: `npm install` (CI uses `npm ci`; npm only — never pnpm/yarn here)
 - Dev: `TBD` (frontend `vite`, backend watch — not scaffolded yet)
 - Test: `npm test` (`vitest run`, full deterministic suite — no live network/model calls) · `npm run test:watch`
 - Evals: `npm run eval` (all) · `npm run eval:planner` (planner gate)
 - Typecheck: `npm run typecheck` (`tsc --noEmit`, strict)
-- Compiler CLI: `npm run cli -- <request create|request validate|inspect|analyze|compile|packet verify> ...`
-- M1 runner: `npm run runner -- "<goal>"` (real `claude -p`; real cost)
+- Compiler CLI: `npm run cli -- <request create|request validate|inspect|analyze|compile|packet verify> ... [--json]`
+- Install gate: `bash scripts/install-smoke.sh` (packs the tarball, installs it in a scratch dir, drives the `goal-gen` bin as a process — safe locally)
+- Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (writes the SQL + journal + snapshot that `tests/db/migrations.test.ts` replays) · `npm run db:migrate`
+- M1 runner: `npm run runner -- [--yes] "<goal>"` or `npm run runner -- [--yes] --request <file>` (real `claude -p`; real cost — never from CI or an autonomous session)
 - Lint/format: `TBD` (not configured yet)
+
+## Process contract & CI (ADR-0016)
+- The engine is consumed **as a process**, never imported: `npm pack` tarball → `goal-gen` bin. Consumers (the yellow-plugins bridge) parse **JSON stdout**, a **single-line structured stderr** error `{"error":{"code","message"}}`, and exit codes **0 = success, 2 = `USAGE_ERROR`, 1 = everything else**. Keep every verb on that contract (`backend/src/cli/index.ts`).
+- `tsx` and `zod` are **runtime** dependencies because the packed artifact ships TypeScript source loaded through `bin/goal-gen.mjs` — do not move them to `devDependencies`.
+- CI (`../.github/workflows/ci.yml`, GitHub-hosted `ubuntu-latest`, Node 22.22.x): job `engine` = typecheck → test → eval; job `install-smoke` = `scripts/install-smoke.sh`. `npm test` includes only `tests/**/*.test.ts`; anything touching a live resource uses the `*.probe.ts` suffix (`tests/integration/runner.probe.ts`) and must stay outside that glob — **CI must never execute a real agent**.
+- Gates that fail on drift: `tests/contracts/compat.test.ts` (zod ↔ vendored JSON Schema — change both together) and `tests/db/migrations.test.ts` (journal SQL vs `schema.ts` on embedded PGlite — run `npm run db:generate`). PGlite boots slowly in parallel workers, hence the 30s vitest timeouts; they bound hangs, not pace the suite.
+- The verb surface is specified in `plans/specs/request-to-run-pipeline.md` (RR-ids). `run <request> --executor claude-code|stub` (RR11–RR20) and `version` (RR17) are specified there — confirm they are dispatched in `backend/src/cli/index.ts` before documenting or consuming them. `run --executor claude-code` is a real-spend entry point; `stub` is the zero-spend deterministic engine for tests.
 
 ## Host
 Runs on a dedicated **Proxmox LXC or VM** with Claude Code logged in once (v1); per-run worktrees (collision-avoidance, not a sandbox); **single-admin login**, reachable only on your own network/Tailscale — no LAN-wide or public exposure. A VM is cleaner if you'll run per-run containers at M2 (nesting in an unprivileged LXC needs extra config). See `docs/prd.md` §11.
