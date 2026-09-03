@@ -10,7 +10,7 @@ import { RunEventSchema, type RunEvent } from '../../backend/src/contracts/run-e
 import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
 import { StubExecutor, StubVerifier } from '../../backend/src/executors/stub-executor';
 import { StubExtractor } from '../../backend/src/extractors/stub-extractor';
-import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
+import { RUN_WALL_CLOCK_MS, defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
 import { Orchestrator } from '../../backend/src/orchestrator/orchestrator';
 import type { OrchestratorDeps, PersistenceProvider, WorktreeProvider } from '../../backend/src/orchestrator/orchestrator';
 import { RunSession } from '../../backend/src/orchestrator/run-session';
@@ -342,5 +342,57 @@ describe('sign-off gate that cannot decide (closed stdin) — work is preserved'
     expect(last.type).toBe('run.summary');
     expect(last.payload).toMatchObject({ status: 'failed' });
     expect(envelopes.every((e) => RunEventSchema.safeParse(e).success)).toBe(true);
+  });
+});
+
+describe('RunSession arms the run-wide wall-clock (CLAUDE.md invariant #6)', () => {
+  it('cancels a run parked at an unresolved gate once RUN_WALL_CLOCK_MS elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const envelopes: RunEvent[] = [];
+      const emitter = new RunEventEmitter({ sink: (event) => envelopes.push(event) });
+      const session = new RunSession({
+        extractor: new StubExtractor({ goalSpec: goalSpec('verify-only') }),
+        executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+        verifier: new StubVerifier({}),
+        config: defaultRunConfig(),
+        worktreeProvider: stubWorktree,
+        events: emitter,
+      });
+      const running = session.run({ goalText: 'nobody resolves the DoD gate' });
+      // Let extraction settle and the DoD gate open, then sit just under the deadline: still parked.
+      await vi.advanceTimersByTimeAsync(RUN_WALL_CLOCK_MS - 1);
+      expect(session.pendingGateKind()).toBe('dod');
+      await vi.advanceTimersByTimeAsync(1);
+      const summary = await running;
+      expect(summary.status).toBe('cancelled');
+      expect(envelopes[envelopes.length - 1]?.type).toBe('run.summary');
+      // Nothing left ticking once the run has settled.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the deadline when the run finishes before it', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = new RunSession({
+        extractor: new StubExtractor({ goalSpec: goalSpec('verify-only') }),
+        executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+        verifier: new StubVerifier({}),
+        config: defaultRunConfig(),
+        worktreeProvider: stubWorktree,
+        events: new RunEventEmitter({ sink: () => {} }),
+      });
+      const running = session.run({ goalText: 'resolved promptly' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(session.resolveGate(true)).toBe(true);
+      const summary = await running;
+      expect(summary.status).toBe('succeeded');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

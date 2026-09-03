@@ -10,6 +10,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { AsyncLatch, PendingGate } from './async-gate';
+import { RUN_WALL_CLOCK_MS } from './guardrails';
 import type { GateKind } from './async-gate';
 import { Orchestrator } from './orchestrator';
 import type { AcceptanceGate, DodConfirmer, OrchestratorDeps } from './orchestrator';
@@ -53,7 +54,11 @@ export class RunSession {
   }
 
   run(req: ExtractRequest): Promise<RunSummary> {
-    return this.orchestrator.run(req, this.runId);
+    // CLAUDE.md invariant #6 / ADR-0010: whoever owns the run's AbortController owns the run-wide
+    // wall-clock — the same deadline the CLI entry points arm. An API-driven run parked at a gate
+    // nobody resolves must still terminate ('cancelled') instead of holding resources forever.
+    const deadline = setTimeout(() => this.controller.abort(), RUN_WALL_CLOCK_MS);
+    return this.orchestrator.run(req, this.runId).finally(() => clearTimeout(deadline));
   }
 
   /** What decision shape the currently-open gate expects, or `null` if no gate is open — for a
