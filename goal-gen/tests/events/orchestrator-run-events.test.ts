@@ -345,6 +345,42 @@ describe('sign-off gate that cannot decide (closed stdin) — work is preserved'
   });
 });
 
+describe('sign-off gate rejecting while the durable AwaitingAcceptance write is in flight', () => {
+  it('is settled immediately — no unhandled rejection — and still ends failed with work preserved', async () => {
+    const persistence = capturePersistence();
+    // Defer the durable event write so the gate's rejection lands BEFORE publishAwaitingAcceptance
+    // resolves — the window in which a bare pending promise would be an unhandled rejection.
+    const slowPersistence: PersistenceProvider = {
+      ...persistence,
+      insertRunEvent: async (event) => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        await persistence.insertRunEvent(event);
+      },
+    };
+    const envelopes: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ sink: (event) => envelopes.push(event) });
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: goalSpec('verify+signoff') }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0.5 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      confirm: async () => true,
+      acceptanceGate: () => Promise.reject(new Error('stdin closed while awaiting sign-off')),
+      worktreeProvider: stubWorktree,
+      events: emitter,
+      persistence: slowPersistence,
+    });
+    const summary = await orch.run({ goalText: 'reject during publish' });
+    expect(summary.status).toBe('failed');
+    expect(summary.reason).toContain('sign-off gate failed');
+    expect(summary.actions.length).toBeGreaterThan(0);
+    expect(envelopes.some((e) => e.type === 'signoff.failed')).toBe(true);
+    expect(envelopes[envelopes.length - 1]?.type).toBe('run.summary');
+    // The durable AwaitingAcceptance write still completed before the failure was recorded.
+    expect(persistence.statuses).toContain('awaiting-acceptance');
+  });
+});
+
 describe('RunSession arms the run-wide wall-clock (CLAUDE.md invariant #6)', () => {
   it('cancels a run parked at an unresolved gate once RUN_WALL_CLOCK_MS elapses', async () => {
     vi.useFakeTimers();

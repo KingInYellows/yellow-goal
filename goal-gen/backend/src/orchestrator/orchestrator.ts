@@ -366,20 +366,26 @@ export class Orchestrator {
           // AwaitingAcceptance so an event-driven consumer can resolve it synchronously without
           // losing the decision, then await the event-row write before the run may proceed.
           await this.persistAwaitingAcceptanceStatus(state);
-          const pendingDecision = this.acceptanceGate(this.buildDod(state, plan), this.signal);
+          // Settle the gate into a value IMMEDIATELY: if it rejects while the durable
+          // AwaitingAcceptance write below is still in flight, a bare pending promise would be an
+          // unhandled rejection (fatal on Node 22) before signoff.failed / run.summary could go out.
+          const pendingDecision: Promise<{ ok: true; decision: Awaited<ReturnType<AcceptanceGate>> } | { ok: false; error: unknown }> =
+            this.acceptanceGate(this.buildDod(state, plan), this.signal).then(
+              (decision) => ({ ok: true as const, decision }),
+              (error: unknown) => ({ ok: false as const, error }),
+            );
           await this.publishAwaitingAcceptance(state, plan);
-          let decision: Awaited<ReturnType<AcceptanceGate>>;
-          try {
-            decision = await pendingDecision;
-          } catch (e) {
+          const outcome = await pendingDecision;
+          if (!outcome.ok) {
             // A gate that cannot decide (stdinAcceptanceGate on a closed stdin refuses to
             // auto-decide, by design) must not cost the operator the completed work: terminate
             // with the REAL RunState — actions, spend, replans — as a 'failed' summary instead of
             // letting the throw escape run() and forcing entry points to synthesize an empty one.
-            const message = e instanceof Error ? e.message : String(e);
+            const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
             this.emit({ ev: 'signoff.failed', message });
             return this.terminalSummary(state, 'failed', `sign-off gate failed: ${message}`);
           }
+          const decision = outcome.decision;
           if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted during sign-off');
           if (decision === 'accept') {
             return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');
