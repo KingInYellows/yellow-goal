@@ -376,8 +376,10 @@ describe('sign-off gate rejecting while the durable AwaitingAcceptance write is 
     expect(summary.actions.length).toBeGreaterThan(0);
     expect(envelopes.some((e) => e.type === 'signoff.failed')).toBe(true);
     expect(envelopes[envelopes.length - 1]?.type).toBe('run.summary');
-    // The durable AwaitingAcceptance write still completed before the failure was recorded.
+    // The durable AwaitingAcceptance write (status AND event row) still completed before the
+    // failure was recorded — the rejection landed while insertRunEvent was in flight.
     expect(persistence.statuses).toContain('awaiting-acceptance');
+    expect(persistence.runEvents.some((row) => row.type === 'AwaitingAcceptance')).toBe(true);
   });
 });
 
