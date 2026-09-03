@@ -381,6 +381,31 @@ describe('sign-off gate rejecting while the durable AwaitingAcceptance write is 
   });
 });
 
+describe('sign-off gate that throws synchronously', () => {
+  it('is treated like a rejection: failed summary, work preserved, no escape from run()', async () => {
+    const envelopes: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ sink: (event) => envelopes.push(event) });
+    const throwingGate = (() => {
+      throw new Error('gate exploded before returning a promise');
+    }) as unknown as OrchestratorDeps['acceptanceGate'];
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: goalSpec('verify+signoff') }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0.5 } }),
+      verifier: new StubVerifier({}),
+      config: defaultRunConfig(),
+      confirm: async () => true,
+      acceptanceGate: throwingGate,
+      worktreeProvider: stubWorktree,
+      events: emitter,
+    });
+    const summary = await orch.run({ goalText: 'sync throw' });
+    expect(summary.status).toBe('failed');
+    expect(summary.reason).toContain('gate exploded');
+    expect(summary.actions.length).toBeGreaterThan(0);
+    expect(envelopes[envelopes.length - 1]?.type).toBe('run.summary');
+  });
+});
+
 describe('RunSession arms the run-wide wall-clock (CLAUDE.md invariant #6)', () => {
   it('cancels a run parked at an unresolved gate once RUN_WALL_CLOCK_MS elapses', async () => {
     vi.useFakeTimers();

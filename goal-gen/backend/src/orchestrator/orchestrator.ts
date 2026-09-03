@@ -369,11 +369,17 @@ export class Orchestrator {
           // Settle the gate into a value IMMEDIATELY: if it rejects while the durable
           // AwaitingAcceptance write below is still in flight, a bare pending promise would be an
           // unhandled rejection (fatal on Node 22) before signoff.failed / run.summary could go out.
-          const pendingDecision: Promise<{ ok: true; decision: Awaited<ReturnType<AcceptanceGate>> } | { ok: false; error: unknown }> =
-            this.acceptanceGate(this.buildDod(state, plan), this.signal).then(
+          type GateOutcome = { ok: true; decision: Awaited<ReturnType<AcceptanceGate>> } | { ok: false; error: unknown };
+          let pendingDecision: Promise<GateOutcome>;
+          try {
+            pendingDecision = this.acceptanceGate(this.buildDod(state, plan), this.signal).then(
               (decision) => ({ ok: true as const, decision }),
               (error: unknown) => ({ ok: false as const, error }),
             );
+          } catch (error) {
+            // A gate that throws synchronously (before returning its promise) is the same failure.
+            pendingDecision = Promise.resolve({ ok: false as const, error });
+          }
           await this.publishAwaitingAcceptance(state, plan);
           const outcome = await pendingDecision;
           if (!outcome.ok) {
