@@ -366,9 +366,32 @@ export class Orchestrator {
           // AwaitingAcceptance so an event-driven consumer can resolve it synchronously without
           // losing the decision, then await the event-row write before the run may proceed.
           await this.persistAwaitingAcceptanceStatus(state);
-          const pendingDecision = this.acceptanceGate(this.buildDod(state, plan), this.signal);
+          // Settle the gate into a value IMMEDIATELY: if it rejects while the durable
+          // AwaitingAcceptance write below is still in flight, a bare pending promise would be an
+          // unhandled rejection (fatal on Node 22) before signoff.failed / run.summary could go out.
+          type GateOutcome = { ok: true; decision: Awaited<ReturnType<AcceptanceGate>> } | { ok: false; error: unknown };
+          let pendingDecision: Promise<GateOutcome>;
+          try {
+            pendingDecision = this.acceptanceGate(this.buildDod(state, plan), this.signal).then(
+              (decision) => ({ ok: true as const, decision }),
+              (error: unknown) => ({ ok: false as const, error }),
+            );
+          } catch (error) {
+            // A gate that throws synchronously (before returning its promise) is the same failure.
+            pendingDecision = Promise.resolve({ ok: false as const, error });
+          }
           await this.publishAwaitingAcceptance(state, plan);
-          const decision = await pendingDecision;
+          const outcome = await pendingDecision;
+          if (!outcome.ok) {
+            // A gate that cannot decide (stdinAcceptanceGate on a closed stdin refuses to
+            // auto-decide, by design) must not cost the operator the completed work: terminate
+            // with the REAL RunState — actions, spend, replans — as a 'failed' summary instead of
+            // letting the throw escape run() and forcing entry points to synthesize an empty one.
+            const message = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+            this.emit({ ev: 'signoff.failed', message });
+            return this.terminalSummary(state, 'failed', `sign-off gate failed: ${message}`);
+          }
+          const decision = outcome.decision;
           if (this.signal.aborted) return this.terminalSummary(state, 'cancelled', 'aborted during sign-off');
           if (decision === 'accept') {
             return this.terminalSummary(state, 'succeeded', 'goalState satisfied and operator signed off');
@@ -1206,12 +1229,35 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return false;
   const rl = createInterface({ input: process.stdin, output: process.stderr });
+  // readline wrote the prompt with no trailing newline. Whatever stderr carries next on a
+  // non-answer outcome (EOF, abort, input error) is a structured envelope that must start on its
+  // own line — end the prompt exactly once on those paths.
+  let promptEnded = false;
+  const endPrompt = (): void => {
+    if (!promptEnded) {
+      promptEnded = true;
+      process.stderr.write('\n');
+    }
+  };
   try {
-    const answer = await rl.question('Proceed? [y/N] ', { signal });
+    // Race the question against readline 'close' (EOF: stdin is /dev/null or a drained pipe —
+    // question() never settles on its own) and 'error' (a dead input such as EIO is forwarded
+    // as an Interface 'error' event, which is fatal if nothing listens).
+    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+    const failed = new Promise<never>((_, reject) => rl.once('error', reject));
+    failed.catch(() => {}); // settled after the race → must not become an unhandled rejection
+    const answer = await Promise.race([rl.question('Proceed? [y/N] ', { signal }), closed, failed]);
+    if (answer === null) {
+      endPrompt();
+      return false; // stdin closed — non-interactive invocation declines
+    }
     return /^y(es)?$/i.test(answer.trim());
-  } catch (e) {
-    if (signal.aborted) return false; // aborted mid-prompt (SIGINT/SIGTERM) — treat as declined, not a crash
-    throw e;
+  } catch {
+    // Aborted mid-prompt (SIGINT/SIGTERM/wall-clock) OR a dead/non-readable stdin (EIO): both
+    // decline. Declining costs nothing and keeps Orchestrator.run()'s never-throws contract;
+    // rethrowing here crashed the stream with no terminal run.summary envelope.
+    endPrompt();
+    return false;
   } finally {
     rl.close();
   }
@@ -1242,10 +1288,29 @@ export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
   process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return 'reject';
   const rl = createInterface({ input: process.stdin, output: process.stderr });
+  let promptEnded = false;
+  const endPrompt = (): void => {
+    if (!promptEnded) {
+      promptEnded = true;
+      process.stderr.write('\n');
+    }
+  };
   try {
-    const answer = await rl.question('Accept? [y/N] ', { signal });
+    // Same EOF/error races as stdinConfirm — but a closed or dead stdin here must FAIL LOUDLY,
+    // not resolve 'reject': rejection triggers the remediation loop (real spend on the
+    // claude-code path) with nobody at the keyboard. The thrown error is settled by the
+    // orchestrator's gate handling into a 'failed' summary with the completed work preserved.
+    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+    const failed = new Promise<never>((_, reject) => rl.once('error', reject));
+    failed.catch(() => {});
+    const answer = await Promise.race([rl.question('Accept? [y/N] ', { signal }), closed, failed]);
+    if (answer === null) {
+      endPrompt();
+      throw new Error('stdin closed while awaiting sign-off — refusing to auto-decide a completion gate non-interactively');
+    }
     return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';
   } catch (e) {
+    endPrompt();
     if (signal.aborted) return 'reject'; // aborted mid-prompt — treat as declined, not a crash
     throw e;
   } finally {

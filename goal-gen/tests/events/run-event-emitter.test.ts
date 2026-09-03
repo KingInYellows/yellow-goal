@@ -7,7 +7,7 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { RunEventSchema } from '../../backend/src/contracts/run-event';
 import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
-import { createStdoutSink } from '../../backend/src/runner';
+import { createStdoutSink } from '../../backend/src/events/stdout-sink';
 import { validateAgainstJsonSchema } from '../contracts/support/json-schema-checker';
 import { loadVendoredSchema } from '../contracts/support/load-schema';
 
@@ -89,12 +89,19 @@ describe('RunEventEmitter', () => {
 
 // `process.stdout.write()` reports a broken pipe (EPIPE) asynchronously via the stream's 'error'
 // event rather than a throw, so the emitter's synchronous try/catch above cannot contain it —
-// `createStdoutSink` (runner.ts) handles it at the stream boundary instead. These tests drive a
+// `createStdoutSink` (events/stdout-sink.ts) handles it at the stream boundary instead. These tests drive a
 // fake stream to prove that boundary actually survives an async stream error.
-describe('createStdoutSink (async stream-error containment, runner.ts)', () => {
+describe('createStdoutSink (async stream-error containment, events/stdout-sink.ts)', () => {
   function fakeStream() {
     const written: string[] = [];
-    const stream = Object.assign(new EventEmitter(), { write: (chunk: string) => (written.push(chunk), true) });
+    // Acknowledge each write synchronously, as a healthy stream eventually does.
+    const stream = Object.assign(new EventEmitter(), {
+      write: (chunk: string, cb?: (err?: Error | null) => void) => {
+        written.push(chunk);
+        cb?.();
+        return true;
+      },
+    });
     return { stream: stream as unknown as NodeJS.WritableStream, written };
   }
 
@@ -118,13 +125,59 @@ describe('createStdoutSink (async stream-error containment, runner.ts)', () => {
     expect(written).toEqual([`${JSON.stringify({ type: 'run.start' })}\n`]);
   });
 
-  it('surfaces a non-EPIPE stream error on stderr without throwing', () => {
+  it('records a non-EPIPE stream error as transportError — no throw, nothing on stderr', () => {
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const { stream } = fakeStream();
-    createStdoutSink(stream);
+    const { stream, written } = fakeStream();
+    const sink = createStdoutSink(stream);
     const err = Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    expect(sink.transportError).toBeUndefined();
     expect(() => stream.emit('error', err)).not.toThrow();
-    expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('disk full'))).toBe(true);
+    expect(sink.transportError).toBe(err);
+    // stderr is reserved for the entry point's single-line structured envelope.
+    expect(stderrSpy).not.toHaveBeenCalled();
+    sink({ type: 'run.summary' });
+    expect(written).toEqual([]);
     stderrSpy.mockRestore();
+  });
+
+  it('flush() waits for outstanding writes to be acknowledged, then yields one macrotask', async () => {
+    const acks: Array<() => void> = [];
+    const stream = Object.assign(new EventEmitter(), {
+      write: (_chunk: string, cb?: (err?: Error | null) => void) => {
+        if (cb) acks.push(() => cb());
+        return true;
+      },
+    });
+    const sink = createStdoutSink(stream as unknown as NodeJS.WritableStream);
+    sink({ type: 'run.start' });
+    sink({ type: 'run.summary' });
+    let flushed = false;
+    const flushing = sink.flush().then(() => {
+      flushed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(flushed).toBe(false); // two writes still in flight
+    for (const ack of acks.splice(0)) ack();
+    await flushing;
+    expect(flushed).toBe(true);
+  });
+
+  it('flush() does not hang on a stream that errors with writes in flight', async () => {
+    const stream = Object.assign(new EventEmitter(), { write: () => true }); // never acknowledges
+    const sink = createStdoutSink(stream as unknown as NodeJS.WritableStream);
+    sink({ type: 'run.start' });
+    const flushing = sink.flush();
+    stream.emit('error', Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+    await flushing;
+    expect(sink.transportError?.code).toBe('ENOSPC');
+  });
+
+  it('dispose() detaches the stream error listener so per-run sinks do not accumulate', () => {
+    const { stream } = fakeStream();
+    const before = (stream as unknown as EventEmitter).listenerCount('error');
+    const sink = createStdoutSink(stream);
+    expect((stream as unknown as EventEmitter).listenerCount('error')).toBe(before + 1);
+    sink.dispose();
+    expect((stream as unknown as EventEmitter).listenerCount('error')).toBe(before);
   });
 });

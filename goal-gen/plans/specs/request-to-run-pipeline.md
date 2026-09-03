@@ -120,7 +120,20 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
   consumer never needs a second protocol.
 - **RR12 — streamed events + terminal summary.** stdout is run-event/v1 JSON Lines (RR6);
   the final line is the `run.summary` envelope. Exit 0 iff terminal status is `succeeded`;
-  exit 1 otherwise (including `failed`/`cancelled`/`budget-exhausted`).
+  exit 1 otherwise (including `failed`/`cancelled`/`budget-exhausted`). On any non-`succeeded`
+  terminal status the verb ALSO writes RR11's single-line stderr envelope
+  (`{"error":{code,message}}`), with `code` one of `RUN_FAILED` / `RUN_CANCELLED` /
+  `RUN_BUDGET_EXHAUSTED` so a consumer can tell them apart without parsing `reason` text
+  (`RUN_FAILED` also covers the defensive path where `Orchestrator.run()` or engine construction
+  throws — stdout and stderr then agree on the classification). A non-EPIPE stdout error (e.g.
+  `ENOSPC` on a redirected file) truncates the stream, so the entry point reports
+  `RUN_STDOUT_TRANSPORT_FAILED` and exits 1 even if orchestration itself succeeded — nobody could
+  observe that success. A sign-off gate that cannot decide (closed stdin) ends the run as `failed`
+  with the real RunState preserved (`signoff.failed` event), never by escaping `run()`;
+  the success path's stderr stays empty and stdout's terminal `run.summary` is unaffected
+  either way. The mandatory 60-minute run-wide wall-clock (CLAUDE.md invariant #6, ADR-0010,
+  `RUN_WALL_CLOCK_MS` in `orchestrator/guardrails.ts`) is enforced here by aborting the run's
+  `AbortController` on trip, which surfaces as an ordinary `cancelled` terminal summary.
 - **RR13 — no default executor.** `--executor claude-code|stub` is required: real spend is
   only ever an explicit choice (ADR-0015 fail-closed posture), and `stub` gives consumers and
   tests a deterministic, zero-spend path. Absent/unknown values are a `USAGE_ERROR`; nothing
@@ -134,6 +147,42 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
 - **RR16 — CI never executes a real agent.** Tests cover the `run` verb exclusively through
   `--executor stub`; the real-executor path stays covered by `tests/integration/
   runner.probe.ts` (outside the vitest glob, operator-invoked only).
+
+### Operator consent & non-interactive gates (RR18–RR20)
+
+Added 2026-08-26 from the adversarial review of the `run` verb (PR #18): a request FILE is
+untrusted input relative to the invoking OPERATOR — anything that expands spend or removes
+oversight needs consent expressed on the command line, not in the file.
+
+- **RR18 — guardrail ceilings.** A request may freely LOWER guardrail caps; RAISING any
+  spend/time-relevant cap (`maxBudgetUsd`, `maxReplans`, `maxReextractions`,
+  `maxRetriesPerAction`, `actionTimeoutMs`) above the ADR-0010 defaults requires the
+  operator's explicit `--allow-guardrail-override`. Without it the mapping fails validation
+  (`RUN_GUARDRAILS_EXCEED_DEFAULTS`, one entry per offending field). `model` is not a cap
+  (it selects unit cost) and stays unrestricted. The effective `runConfig` is always emitted
+  in the stream's `run.start` audit envelope, along with the override flag, so spend
+  configuration is never invisible.
+- **RR19 — real-executor DoD consent.** With a real executor (the runner always; the `run`
+  verb under `--executor claude-code`), the DoD gate is where the operator sees every verify
+  command before real spend — the request file's `autoConfirmDod` alone cannot skip it; only
+  the CLI `--yes` can. An ignored request-file ask is surfaced in-stream
+  (`gate.requestAutoConfirmIgnored`), never silently dropped. The zero-spend stub engine
+  honors `autoConfirmDod` as-is.
+- **RR20 — non-interactive gate policy.** Gate prompts go to stderr (stdout is the protocol
+  stream). On closed/dead stdin: the DoD/reconfirm gate DECLINES (costs nothing); the
+  acceptance gate FAILS LOUDLY rather than auto-deciding — 'reject' would trigger the
+  remediation loop's real spend with nobody at the keyboard. (Mechanics shipped in the PR #18
+  review pass; recorded here as policy.)
+
+### Known conflations / deferred mappings (recorded, not resolved here)
+
+- `permissionProfile` is compiler-scoped today: the run path does not map profiles onto
+  executor permission modes (the real engine uses ADR-0009's scratch-worktree bypass opt-in
+  regardless). Profile→permissionMode mapping is provider-protocol-v1 work. The canonical
+  execution sample uses the `implement` profile for coherence, but nothing consumes it on the
+  run path yet.
+- `target.repository` is disclosed in `run.start` (`targetRepositoryHonored: false`) — see
+  "Out of scope".
 
 ## Design
 
@@ -158,6 +207,10 @@ invent a new event envelope.
 - HTTP endpoints, WebSocket/SSE, auth, read models (`.claude/specs/api.md`) — blocked on
   re-deriving the unrecovered R-ids; the transport decision above is this spec's only input
   to that work.
+- Executing against `target.repository`. The M1 loop runs every action in a fresh scratch
+  worktree in tmpdir (`executors/worktree.ts`, ADR-0009 blast-radius posture) — the request's
+  target selects the *compiler pipeline's* subject today, not the executor's working tree.
+  Pointing execution at the target is its own future milestone with its own safety review.
 - DB-backed `run` verb persistence (RR15), crash-resume of parked gates (original R32
   posture), multi-executor routing (M2).
 - Any change to the read-only compiler pipeline's behavior.

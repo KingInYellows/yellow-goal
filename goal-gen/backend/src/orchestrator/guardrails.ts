@@ -1,8 +1,9 @@
 /**
  * Guardrail caps as named constants (CLAUDE.md invariant #6, ADR-0010 defaults). There are no magic
  * numbers in the orchestrator loop — every cap routes through here and each has a corresponding
- * terminal state. Deferred for v1 (carry the mechanism, enforce later): the 60-min wall-clock and
- * full loop-detection; `maxSameSubgoalFailures` already seeds the loop-detection trigger.
+ * terminal state. The 60-min wall-clock (`RUN_WALL_CLOCK_MS`) is enforced by entry points via the
+ * run's `AbortController`, not inside the orchestrator loop itself. Still deferred for v1: full
+ * loop-detection beyond the same-subgoal trigger (`maxSameSubgoalFailures` seeds it).
  */
 import type { RunConfig } from '../types';
 
@@ -13,11 +14,15 @@ export const MAX_REEXTRACTIONS = 2;
 export const MAX_RETRIES_PER_ACTION = 3;
 /** Same subgoal failing the same way this many times → escalate to re-extraction (loop trigger). */
 export const MAX_SAME_SUBGOAL_FAILURES = 2;
-/** Per-action timeout (10 min). Separate from the deferred 60-min wall-clock guardrail. */
+/** Per-action timeout (10 min). Separate from the run-wide wall-clock guardrail below. */
 export const ACTION_TIMEOUT_MS = 600_000;
-/** Run-level wall-clock cap (ADR-0010). Orchestrator enforcement is deferred in v1, but request
- *  overrides must not exceed it — a per-action timeout above the run cap is never meaningful. */
-export const MAX_WALL_CLOCK_MS = 3_600_000;
+/** Run-wide wall-clock cap (60 min; CLAUDE.md invariant #6, ADR-0010). The mechanism lives on
+ *  `Orchestrator` (an injected `AbortSignal`), but enforcement is owned by each entry point that
+ *  constructs the run's `AbortController` — see `backend/src/cli/run-command.ts`. */
+export const RUN_WALL_CLOCK_MS = 60 * 60_000;
+/** The same cap as seen from the request contract: a per-action timeout override above the run
+ *  cap is never meaningful, so `orchestration.execution.guardrails.actionTimeoutMs` is bounded by it. */
+export const MAX_WALL_CLOCK_MS = RUN_WALL_CLOCK_MS;
 
 /** Default executor model alias — `haiku` keeps the per-action context floor (~$0.08) low (spike §4). */
 export const DEFAULT_MODEL = 'haiku';
