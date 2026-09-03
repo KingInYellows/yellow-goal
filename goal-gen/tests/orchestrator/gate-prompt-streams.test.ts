@@ -86,3 +86,83 @@ describe('default stdin gates on a closed stdin end the prompt line (stderr stay
     }
   });
 });
+
+/** A stdin that stays open (interactive-looking) so the gates park on question(). */
+function withOpenStdin<T>(fn: (stdin: PassThrough) => Promise<T>): Promise<T> {
+  const open = new PassThrough();
+  const spy = vi.spyOn(process, 'stdin', 'get').mockReturnValue(open as unknown as typeof process.stdin);
+  return fn(open).finally(() => {
+    spy.mockRestore();
+    open.destroy();
+  });
+}
+
+describe('default stdin gates end the prompt line on abort and on input errors', () => {
+  it('stdinConfirm: abort mid-prompt declines with a terminated prompt line', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const ac = new AbortController();
+      const result = withOpenStdin(async () => {
+        const pending = stdinConfirm(dod, ac.signal, 'dod');
+        await new Promise((resolve) => setImmediate(resolve));
+        ac.abort();
+        return pending;
+      });
+      await expect(result).resolves.toBe(false);
+      expect(err.mock.calls.map((c) => String(c[0])).join('').endsWith('\n')).toBe(true);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('stdinAcceptanceGate: abort mid-prompt rejects with a terminated prompt line', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const ac = new AbortController();
+      const result = withOpenStdin(async () => {
+        const pending = stdinAcceptanceGate(dod, ac.signal);
+        await new Promise((resolve) => setImmediate(resolve));
+        ac.abort();
+        return pending;
+      });
+      await expect(result).resolves.toBe('reject');
+      expect(err.mock.calls.map((c) => String(c[0])).join('').endsWith('\n')).toBe(true);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('stdinConfirm: an input error (EIO) declines instead of crashing, prompt line terminated', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const ac = new AbortController();
+      const result = withOpenStdin(async (stdin) => {
+        const pending = stdinConfirm(dod, ac.signal, 'dod');
+        await new Promise((resolve) => setImmediate(resolve));
+        stdin.emit('error', Object.assign(new Error('read EIO'), { code: 'EIO' }));
+        return pending;
+      });
+      await expect(result).resolves.toBe(false);
+      expect(err.mock.calls.map((c) => String(c[0])).join('').endsWith('\n')).toBe(true);
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('stdinAcceptanceGate: an input error (EIO) fails loudly instead of crashing, prompt line terminated', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const ac = new AbortController();
+      const result = withOpenStdin(async (stdin) => {
+        const pending = stdinAcceptanceGate(dod, ac.signal);
+        await new Promise((resolve) => setImmediate(resolve));
+        stdin.emit('error', Object.assign(new Error('read EIO'), { code: 'EIO' }));
+        return pending;
+      });
+      await expect(result).rejects.toThrow(/EIO/);
+      expect(err.mock.calls.map((c) => String(c[0])).join('').endsWith('\n')).toBe(true);
+    } finally {
+      err.mockRestore();
+    }
+  });
+});

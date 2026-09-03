@@ -303,6 +303,18 @@ describe('failure containment at the entry point', () => {
     expect(process.stdout.listenerCount('error')).toBe(stdoutErrBefore);
   });
 
+  it('a non-EPIPE stdout error outranks the exceptional path too: factory throw + ENOSPC → RUN_STDOUT_TRANSPORT_FAILED', async () => {
+    const factory = vi.fn<EngineFactory>(() => {
+      process.stdout.emit('error', Object.assign(new Error('no space left on device'), { code: 'ENOSPC' }));
+      throw new Error('engine exploded');
+    });
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await runRunCommand([requestPath, '--executor', 'stub'], { engineFactory: factory });
+    expect(code).toBe(1);
+    const err = JSON.parse(stderrText().trim()) as { error: { code: string } };
+    expect(err.error.code).toBe('RUN_STDOUT_TRANSPORT_FAILED');
+  });
+
   it('a non-EPIPE stdout error outranks a terminal-status failure: RUN_STDOUT_TRANSPORT_FAILED, not RUN_FAILED', async () => {
     const factory = vi.fn<EngineFactory>((kind, inputs, onEvent) => {
       process.stdout.emit('error', Object.assign(new Error('no space left on device'), { code: 'ENOSPC' }));

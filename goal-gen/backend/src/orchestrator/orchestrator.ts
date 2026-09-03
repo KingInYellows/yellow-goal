@@ -1229,24 +1229,34 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
   process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return false;
   const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    // Race against readline 'close': on EOF (stdin is /dev/null or a drained pipe) the question
-    // promise never settles at all — without this race the event loop drains and the process
-    // exits 0 with no terminal run.summary envelope.
-    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
-    const answer = await Promise.race([rl.question('Proceed? [y/N] ', { signal }), closed]);
-    if (answer === null) {
-      // stdin closed — non-interactive invocation declines. End the prompt line first: readline
-      // wrote 'Proceed? [y/N] ' with no newline, and whatever stderr carries next (a structured
-      // envelope) must start on its own line to stay parseable.
+  // readline wrote the prompt with no trailing newline. Whatever stderr carries next on a
+  // non-answer outcome (EOF, abort, input error) is a structured envelope that must start on its
+  // own line — end the prompt exactly once on those paths.
+  let promptEnded = false;
+  const endPrompt = (): void => {
+    if (!promptEnded) {
+      promptEnded = true;
       process.stderr.write('\n');
-      return false;
+    }
+  };
+  try {
+    // Race the question against readline 'close' (EOF: stdin is /dev/null or a drained pipe —
+    // question() never settles on its own) and 'error' (a dead input such as EIO is forwarded
+    // as an Interface 'error' event, which is fatal if nothing listens).
+    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+    const failed = new Promise<never>((_, reject) => rl.once('error', reject));
+    failed.catch(() => {}); // settled after the race → must not become an unhandled rejection
+    const answer = await Promise.race([rl.question('Proceed? [y/N] ', { signal }), closed, failed]);
+    if (answer === null) {
+      endPrompt();
+      return false; // stdin closed — non-interactive invocation declines
     }
     return /^y(es)?$/i.test(answer.trim());
   } catch {
-    // Aborted mid-prompt (SIGINT/SIGTERM) OR a dead/non-readable stdin (EIO): both decline.
-    // Declining costs nothing and keeps Orchestrator.run()'s never-throws contract; rethrowing
-    // here crashed the stream with no terminal run.summary envelope.
+    // Aborted mid-prompt (SIGINT/SIGTERM/wall-clock) OR a dead/non-readable stdin (EIO): both
+    // decline. Declining costs nothing and keeps Orchestrator.run()'s never-throws contract;
+    // rethrowing here crashed the stream with no terminal run.summary envelope.
+    endPrompt();
     return false;
   } finally {
     rl.close();
@@ -1278,21 +1288,29 @@ export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
   process.stderr.write(`${lines.join('\n')}\n`);
   if (signal.aborted) return 'reject';
   const rl = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    // Same EOF race as stdinConfirm — but a closed stdin here must FAIL LOUDLY, not resolve
-    // 'reject': rejection triggers the remediation loop (real spend on the claude-code path)
-    // with nobody at the keyboard. The thrown error reaches the entry point's catch, which
-    // still terminates the stream with a failed run.summary.
-    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
-    const answer = await Promise.race([rl.question('Accept? [y/N] ', { signal }), closed]);
-    if (answer === null) {
-      // Same newline discipline as stdinConfirm: the failure envelope that follows this throw must
-      // not be appended to the dangling 'Accept? [y/N] ' prompt.
+  let promptEnded = false;
+  const endPrompt = (): void => {
+    if (!promptEnded) {
+      promptEnded = true;
       process.stderr.write('\n');
+    }
+  };
+  try {
+    // Same EOF/error races as stdinConfirm — but a closed or dead stdin here must FAIL LOUDLY,
+    // not resolve 'reject': rejection triggers the remediation loop (real spend on the
+    // claude-code path) with nobody at the keyboard. The thrown error is settled by the
+    // orchestrator's gate handling into a 'failed' summary with the completed work preserved.
+    const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
+    const failed = new Promise<never>((_, reject) => rl.once('error', reject));
+    failed.catch(() => {});
+    const answer = await Promise.race([rl.question('Accept? [y/N] ', { signal }), closed, failed]);
+    if (answer === null) {
+      endPrompt();
       throw new Error('stdin closed while awaiting sign-off — refusing to auto-decide a completion gate non-interactively');
     }
     return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';
   } catch (e) {
+    endPrompt();
     if (signal.aborted) return 'reject'; // aborted mid-prompt — treat as declined, not a crash
     throw e;
   } finally {

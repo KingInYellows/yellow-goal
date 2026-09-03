@@ -292,7 +292,12 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
       actions: [],
       reason,
     });
-    process.stderr.write(`${JSON.stringify(runFailureEnvelope({ status: 'failed', reason }))}\n`);
+    // Same precedence as the normal path: a truncated stream outranks the failure classification.
+    await writeEnvelope.flush();
+    const envelope = writeEnvelope.transportError
+      ? transportFailureEnvelope(writeEnvelope.transportError)
+      : runFailureEnvelope({ status: 'failed', reason });
+    process.stderr.write(`${JSON.stringify(envelope)}\n`);
     return 1;
   } finally {
     clearTimeout(deadline);
