@@ -266,7 +266,9 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
       return 1;
     }
     // A non-EPIPE stdout error means the consumer did not receive the whole stream (possibly not
-    // even run.summary): never report success for a run nobody could observe.
+    // even run.summary): never report success for a run nobody could observe. Stream errors are
+    // asynchronous, so wait for the writes to be acknowledged before deciding.
+    await writeEnvelope.flush();
     if (writeEnvelope.transportError) {
       process.stderr.write(`${JSON.stringify(transportFailureEnvelope(writeEnvelope.transportError))}\n`);
       return 1;
@@ -295,6 +297,9 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
     clearTimeout(deadline);
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
+    // Drain before detaching the error listener: a late write failure must land on the sink, not
+    // become an unhandled 'error' event after the listener is gone.
+    await writeEnvelope.flush();
     writeEnvelope.dispose();
   }
 }

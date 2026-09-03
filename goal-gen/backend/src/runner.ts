@@ -29,10 +29,11 @@ import { ClaudeCodeExecutor } from './executors/claude-code-executor';
 import { ShellVerifier } from './executors/shell-verifier';
 import { ClaudeLlmClient, LlmExtractorImpl } from './extractors/llm-extractor';
 import { IntakeValidationFailure } from './intake';
-import { defaultRunConfig } from './orchestrator/guardrails';
+import { RUN_WALL_CLOCK_MS, defaultRunConfig } from './orchestrator/guardrails';
 import { Orchestrator } from './orchestrator/orchestrator';
 import type { DodConfirmer } from './orchestrator/orchestrator';
 import { loadRunRequest, requestToRunInputs } from './run/request-to-run';
+import type { RepositoryGoalRequest } from './contracts/request';
 import type { RunConfig, RunSummary } from './types';
 
 const stdoutSink = createStdoutSink();
@@ -99,9 +100,55 @@ export function parseRunnerArgs(args: string[]): RunnerArgs {
 /** Run the real M1 loop for one goal and return its structured summary. Every path — including
  *  the early usage/request failures below, which never reach the orchestrator — ends the stream
  *  with a `run.summary` envelope (RR10); orchestrator paths emit it from `summary()` itself. */
-async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitter({ sink: stdoutSink })): Promise<RunSummary> {
+/** Pure builder for the runner's `run.start` audit envelope (RR18/RR19 + target disclosure) — the
+ *  same fields the `run` verb emits, exported so the `--request` shape is testable without
+ *  constructing a real executor. */
+export function runStartEvent(fields: {
+  goalText: string;
+  autoConfirm: boolean;
+  runConfig: RunConfig;
+  allowGuardrailOverride: boolean;
+  targetRepository?: string;
+}): { ev: 'run.start' } & Record<string, unknown> {
+  return {
+    ev: 'run.start',
+    goalText: fields.goalText,
+    executor: 'claude-code',
+    autoConfirm: fields.autoConfirm,
+    allowGuardrailOverride: fields.allowGuardrailOverride,
+    runConfig: fields.runConfig,
+    // Execution happens in fresh scratch worktrees (ADR-0009); a request's target does not select
+    // the execution target yet — disclosed in-band, exactly like the `run` verb.
+    ...(fields.targetRepository !== undefined
+      ? { targetRepository: fields.targetRepository, targetRepositoryHonored: false }
+      : {}),
+  };
+}
+
+async function run(args: string[], injectedEmitter?: RunEventEmitter): Promise<RunSummary> {
+  // Best-effort running spend total from every envelope carrying a numeric costUsd — feeds the
+  // defensive fallback summary so an unexpected throw after real spend never reports $0. An
+  // injected emitter (tests) bypasses the tally; the real entry always goes through it.
+  let observedCostUsd = 0;
+  const emitter =
+    injectedEmitter ??
+    new RunEventEmitter({
+      sink: (envelope) => {
+        const cost = (envelope.payload as Record<string, unknown> | undefined)?.costUsd;
+        if (typeof cost === 'number') observedCostUsd += cost;
+        stdoutSink(envelope);
+      },
+    });
   const failedSummary = (reason: string, failedGoalText = ''): RunSummary => {
-    const summary: RunSummary = { status: 'failed', goalText: failedGoalText, costUsd: 0, replans: 0, reextractions: 0, actions: [], reason };
+    const summary: RunSummary = {
+      status: 'failed',
+      goalText: failedGoalText,
+      costUsd: observedCostUsd,
+      replans: 0,
+      reextractions: 0,
+      actions: [],
+      reason,
+    };
     emitter.handle({ ev: 'run.summary', ...summary });
     return summary;
   };
@@ -116,9 +163,11 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
   let config: RunConfig;
   let autoConfirm: boolean;
   let requestAskedAutoConfirm = false;
+  let request: RepositoryGoalRequest | undefined;
   if (parsed.kind === 'request') {
     try {
-      const inputs = requestToRunInputs(await loadRunRequest(parsed.requestPath), {
+      request = await loadRunRequest(parsed.requestPath);
+      const inputs = requestToRunInputs(request, {
         allowGuardrailOverride: parsed.allowGuardrailOverride,
       });
       goalText = inputs.goalText;
@@ -140,8 +189,17 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
     autoConfirm = parsed.autoConfirm;
   }
 
-  // Audit envelope (RR18/RR19): effective spend configuration first, always.
-  emitter.handle({ ev: 'run.start', goalText, autoConfirm, runConfig: config });
+  // Audit envelope (RR18/RR19): effective spend configuration, consent flag and target disclosure
+  // first, always — the same shape the `run` verb emits.
+  emitter.handle(
+    runStartEvent({
+      goalText,
+      autoConfirm,
+      runConfig: config,
+      allowGuardrailOverride: parsed.kind === 'request' ? parsed.allowGuardrailOverride : false,
+      ...(request !== undefined ? { targetRepository: request.target.repository } : {}),
+    }),
+  );
   if (requestAskedAutoConfirm && !autoConfirm) {
     emitter.handle({
       ev: 'gate.requestAutoConfirmIgnored',
@@ -173,6 +231,10 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
   const abort = () => ac.abort();
   process.once('SIGINT', abort);
   process.once('SIGTERM', abort);
+  // CLAUDE.md invariant #6 / ADR-0010: the run-wide 60-minute wall-clock is enforced by the entry
+  // point that owns the AbortController — same as the `run` verb. On trip, the orchestrator's
+  // existing signal.aborted checks return their normal 'cancelled' terminal summary.
+  const deadline = setTimeout(abort, RUN_WALL_CLOCK_MS);
 
   // `events` supersedes onEvent; the run's id defaults to emitter.runId so stream and summary agree.
   const orchestrator = new Orchestrator({ extractor, executor, verifier, config, events: emitter, confirm, signal: ac.signal });
@@ -186,6 +248,7 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
     emitter.handle({ ev: 'error', message: reason });
     return failedSummary(reason, goalText);
   } finally {
+    clearTimeout(deadline);
     process.off('SIGINT', abort);
     process.off('SIGTERM', abort);
   }
@@ -195,6 +258,8 @@ async function run(args: string[], emitter: RunEventEmitter = new RunEventEmitte
 // `run()` guarantees the terminal `run.summary` envelope on every path — nothing to emit here.
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const summary = await run(process.argv.slice(2));
+  // Stream errors are asynchronous: drain before deciding whether the operator saw the whole run.
+  await stdoutSink.flush();
   let exitCode = summary.status === 'succeeded' ? 0 : 1;
   if (stdoutSink.transportError) {
     // The stream was truncated by a non-EPIPE stdout error: the operator never saw the whole run.

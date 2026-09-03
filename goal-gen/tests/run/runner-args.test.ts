@@ -9,7 +9,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RunEventSchema, type RunEvent } from '../../backend/src/contracts/run-event';
 import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
-import { parseRunnerArgs, run } from '../../backend/src/runner';
+import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
+import { parseRunnerArgs, run, runStartEvent } from '../../backend/src/runner';
 import { requestSample } from '../contracts/support/samples';
 
 describe('parseRunnerArgs (RR5)', () => {
@@ -133,5 +134,31 @@ describe('--allow-guardrail-override (RR18)', () => {
 
   it('is a usage error without --request (nothing to consent to)', () => {
     expect(parseRunnerArgs(['--allow-guardrail-override', 'do a thing'])).toMatchObject({ kind: 'usage' });
+  });
+});
+
+describe('runStartEvent — the runner\'s audit envelope matches the run verb', () => {
+  it('discloses the request target as not honored and carries the consent flag', () => {
+    const event = runStartEvent({
+      goalText: 'g',
+      autoConfirm: false,
+      runConfig: defaultRunConfig(),
+      allowGuardrailOverride: true,
+      targetRepository: 'owner/repo',
+    });
+    expect(event).toMatchObject({
+      ev: 'run.start',
+      executor: 'claude-code',
+      allowGuardrailOverride: true,
+      targetRepository: 'owner/repo',
+      targetRepositoryHonored: false,
+    });
+  });
+
+  it('omits target fields for a bare-goal run (nothing was requested)', () => {
+    const event = runStartEvent({ goalText: 'g', autoConfirm: true, runConfig: defaultRunConfig(), allowGuardrailOverride: false });
+    expect(event).not.toHaveProperty('targetRepository');
+    expect(event).not.toHaveProperty('targetRepositoryHonored');
+    expect(event.allowGuardrailOverride).toBe(false);
   });
 });

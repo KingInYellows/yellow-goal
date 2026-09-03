@@ -22,7 +22,12 @@ let stderrSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(tmpdir(), 'goal-gen-run-verb-'));
-  stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+  // Acknowledge writes like a healthy stream would — the sink's flush() waits for the callback.
+  stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((_chunk: unknown, encodingOrCb?: unknown, cb?: unknown) => {
+    const ack = typeof encodingOrCb === 'function' ? encodingOrCb : cb;
+    if (typeof ack === 'function') (ack as () => void)();
+    return true;
+  }) as typeof process.stdout.write);
   stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 });
 

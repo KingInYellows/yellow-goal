@@ -94,7 +94,14 @@ describe('RunEventEmitter', () => {
 describe('createStdoutSink (async stream-error containment, events/stdout-sink.ts)', () => {
   function fakeStream() {
     const written: string[] = [];
-    const stream = Object.assign(new EventEmitter(), { write: (chunk: string) => (written.push(chunk), true) });
+    // Acknowledge each write synchronously, as a healthy stream eventually does.
+    const stream = Object.assign(new EventEmitter(), {
+      write: (chunk: string, cb?: (err?: Error | null) => void) => {
+        written.push(chunk);
+        cb?.();
+        return true;
+      },
+    });
     return { stream: stream as unknown as NodeJS.WritableStream, written };
   }
 
@@ -131,6 +138,38 @@ describe('createStdoutSink (async stream-error containment, events/stdout-sink.t
     sink({ type: 'run.summary' });
     expect(written).toEqual([]);
     stderrSpy.mockRestore();
+  });
+
+  it('flush() waits for outstanding writes to be acknowledged, then yields one macrotask', async () => {
+    const acks: Array<() => void> = [];
+    const stream = Object.assign(new EventEmitter(), {
+      write: (_chunk: string, cb?: (err?: Error | null) => void) => {
+        if (cb) acks.push(() => cb());
+        return true;
+      },
+    });
+    const sink = createStdoutSink(stream as unknown as NodeJS.WritableStream);
+    sink({ type: 'run.start' });
+    sink({ type: 'run.summary' });
+    let flushed = false;
+    const flushing = sink.flush().then(() => {
+      flushed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(flushed).toBe(false); // two writes still in flight
+    for (const ack of acks.splice(0)) ack();
+    await flushing;
+    expect(flushed).toBe(true);
+  });
+
+  it('flush() does not hang on a stream that errors with writes in flight', async () => {
+    const stream = Object.assign(new EventEmitter(), { write: () => true }); // never acknowledges
+    const sink = createStdoutSink(stream as unknown as NodeJS.WritableStream);
+    sink({ type: 'run.start' });
+    const flushing = sink.flush();
+    stream.emit('error', Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+    await flushing;
+    expect(sink.transportError?.code).toBe('ENOSPC');
   });
 
   it('dispose() detaches the stream error listener so per-run sinks do not accumulate', () => {
