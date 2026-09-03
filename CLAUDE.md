@@ -9,6 +9,9 @@ What sits at this root and why:
 
 - `.github/workflows/ci.yml` — CI gates (typecheck / test / eval + tarball
   install smoke). Every step runs with `working-directory: goal-gen`.
+- `.github/workflows/release.yml` — on a `v*` tag matching `goal-gen`
+  `package.json`, re-runs the gates and attaches `goal-gen-<ver>.tgz` as a
+  GitHub Release asset. Consumers pin that URL; do not use Actions artifacts.
 - `.graphite.yml`, `.github/pull_request_template.md` — repo-level PR conventions.
 - `docs/01`–`08` — research knowledge base that `goal-gen/docs/prd.md` (the
   product source of truth) and the specs cross-link to.

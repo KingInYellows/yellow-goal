@@ -9,7 +9,8 @@ Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction �
 - Install: `npm install` (npm only; CI uses `npm ci`)
 - Dev: `TBD` (not scaffolded yet)
 - Test: `npm test` · `npm run test:watch` (watch mode) · Evals: `npm run eval` (all) / `npm run eval:planner` (planner gate) · Typecheck: `npm run typecheck`
-- Compiler CLI: `npm run cli -- <subcommand> [--json]` · Install gate: `bash scripts/install-smoke.sh` · Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (the migration gate `tests/db/migrations.test.ts` fails otherwise)
+- Compiler CLI: `npm run cli -- <subcommand> [--json]` · Identity: `npm run cli -- version --json` · Run: `npm run cli -- run <request.json> --executor stub|claude-code` (`stub` only from tests/CI)
+- Install gate: `bash scripts/install-smoke.sh` · Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (the migration gate `tests/db/migrations.test.ts` fails otherwise)
 - M1 runner: `npm run runner -- [--yes] "<goal>"` or `--request <file>` (real `claude -p`, real cost — never from CI or an autonomous session)
 - Lint/format: `TBD` (not configured yet)
 Always run tests + the eval set before declaring a planner or prompt change done.
@@ -22,7 +23,7 @@ Always run tests + the eval set before declaring a planner or prompt change done
 5. One git worktree per agent run; no two writers on the same files. Worktrees are **collision-avoidance, not a sandbox** — the host LXC/VM is the blast radius in v1; per-run containers at M2.
 6. Enforce guardrails on every run: max replans, max budget USD, wall-clock, retries, max re-extractions, loop detection. Defaults: $20/run · 5 replans · ≤2 re-extractions · 60-min · 3 retries/action · concurrency 1; on trip → stop & escalate.
 7. Secrets via env only; no destructive git ops without approval.
-8. Process contract (ADR-0016): the engine is consumed as a process (npm tarball → `goal-gen` bin), never imported. Every verb: JSON stdout, single-line structured stderr `{"error":{"code","message"}}`, exit 0 / 2 = `USAGE_ERROR` / 1 = other failure. `tsx` + `zod` are runtime deps. `npm test` includes only `tests/**/*.test.ts`; live tests use the `*.probe.ts` suffix and CI must never run a real agent.
+8. Process contract (ADR-0016): the engine is consumed as a process (npm tarball → `goal-gen` bin), never imported. Every verb: JSON stdout, single-line structured stderr `{"error":{"code","message"}}`, exit 0 / 2 = `USAGE_ERROR` / 1 = other failure. `tsx` + `zod` are runtime deps. `npm test` includes only `tests/**/*.test.ts`; live tests use the `*.probe.ts` suffix and CI must never run a real agent. A `v*` tag matching `package.json` publishes `goal-gen-<ver>.tgz` as a GitHub Release asset (`.github/workflows/release.yml`); consumers pin that URL.
 
 ## Conventions
 Types-first; validate model output with zod; read the relevant `.claude/specs/*.md` before implementing a component, and update the spec first if behavior must change.
