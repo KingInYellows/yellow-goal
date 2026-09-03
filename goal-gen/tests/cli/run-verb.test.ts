@@ -303,6 +303,28 @@ describe('failure containment at the entry point', () => {
     expect(process.stdout.listenerCount('error')).toBe(stdoutErrBefore);
   });
 
+  it('a non-EPIPE stdout error outranks a terminal-status failure: RUN_STDOUT_TRANSPORT_FAILED, not RUN_FAILED', async () => {
+    const factory = vi.fn<EngineFactory>((kind, inputs, onEvent) => {
+      process.stdout.emit('error', Object.assign(new Error('no space left on device'), { code: 'ENOSPC' }));
+      const engine = defaultEngineFactory(kind, inputs, onEvent);
+      // An extractor that throws makes the orchestrator resolve a 'failed' summary (pre-RunState path).
+      const failingExtractor = {
+        extract: async () => {
+          throw new Error('extraction exploded');
+        },
+        expand: async () => {
+          throw new Error('unused');
+        },
+      } as unknown as typeof engine.extractor;
+      return { ...engine, extractor: failingExtractor };
+    });
+    const requestPath = await writeRequest(requestExecutionSample);
+    const code = await runRunCommand([requestPath, '--executor', 'stub'], { engineFactory: factory });
+    expect(code).toBe(1);
+    const err = JSON.parse(stderrText().trim()) as { error: { code: string } };
+    expect(err.error.code).toBe('RUN_STDOUT_TRANSPORT_FAILED');
+  });
+
   it('a non-EPIPE stdout error fails the run with RUN_STDOUT_TRANSPORT_FAILED even though orchestration succeeded', async () => {
     const factory = vi.fn<EngineFactory>((kind, inputs, onEvent) => {
       // The sink is live by the time the factory runs; simulate the redirected file filling up.

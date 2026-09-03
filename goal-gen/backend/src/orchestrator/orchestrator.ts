@@ -1235,7 +1235,13 @@ export const stdinConfirm: DodConfirmer = async (dod, signal, kind) => {
     // exits 0 with no terminal run.summary envelope.
     const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
     const answer = await Promise.race([rl.question('Proceed? [y/N] ', { signal }), closed]);
-    if (answer === null) return false; // stdin closed — non-interactive invocation declines
+    if (answer === null) {
+      // stdin closed — non-interactive invocation declines. End the prompt line first: readline
+      // wrote 'Proceed? [y/N] ' with no newline, and whatever stderr carries next (a structured
+      // envelope) must start on its own line to stay parseable.
+      process.stderr.write('\n');
+      return false;
+    }
     return /^y(es)?$/i.test(answer.trim());
   } catch {
     // Aborted mid-prompt (SIGINT/SIGTERM) OR a dead/non-readable stdin (EIO): both decline.
@@ -1280,6 +1286,9 @@ export const stdinAcceptanceGate: AcceptanceGate = async (dod, signal) => {
     const closed = new Promise<null>((resolve) => rl.once('close', () => resolve(null)));
     const answer = await Promise.race([rl.question('Accept? [y/N] ', { signal }), closed]);
     if (answer === null) {
+      // Same newline discipline as stdinConfirm: the failure envelope that follows this throw must
+      // not be appended to the dangling 'Accept? [y/N] ' prompt.
+      process.stderr.write('\n');
       throw new Error('stdin closed while awaiting sign-off — refusing to auto-decide a completion gate non-interactively');
     }
     return /^y(es)?$/i.test(answer.trim()) ? 'accept' : 'reject';

@@ -260,17 +260,18 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
     // budget-exhausted — so that shared contract has to be produced here explicitly; stdout's
     // terminal run.summary envelope is untouched either way, and the success path writes nothing
     // to stderr.
-    const failure = runFailureEnvelope(summary);
-    if (failure) {
-      process.stderr.write(`${JSON.stringify(failure)}\n`);
-      return 1;
-    }
     // A non-EPIPE stdout error means the consumer did not receive the whole stream (possibly not
-    // even run.summary): never report success for a run nobody could observe. Stream errors are
-    // asynchronous, so wait for the writes to be acknowledged before deciding.
+    // even run.summary): that outranks every other classification — a consumer told RUN_FAILED
+    // for a truncated stream would still trust the events it did see. Stream errors are
+    // asynchronous, so wait for the writes to be acknowledged before deciding anything.
     await writeEnvelope.flush();
     if (writeEnvelope.transportError) {
       process.stderr.write(`${JSON.stringify(transportFailureEnvelope(writeEnvelope.transportError))}\n`);
+      return 1;
+    }
+    const failure = runFailureEnvelope(summary);
+    if (failure) {
+      process.stderr.write(`${JSON.stringify(failure)}\n`);
       return 1;
     }
     return 0;
