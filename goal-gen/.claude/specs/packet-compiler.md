@@ -26,7 +26,7 @@ This is **compiler mode**. It is a separate subsystem from the M1 executor/orche
 | `analysis/` | `AnalysisProvider` interface (assessment + goal resolution + milestone + orchestration inputs); recorded provider for tests; `claude -p` provider for live use. Model-dependent, provenance-recorded. |
 | `packs/` | Pack loader (engine-compat check), `{{PLACEHOLDER}}` renderer — no logic in templates; fails on unresolved required placeholders. |
 | `packets/` | Deterministic packet assembly, manifest, checksums, ZIP (yazl, fixed mtimes), validator/verifier (yauzl for archive inspection). |
-| `cli/` | `request create|validate`, `inspect`, `analyze`, `compile`, `packet verify`, `version` — non-interactive, machine-readable JSON output (`--json`), structured stderr envelope on failure. `version` is compiler-process-safe (static import; no executor/orchestrator). |
+| `cli/` | `request create|validate`, `inspect`, `analyze`, `compile`, `packet verify`, `version` — non-interactive, machine-readable JSON output (`--json`), structured stderr envelope for command failures. A schema-invalid `request validate` result is a domain result instead: exit 1, one stdout object `{path,valid:false,errors}`, and empty stderr. `version` is compiler-process-safe (static import; no executor/orchestrator). |
 
 ## Version identity probe (RR17)
 
@@ -39,6 +39,13 @@ Three distinct versions exist and must not be conflated (all currently `0.1.0`, 
 3. **Protocol** version — does not exist yet; defined by provider protocol v1.
 
 The packet `MANIFEST.json` `engineVersion` field carries №2 (pack-format compatibility), not the artifact version this verb emits under the same name.
+
+## `request validate` CLI grammar
+
+`request validate [--json] <file>` accepts **exactly one** file positional.
+Zero or more than one positional is a `USAGE_ERROR` with exit status 2 and no
+file is opened. This is part of the process boundary: a consumer must never
+silently validate a different request than the one it supplied.
 
 ## Invariants (do not violate)
 

@@ -80,33 +80,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22.22.x
-      - name: Pack and publish release asset
+      - name: Pack release asset without GitHub credentials
+        run: bash scripts/prepare-release-asset.sh
+      - name: Publish or recover GitHub Release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          ver="${tag#v}"
-          tag_type="$(git cat-file -t "$tag" 2>/dev/null || true)"
-          if [ "$tag_type" != "tag" ]; then
-            echo "tag ${tag} is not annotated (git cat-file -t → ${tag_type:-missing}); cut with: git tag -a ${tag} -m ${tag}" >&2
-            exit 1
-          fi
-          pkg_ver="$(node -p "require('./package.json').version")"
-          if [ "$ver" != "$pkg_ver" ]; then
-            echo "tag ${tag} does not match package.json version ${pkg_ver}" >&2
-            exit 1
-          fi
-          tarball="$(npm pack | tail -n 1)"
-          test -f "$tarball"
-          expected="goal-gen-${ver}.tgz"
-          if [ "$tarball" != "$expected" ]; then
-            echo "expected packed tarball ${expected}, got ${tarball}" >&2
-            exit 1
-          fi
-          notes="goal-gen ${ver} engine tarball (ADR-0016). Install: npm install https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${expected} — spawn goal-gen as a process; never import the TypeScript."
-          gh release create "$tag" "$tarball" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$tag" \
-            --notes "$notes" \
-            --verify-tag
+        run: bash scripts/publish-release-asset.sh

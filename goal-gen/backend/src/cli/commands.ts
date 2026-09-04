@@ -130,8 +130,10 @@ export async function runRequestValidate(
     allowPositionals: true,
   });
 
-  const filePath = positionals[0];
-  if (!filePath) throw new CliUsageError('request validate requires a <file> positional argument');
+  if (positionals.length !== 1) {
+    throw new CliUsageError('request validate requires exactly one <file> positional argument');
+  }
+  const filePath = positionals[0]!;
 
   const raw = await readFile(filePath, 'utf8');
   let candidate: unknown;
