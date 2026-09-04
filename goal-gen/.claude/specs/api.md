@@ -1,5 +1,10 @@
 # Spec — API (REST + realtime)
 
+Scope: this is the future frontend/control-plane API design, not the installed
+engine process protocol. [Provider Protocol v1](../../plans/specs/provider-protocol-v1.md)
+defines the stdio consumer boundary and reuses canonical run-event/v1; it does
+not implement these REST/realtime endpoints or their event union.
+
 **Component:** `backend/src/api/` · **Depends on:** extractor, planner, orchestrator, db. **Consumed by:** frontend.
 **Principle:** thin transport over the domain modules; all heavy logic lives in those modules.
 

@@ -30,3 +30,12 @@ Types-first; validate model output with zod; read the relevant `.claude/specs/*.
 
 ## Scope note
 v1 = **M1: single executor (Claude Code), serial**, with ground-truth verify + replanning (incl. bounded re-extraction), a minimal live view, and operator confirm-criteria/sign-off. Multi-executor (Codex, Antigravity), per-step routing, parallelism, and the full dashboard are **M2 fast-follow**; pgvector memory is **M3**. See `docs/prd.md` §6/§12.
+
+## Provider Protocol ownership
+
+[Provider Protocol v1](plans/specs/provider-protocol-v1.md) and ADR-0017 define
+the installed stdio consumer contract, independently of the PRD's M1/v1 scope.
+Preserve the canonical request and run-event/v1; advertise v1 only after all
+acceptance gates pass. This milestone admits stub execution only. HTTP, remote
+gates, persistence, live providers and target-repository execution remain
+separate work. Read the owning specification before changing protocol code.

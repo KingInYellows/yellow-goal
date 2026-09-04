@@ -24,3 +24,4 @@ Template: [`_template.md`](_template.md).
 | [0014](0014-defer-verifier-gaming-control.md) | Defer verifier-gaming control (test checksums) to M2 | accepted |
 | [0015](0015-compiler-provider-seams-and-failclosed-permissions.md) | Packet-compiler provider seams reuse `claude -p`; permission modes fail closed | accepted |
 | [0016](0016-ci-gates-and-tarball-installation.md) | CI gates in GitHub Actions; installation via npm tarball with a tsx bin shim | accepted |
+| [0017](0017-provider-protocol-v1-stdio.md) | Provider Protocol v1 over installed stdio | accepted |

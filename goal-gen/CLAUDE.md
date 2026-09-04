@@ -88,3 +88,12 @@ Runs on a dedicated **Proxmox LXC or VM** with Claude Code logged in once (v1); 
 
 ## Docs to bookmark
 Claude Agent SDK: https://platform.claude.com/docs/en/agent-sdk/overview · Claude Code headless: https://code.claude.com/docs/en/headless · Hooks: https://code.claude.com/docs/en/hooks · MCP: https://code.claude.com/docs/en/mcp
+
+## Provider Protocol ownership
+
+[Provider Protocol v1](plans/specs/provider-protocol-v1.md) and ADR-0017 define
+the installed stdio consumer contract, independently of the PRD's M1/v1 scope.
+Preserve the canonical request and run-event/v1; advertise v1 only after all
+acceptance gates pass. This milestone admits stub execution only. HTTP, remote
+gates, persistence, live providers and target-repository execution remain
+separate work. Read the owning specification before changing protocol code.
