@@ -15,7 +15,6 @@
  * Note: like the M1 runner, execution happens in fresh scratch worktrees (ADR-0009) — the
  * request's `target.repository` does not (yet) select the execution target.
  */
-import { parseArgs } from 'node:util';
 import { RunEventEmitter } from '../events/run-event-emitter';
 import { createStdoutSink, transportFailureEnvelope } from '../events/stdout-sink';
 import { ClaudeCodeExecutor } from '../executors/claude-code-executor';
@@ -30,6 +29,8 @@ import type { GoalSpec } from '../planner/types';
 import { loadRunRequest, requestToRunInputs, type RunInputs } from '../run/request-to-run';
 import type { RunConfig, RunSummary } from '../types';
 import { CliUsageError } from './errors';
+import { parseRunInvocation } from './protocol-run-options';
+import { runProviderV1 } from './provider-run-v1';
 
 type EngineDeps = Pick<OrchestratorDeps, 'extractor' | 'executor' | 'verifier' | 'worktreeProvider'>;
 
@@ -136,55 +137,20 @@ export interface RunCommandOptions {
 }
 
 export async function runRunCommand(argv: string[], options: RunCommandOptions = {}): Promise<number> {
-  // Node's parseArgs throws (rather than returning) on malformed syntax (e.g. `--executor` with
-  // no value, or an unknown flag) — translate that LOCALLY into a CliUsageError (exit 2) instead
-  // of letting it fall through to main()'s UNEXPECTED_ERROR/exit-1 catch-all. A dispatcher-wide
-  // `ERR_PARSE_ARGS_*` translation may also land in cli/index.ts on another branch; this local
-  // wrap is self-contained so the two fixes can't conflict at merge time.
-  const { values, positionals } = (() => {
-    try {
-      return parseArgs({
-        args: argv,
-        options: {
-          executor: { type: 'string' },
-          yes: { type: 'boolean', short: 'y', default: false },
-          // RR18: a request file may not raise guardrail caps above the ADR-0010 defaults on its
-          // own — this flag is the operator's explicit consent to honor raised caps.
-          'allow-guardrail-override': { type: 'boolean', default: false },
-          // Accepted for cross-verb consistency; `run` output is ALWAYS machine-readable JSON Lines.
-          json: { type: 'boolean', default: false },
-        },
-        allowPositionals: true,
-      });
-    } catch (e) {
-      const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: unknown }).code) : '';
-      if (code.startsWith('ERR_PARSE_ARGS_')) throw new CliUsageError(e instanceof Error ? e.message : String(e));
-      throw e;
-    }
-  })();
-
-  if (positionals.length > 1) {
-    throw new CliUsageError('run accepts exactly one <request-file> positional argument');
-  }
-  const requestPath = positionals[0];
-  if (!requestPath) throw new CliUsageError('run requires a <request-file> positional argument');
-  const executorKind = values.executor;
-  if (executorKind !== 'claude-code' && executorKind !== 'stub') {
-    throw new CliUsageError(
-      `run requires --executor claude-code|stub (got ${executorKind ?? '(none)'}) — real spend is never a default`,
-    );
-  }
+  const invocation = parseRunInvocation(argv);
+  const executorKind = invocation.executor;
 
   // Throws IntakeValidationFailure (VALIDATION_FAILED, exit 1) on a malformed request, a
   // non-executable mode (RR4), or unconsented raised guardrails (RR18) — before any engine
   // construction.
-  const allowGuardrailOverride = values['allow-guardrail-override'] === true;
-  const request = await loadRunRequest(requestPath);
+  const allowGuardrailOverride = invocation.allowGuardrailOverride;
+  const request = await loadRunRequest(invocation.requestPath);
   const inputs: RunInputs = requestToRunInputs(request, { allowGuardrailOverride });
+  if (invocation.mode === 'provider-v1') return runProviderV1(inputs, request, invocation);
   // RR19: with the real executor, the DoD gate is where the operator sees every verify command
   // before real spend — a request FILE alone must not skip it; only the invoking operator's
   // CLI --yes may. The zero-spend stub honors the request's autoConfirmDod as before.
-  const autoConfirm = effectiveAutoConfirm(executorKind, values.yes === true, inputs.autoConfirm);
+  const autoConfirm = effectiveAutoConfirm(executorKind, invocation.yes, inputs.autoConfirm);
 
   // Best-effort running spend total, tallied from every emitted envelope that carries a numeric
   // `costUsd` (e.g. `agent.run`, `extract.failed`) — the only source of incurred spend available

@@ -26,17 +26,17 @@ This is **compiler mode**. It is a separate subsystem from the M1 executor/orche
 | `analysis/` | `AnalysisProvider` interface (assessment + goal resolution + milestone + orchestration inputs); recorded provider for tests; `claude -p` provider for live use. Model-dependent, provenance-recorded. |
 | `packs/` | Pack loader (engine-compat check), `{{PLACEHOLDER}}` renderer — no logic in templates; fails on unresolved required placeholders. |
 | `packets/` | Deterministic packet assembly, manifest, checksums, ZIP (yazl, fixed mtimes), validator/verifier (yauzl for archive inspection). |
-| `cli/` | `request create`, `request validate`, `inspect`, `analyze`, `compile`, `packet verify`, `version` — non-interactive, machine-readable JSON output (`--json`), structured stderr envelope for command failures. A schema-invalid `request validate` result is a domain result instead: exit 1, one stdout object `{path,valid:false,errors}`, and empty stderr. `version` is compiler-process-safe (static import; no executor/orchestrator). |
+| `cli/` | `request create`, `request validate`, `inspect`, `analyze`, `compile`, `packet verify`, `version`, `capabilities` — non-interactive, machine-readable JSON output (`--json`), structured stderr envelope for command failures. A schema-invalid `request validate` result is a domain result instead: exit 1, one stdout object `{path,valid:false,errors}`, and empty stderr. `version` is compiler-process-safe (static import; no executor/orchestrator). |
 
 ## Version identity probe (RR17)
 
-`version [--json]` emits `{ "engineVersion": "…" }` where `engineVersion` is the **package artifact version** (`package.json` — what a tarball install pins). The verb is deliberately **non-normative**: it answers "which engine artifact is on the other side of the process boundary", nothing more. What a consumer may infer from the value — compatibility ranges, capability sets, schema versions — is reserved for provider protocol v1, not this verb.
+`version [--json]` emits `{ "engineVersion": "…" }` where `engineVersion` is the **package artifact version** (`package.json` — what a tarball install pins). The verb is deliberately **non-normative**: it answers "which engine artifact is on the other side of the process boundary", nothing more. What a consumer may infer from the value — compatibility ranges, capability sets, schema versions — is defined by [Provider Protocol v1](../../plans/specs/provider-protocol-v1.md) and discovered through `capabilities`, not this verb.
 
-Three distinct versions exist and must not be conflated (all currently `0.1.0`, but divergence is guaranteed):
+Three independent version identities must not be conflated:
 
 1. `package.json` `version` — engine **artifact** identity (this verb emits it).
 2. `ENGINE_VERSION` in `packets/compiler.ts` — **pack/packet-format** compatibility (`loadPack` consumes it); not the engine identity.
-3. **Protocol** version — does not exist yet; defined by provider protocol v1.
+3. **Protocol** identity — `yellow-goal/provider-protocol/v1`, reported by `capabilities` independently of the artifact and packet-format versions.
 
 The packet `MANIFEST.json` `engineVersion` field carries №2 (pack-format compatibility), not the artifact version this verb emits under the same name.
 

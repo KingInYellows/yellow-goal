@@ -159,6 +159,7 @@ export interface RunConfig {
 /** Run states (orchestrator.md). `awaiting-acceptance` is a non-terminal, in-flight state parked
  *  on the sign-off gate (R29); the rest are terminal. */
 export type RunStatus = 'succeeded' | 'failed' | 'cancelled' | 'budget-exhausted' | 'awaiting-acceptance';
+export type RunTerminationReason = 'signal' | 'timeout' | 'gate-required';
 
 export interface ActionOutcome {
   actionId: string;
@@ -177,4 +178,6 @@ export interface RunSummary {
   actions: ActionOutcome[];
   /** Human-readable reason for the terminal status. */
   reason: string;
+  /** Protocol v1's first cancellation cause; omitted for legacy and non-cancelled runs. */
+  terminationReason?: RunTerminationReason;
 }

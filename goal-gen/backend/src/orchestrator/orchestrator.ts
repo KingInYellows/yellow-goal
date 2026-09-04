@@ -34,6 +34,7 @@ import type {
   RunConfig,
   RunContext,
   RunStatus,
+  RunTerminationReason,
   RunSummary,
   Verifier,
 } from '../types';
@@ -118,6 +119,8 @@ export interface OrchestratorDeps {
   events?: RunEventEmitter;
   /** Cancellation: propagated to the executor; default never aborts. */
   signal?: AbortSignal;
+  /** Optional protocol cancellation-cause reader. Legacy summaries stay unchanged without it. */
+  terminationReason?: () => RunTerminationReason | undefined;
   /** Optional persistence seam (R1-R6); defaults to a no-op. */
   persistence?: PersistenceProvider;
   /** Pause/resume latch (R26/R27), checked at the top of the run loop; defaults to a fresh,
@@ -208,6 +211,7 @@ export class Orchestrator {
    *  swap emitters. Later calls fail before extraction on a separate rejection emitter. */
   private eventsClaimed = false;
   private readonly signal: AbortSignal;
+  private readonly terminationReason: (() => RunTerminationReason | undefined) | undefined;
   private readonly persistence: PersistenceProvider;
   private readonly pauseLatch: AsyncLatch;
 
@@ -223,6 +227,7 @@ export class Orchestrator {
     this.events = events;
     this.emit = events !== undefined ? (event) => void events.handle(event) : deps.onEvent ?? (() => {});
     this.signal = deps.signal ?? new AbortController().signal;
+    this.terminationReason = deps.terminationReason;
     this.persistence = deps.persistence ?? noopPersistence;
     this.pauseLatch = deps.pauseLatch ?? new AsyncLatch();
   }
@@ -1008,7 +1013,7 @@ export class Orchestrator {
   /** RR10: even failures that happen before any RunState exists (extraction threw, or the run was
    *  aborted mid-extraction) must terminate the event stream with a run.summary envelope. */
   private emitBareSummary(goalText: string, status: RunStatus, reason: string, costUsd: number): RunSummary {
-    const summary = bareSummary(goalText, status, reason, costUsd);
+    const summary = this.withTerminationReason(bareSummary(goalText, status, reason, costUsd));
     this.emit({ ev: 'run.summary', ...summary });
     return summary;
   }
@@ -1073,7 +1078,7 @@ export class Orchestrator {
   }
 
   private summary(state: RunState, status: RunStatus, reason: string): RunSummary {
-    const summary: RunSummary = {
+    const summary = this.withTerminationReason({
       status,
       goalText: state.goalText,
       costUsd: state.accumulatedCostUsd,
@@ -1081,9 +1086,15 @@ export class Orchestrator {
       reextractions: state.reextractions,
       actions: [...state.outcomes.values()],
       reason,
-    };
+    });
     this.emit({ ev: 'run.summary', ...summary });
     return summary;
+  }
+
+  private withTerminationReason(summary: RunSummary): RunSummary {
+    if (summary.status !== 'cancelled') return summary;
+    const terminationReason = this.terminationReason?.();
+    return terminationReason === undefined ? summary : { ...summary, terminationReason };
   }
 }
 

@@ -31,6 +31,20 @@ Types-first; validate model output with zod; read the relevant `.claude/specs/*.
 ## Scope note
 v1 = **M1: single executor (Claude Code), serial**, with ground-truth verify + replanning (incl. bounded re-extraction), a minimal live view, and operator confirm-criteria/sign-off. Multi-executor (Codex, Antigravity), per-step routing, parallelism, and the full dashboard are **M2 fast-follow**; pgvector memory is **M3**. See `docs/prd.md` §6/§12.
 
+## Provider Protocol commands
+
+- Discovery: `goal-gen capabilities --json` reports the protocol, request and
+  run-event identities, capabilities and transport limits. `version --json`
+  continues to report only the package artifact version.
+- Opt-in deterministic run: `goal-gen run <request.json> --executor stub --protocol v1 --yes`.
+  `--stub-scenario success|failed|budget-exhausted|await-cancel` selects a
+  zero-spend scenario; `await-cancel` requires an explicit `--timeout-ms <n>`.
+- Protocol v1 is noninteractive and stub-only. Missing required gate consent
+  produces structured failure; sign-off is never auto-approved. Real executor
+  permission mapping and target-repository execution remain deferred.
+- The packet compiler's `ENGINE_VERSION` and packet manifest `engineVersion`
+  retain their packet-format meaning and are independent of both identities above.
+
 ## Provider Protocol ownership
 
 [Provider Protocol v1](plans/specs/provider-protocol-v1.md) and ADR-0017 define

@@ -21,6 +21,7 @@ import {
   type CommandOutput,
 } from './commands';
 import { CliUsageError, NotWiredError } from './errors';
+import { runCapabilities } from './provider-capabilities';
 import { IntakeValidationFailure } from '../intake';
 import { isDirectInvocation } from './direct-invocation';
 
@@ -77,6 +78,9 @@ async function dispatch(argv: string[]): Promise<number> {
       // Identity probe only (RR17) — non-normative; see runVersion's contract note.
       writeSuccess(await runVersion(rest));
       return 0;
+    case 'capabilities':
+      writeSuccess(await runCapabilities(rest));
+      return 0;
     case 'run': {
       // M1 subsystem verb — dynamically imported so the compiler verbs' process never loads
       // executor/orchestrator mutation code (packet-compiler.md isolation rule). The command
@@ -95,7 +99,7 @@ async function dispatch(argv: string[]): Promise<number> {
       return 0;
     default:
       throw new CliUsageError(
-        `unknown command: ${command ?? '(none)'} (expected request|inspect|analyze|compile|packet|run|version)`,
+        `unknown command: ${command ?? '(none)'} (expected capabilities|request|inspect|analyze|compile|packet|run|version)`,
       );
   }
 }

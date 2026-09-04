@@ -155,23 +155,21 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
   install pins). The verb is deliberately non-normative: it answers "which engine artifact is
   on the other side of the process boundary", nothing more. What a consumer may *infer* from
   the value — compatibility ranges, capability sets, schema versions — is defined by provider
-  protocol v1 (step 4), not by this verb. This split exists so step 3's bridge can prove
+  [Provider Protocol v1](provider-protocol-v1.md), discovered by `capabilities`, not by this verb. This split exists so step 3's bridge can prove
   genuine (not simulated) structured incompatible-version handling against a real probe
   without step 4's semantics being preempted.
 
-  **Three distinct versions exist and are all currently the string `0.1.0` — do not conflate
-  them** (divergence is guaranteed; they will not move in lockstep):
-  1. `package.json` `version` — the engine **artifact** identity. This is what RR17 emits and
-     what the consumer pins.
+  **Three version identities are independent and do not move in lockstep:**
+  1. `package.json` `version` — the engine **artifact** identity emitted by RR17
+     and pinned by consumers.
   2. `ENGINE_VERSION` (`backend/src/packets/compiler.ts`) — the **pack/packet-format**
-     compatibility version (`loadPack` consumes it). It is not the engine's identity and
-     should be renamed to say what it is when protocol v1 lands.
-  3. The **protocol** version — does not exist yet; created by provider protocol v1.
+     compatibility version consumed by `loadPack`. The packet `MANIFEST.json`
+     `engineVersion` field retains this same legacy meaning.
+  3. `yellow-goal/provider-protocol/v1` — the **protocol** identity reported by
+     `capabilities`; PP-02 defines its compatibility and discovery rules.
 
-  **Name collision warning:** the packet `MANIFEST.json` also has an `engineVersion` field —
-  it carries №2 (`ENGINE_VERSION`, pack-format compatibility), NOT the artifact version the
-  `version` verb emits under the same name. A consumer must never equate the two; protocol v1
-  should rename one side when it defines compatibility semantics.
+  The legacy packet names remain for compatibility. Consumers must not equate
+  packet `engineVersion` with the artifact field returned by `version`.
 
 ### Operator consent & non-interactive gates (RR18–RR20)
 
@@ -201,11 +199,9 @@ oversight needs consent expressed on the command line, not in the file.
 
 ### Known conflations / deferred mappings (recorded, not resolved here)
 
-- `permissionProfile` is compiler-scoped today: the run path does not map profiles onto
-  executor permission modes (the real engine uses ADR-0009's scratch-worktree bypass opt-in
-  regardless). Profile→permissionMode mapping is provider-protocol-v1 work. The canonical
-  execution sample uses the `implement` profile for coherence, but nothing consumes it on the
-  run path yet.
+- Run admission validates a write-capable `permissionProfile` and consent as
+  intent. Provider Protocol v1 preserves those checks and admits the stub only;
+  mapping profiles onto real executor permission modes remains deferred.
 - `target.repository` is disclosed in `run.start` (`targetRepositoryHonored: false`) — see
   "Out of scope".
 
@@ -224,9 +220,9 @@ oversight needs consent expressed on the command line, not in the file.
 ### Provider-protocol seed (six-step order, step 4)
 
 The run-event/v1 stream over stdio (RR6–RR8, RR12) is deliberately the substrate of the
-future provider protocol: a provider is "something that emits this stream and honors this
-request object". Protocol v1 should version the *verb surface and gate interaction*, not
-invent a new event envelope.
+provider protocol: a provider is "something that emits this stream and honors this
+request object". [Provider Protocol v1](provider-protocol-v1.md) versions the verb surface and
+gate behavior while preserving this canonical event envelope.
 
 ## Out of scope
 

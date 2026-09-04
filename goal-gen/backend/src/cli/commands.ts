@@ -8,6 +8,7 @@ import {
   type FlatRepositoryGoalRequestInput,
 } from '../intake';
 import { CliUsageError, NotWiredError } from './errors';
+import { readArtifactVersion } from './artifact-version';
 import type {
   AnalyzeArgs,
   AnalyzeFn,
@@ -317,10 +318,5 @@ export async function runVersion(argv: string[]): Promise<CommandOutput<VersionO
     options: { json: { type: 'boolean', default: false } },
     allowPositionals: false,
   });
-  const raw = await readFile(new URL('../../../package.json', import.meta.url), 'utf8');
-  const pkg = JSON.parse(raw) as { version?: unknown };
-  if (typeof pkg.version !== 'string' || pkg.version === '') {
-    throw new Error('package.json has no version — cannot report engine identity');
-  }
-  return { json: values.json === true, output: { engineVersion: pkg.version } };
+  return { json: values.json === true, output: { engineVersion: await readArtifactVersion() } };
 }
