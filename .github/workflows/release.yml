@@ -75,6 +75,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      # actions/checkout can leave refs/tags/<tag> peeled to the commit;
+      # the release scripts require the annotated tag object.
+      - name: Fetch annotated tag object
+        working-directory: ${{ github.workspace }}
+        run: git fetch --force origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
       - uses: actions/setup-node@v5
         with:
           node-version: 22.22.3
