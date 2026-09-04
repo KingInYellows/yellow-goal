@@ -41,9 +41,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: 22.22.x
-          cache: npm
-          cache-dependency-path: goal-gen/package-lock.json
+          node-version: 22.22.3
+          package-manager-cache: false
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -59,9 +58,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
-          node-version: 22.22.x
-          cache: npm
-          cache-dependency-path: goal-gen/package-lock.json
+          node-version: 22.22.3
+          package-manager-cache: false
       - run: npm ci
       - run: bash scripts/install-smoke.sh
 
@@ -79,7 +77,8 @@ jobs:
           fetch-tags: true
       - uses: actions/setup-node@v5
         with:
-          node-version: 22.22.x
+          node-version: 22.22.3
+          package-manager-cache: false
       - name: Pack release asset without GitHub credentials
         run: bash scripts/prepare-release-asset.sh
       - name: Publish or recover GitHub Release asset
