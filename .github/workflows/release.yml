@@ -14,6 +14,16 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated v* tag to recover and publish
+        required: true
+        type: string
+      commit:
+        description: Expected full 40-character peeled commit for the tag
+        required: true
+        type: string
 
 # Least privilege at the workflow: jobs that only run gates stay read-only.
 # The publish job elevates to contents: write to create the Release.
@@ -21,10 +31,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   # Never cancel a tag-publish in flight — a cancelled upload can leave a
   # half-created Release with no tarball.
   cancel-in-progress: false
+
+env:
+  # Tag pushes use github.ref_name. A recovery dispatch supplies the same
+  # immutable tag explicitly while the workflow itself runs from main.
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  # Tag pushes provide the peeled commit as github.sha. Recovery dispatches
+  # require an explicit expected commit so a moved tag is rejected.
+  RELEASE_COMMIT: ${{ inputs.commit || github.sha }}
 
 defaults:
   run:
@@ -39,6 +57,25 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+      - name: Verify checkout matches the expected release commit
+        run: |
+          if ! [[ "$RELEASE_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "RELEASE_COMMIT must be a full 40-character hexadecimal commit" >&2
+            exit 1
+          fi
+          expected_commit="${RELEASE_COMMIT,,}"
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$expected_commit" ]; then
+            echo "checked-out tag does not match the expected release commit" >&2
+            exit 1
+          fi
+          if [ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != tag ] ||
+             [ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" != "$expected_commit" ]; then
+            echo "release tag must be annotated and peel to the expected commit" >&2
+            exit 1
+          fi
+          echo "Verified annotated $RELEASE_TAG at $actual"
       - uses: actions/setup-node@v5
         with:
           node-version: 22.22.3
@@ -56,6 +93,25 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+      - name: Verify checkout matches the expected release commit
+        run: |
+          if ! [[ "$RELEASE_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "RELEASE_COMMIT must be a full 40-character hexadecimal commit" >&2
+            exit 1
+          fi
+          expected_commit="${RELEASE_COMMIT,,}"
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$expected_commit" ]; then
+            echo "checked-out tag does not match the expected release commit" >&2
+            exit 1
+          fi
+          if [ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != tag ] ||
+             [ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" != "$expected_commit" ]; then
+            echo "release tag must be annotated and peel to the expected commit" >&2
+            exit 1
+          fi
+          echo "Verified annotated $RELEASE_TAG at $actual"
       - uses: actions/setup-node@v5
         with:
           node-version: 22.22.3
@@ -75,13 +131,32 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+      - name: Verify checkout matches the expected release commit
+        run: |
+          if ! [[ "$RELEASE_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "RELEASE_COMMIT must be a full 40-character hexadecimal commit" >&2
+            exit 1
+          fi
+          expected_commit="${RELEASE_COMMIT,,}"
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$expected_commit" ]; then
+            echo "checked-out tag does not match the expected release commit" >&2
+            exit 1
+          fi
+          if [ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != tag ] ||
+             [ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" != "$expected_commit" ]; then
+            echo "release tag must be annotated and peel to the expected commit" >&2
+            exit 1
+          fi
+          echo "Verified annotated $RELEASE_TAG at $actual"
       - uses: actions/setup-node@v5
         with:
           node-version: 22.22.3
           package-manager-cache: false
       - name: Pack release asset without GitHub credentials
-        run: bash scripts/prepare-release-asset.sh
+        run: GITHUB_REF_NAME="$RELEASE_TAG" bash scripts/prepare-release-asset.sh
       - name: Publish or recover GitHub Release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/publish-release-asset.sh
+        run: GITHUB_REF_NAME="$RELEASE_TAG" bash scripts/publish-release-asset.sh
