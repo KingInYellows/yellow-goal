@@ -66,6 +66,15 @@ describe('CLI dispatcher', () => {
     expect(parsed.error.code).toBe('USAGE_ERROR');
   });
 
+  it('request validate rejects surplus file positionals with USAGE_ERROR before reading either file', async () => {
+    const code = await main(['request', 'validate', 'first.json', 'second.json']);
+    expect(code).toBe(2);
+    const parsed = JSON.parse(stderrText().trim()) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('USAGE_ERROR');
+    expect(parsed.error.message).toContain('exactly one <file>');
+    expect(stdoutText()).toBe('');
+  });
+
   it('unknown packet subcommand exits 2 with USAGE_ERROR', async () => {
     const code = await main(['packet', 'bogus']);
     expect(code).toBe(2);

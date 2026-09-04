@@ -1,0 +1,87 @@
+# Cut a GitHub Release for each v* tag and attach the npm pack tarball as a
+# release asset. Consumers (the yellow-plugins bridge) pin that asset URL —
+# GitHub Release assets on a public repo are unmetered. Do not use
+# actions/upload-artifact here: those artifacts expire and count against
+# Actions storage.
+#
+# The tag must be annotated (`git tag -a v0.1.0 -m v0.1.0`) and match
+# goal-gen/package.json version (v0.1.0 ↔ 0.1.0). Gates re-run on the
+# tagged commit before the asset is published so a bad tag cannot ship.
+# Never invoke npm run runner or --executor claude-code.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Least privilege at the workflow: jobs that only run gates stay read-only.
+# The publish job elevates to contents: write to create the Release.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancel a tag-publish in flight — a cancelled upload can leave a
+  # half-created Release with no tarball.
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: goal-gen
+
+jobs:
+  engine:
+    name: typecheck, test, eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.22.3
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run eval
+
+  install-smoke:
+    name: pack, install, spawn
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.22.3
+          package-manager-cache: false
+      - run: npm ci
+      - run: bash scripts/install-smoke.sh
+
+  publish:
+    name: attach tarball to GitHub Release
+    needs: [engine, install-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.22.3
+          package-manager-cache: false
+      - name: Pack release asset without GitHub credentials
+        run: bash scripts/prepare-release-asset.sh
+      - name: Publish or recover GitHub Release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/publish-release-asset.sh

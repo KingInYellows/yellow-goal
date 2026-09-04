@@ -107,6 +107,12 @@ describe('request validate', () => {
     await expect(runRequestValidate([])).rejects.toThrow(CliUsageError);
   });
 
+  it('throws CliUsageError when more than one file path is given', async () => {
+    await expect(runRequestValidate(['first.json', 'second.json'])).rejects.toThrow(
+      'request validate requires exactly one <file> positional argument',
+    );
+  });
+
   it('throws CliUsageError for invalid JSON content', async () => {
     const filePath = path.join(tempDir, 'not-json.json');
     await writeFile(filePath, '{ not valid json');
