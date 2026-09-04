@@ -26,7 +26,7 @@ This is **compiler mode**. It is a separate subsystem from the M1 executor/orche
 | `analysis/` | `AnalysisProvider` interface (assessment + goal resolution + milestone + orchestration inputs); recorded provider for tests; `claude -p` provider for live use. Model-dependent, provenance-recorded. |
 | `packs/` | Pack loader (engine-compat check), `{{PLACEHOLDER}}` renderer — no logic in templates; fails on unresolved required placeholders. |
 | `packets/` | Deterministic packet assembly, manifest, checksums, ZIP (yazl, fixed mtimes), validator/verifier (yauzl for archive inspection). |
-| `cli/` | `request create|validate`, `inspect`, `analyze`, `compile`, `packet verify`, `version` — non-interactive, machine-readable JSON output (`--json`), structured stderr envelope for command failures. A schema-invalid `request validate` result is a domain result instead: exit 1, one stdout object `{path,valid:false,errors}`, and empty stderr. `version` is compiler-process-safe (static import; no executor/orchestrator). |
+| `cli/` | `request create`, `request validate`, `inspect`, `analyze`, `compile`, `packet verify`, `version` — non-interactive, machine-readable JSON output (`--json`), structured stderr envelope for command failures. A schema-invalid `request validate` result is a domain result instead: exit 1, one stdout object `{path,valid:false,errors}`, and empty stderr. `version` is compiler-process-safe (static import; no executor/orchestrator). |
 
 ## Version identity probe (RR17)
 
