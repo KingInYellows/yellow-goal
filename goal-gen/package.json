@@ -1,6 +1,6 @@
 {
   "name": "goal-gen",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted GOAL generator — see docs/prd.md. This is the initial scaffold (eval harness first, per ADR-0013).",

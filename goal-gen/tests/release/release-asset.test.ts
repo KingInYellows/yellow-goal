@@ -11,6 +11,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const scriptsDir = path.join(packageRoot, 'scripts');
+const packageMetadata = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8')) as { version?: unknown };
+if (typeof packageMetadata.version !== 'string' || packageMetadata.version === '') throw new Error('package metadata has no version');
+const packageVersion = packageMetadata.version;
+const releaseTag = `v${packageVersion}`;
+const assetName = `goal-gen-${packageVersion}.tgz`;
 const tempDirs: string[] = [];
 
 async function makeTemp(): Promise<string> {
@@ -48,7 +53,7 @@ case "$name" in
     test -z "\${GITHUB_TOKEN:-}"
     shift
     while [ "$#" -gt 0 ]; do
-      if [ "$1" = "--pack-destination" ]; then mkdir -p "$2"; printf 'prepared' > "$2/goal-gen-0.1.0.tgz"; exit 0; fi
+      if [ "$1" = "--pack-destination" ]; then mkdir -p "$2"; printf 'prepared' > "$2/${assetName}"; exit 0; fi
       shift
     done
     exit 1
@@ -58,8 +63,8 @@ case "$name" in
     if [ "$1" = "release" ] && [ "$2" = "view" ]; then
       if [ ! -f "$FAKE_STATE" ]; then echo "release not found" >&2; exit 1; fi
       read -r draft asset < "$FAKE_STATE"
-      if [ "$asset" = "yes" ]; then assets='[{"name":"goal-gen-0.1.0.tgz"}]'; else assets='[]'; fi
-      printf '{"tagName":"%s","isDraft":%s,"assets":%s}' "\${FAKE_RELEASE_TAG:-v0.1.0}" "$draft" "$assets"
+      if [ "$asset" = "yes" ]; then assets='[{"name":"${assetName}"}]'; else assets='[]'; fi
+      printf '{"tagName":"%s","isDraft":%s,"assets":%s}' "$FAKE_RELEASE_TAG" "$draft" "$assets"
     elif [ "$1" = "release" ] && [ "$2" = "create" ]; then
       printf 'true no\n' > "$FAKE_STATE"
     elif [ "$1" = "release" ] && [ "$2" = "upload" ]; then
@@ -75,7 +80,7 @@ case "$name" in
         exit 1
       fi
       while [ "$#" -gt 0 ]; do
-        if [ "$1" = "--dir" ]; then cp "$FAKE_REMOTE" "$2/goal-gen-0.1.0.tgz"; exit 0; fi
+        if [ "$1" = "--dir" ]; then cp "$FAKE_REMOTE" "$2/${assetName}"; exit 0; fi
         shift
       done
       exit 1
@@ -104,7 +109,7 @@ function run(script: string, bin: string, temp: string, extra: NodeJS.ProcessEnv
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH ?? ''}`,
-      GITHUB_REF_NAME: 'v0.1.0',
+      GITHUB_REF_NAME: releaseTag,
       GITHUB_REPOSITORY: 'KingInYellows/yellow-goal',
       RUNNER_TEMP: temp,
       GH_TOKEN: 'test-token',
@@ -112,6 +117,7 @@ function run(script: string, bin: string, temp: string, extra: NodeJS.ProcessEnv
       FAKE_LOG: path.join(temp, 'commands.log'),
       FAKE_STATE: path.join(temp, 'release-state'),
       FAKE_REMOTE: path.join(temp, 'remote-asset'),
+      FAKE_RELEASE_TAG: releaseTag,
       ...extra,
     },
   });
@@ -130,7 +136,7 @@ describe('release asset scripts', () => {
   it('rejects existing release metadata for a different tag', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     await writeFile(fake.state, 'true no\n');
     const result = run('publish-release-asset.sh', fake.bin, temp, { FAKE_RELEASE_TAG: 'v9.9.9' });
     expect(result.status).toBe(1);
@@ -141,7 +147,7 @@ describe('release asset scripts', () => {
   it('publisher rechecks the annotated tag target before any GitHub operation', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     const result = run('publish-release-asset.sh', fake.bin, temp, {
       FAKE_TAG_COMMIT: 'commit-from-tag',
       FAKE_HEAD: 'checkout-head',
@@ -154,7 +160,7 @@ describe('release asset scripts', () => {
   it('recovers a draft asset left present but not downloadable by a failed upload', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     await writeFile(fake.state, 'true yes\n');
     expect(run('publish-release-asset.sh', fake.bin, temp).status).toBe(0);
     expect(await readFile(fake.state, 'utf8')).toBe('false yes\n');
@@ -164,7 +170,7 @@ describe('release asset scripts', () => {
   it('adds a missing asset to a partially published release', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     await writeFile(fake.state, 'false no\n');
     expect(run('publish-release-asset.sh', fake.bin, temp).status).toBe(0);
     expect(await readFile(fake.state, 'utf8')).toBe('false yes\n');
@@ -176,8 +182,8 @@ describe('release asset scripts', () => {
     const fake = await installFakes(temp);
     const result = run('prepare-release-asset.sh', fake.bin, temp);
     expect(result.status).toBe(0);
-    await expect(readFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'utf8')).resolves.toBe('prepared');
-    await expect(readFile(path.join(temp, 'goal-gen-0.1.0.tgz.sha256'), 'utf8')).resolves.toContain('goal-gen-0.1.0.tgz');
+    await expect(readFile(path.join(temp, assetName), 'utf8')).resolves.toBe('prepared');
+    await expect(readFile(path.join(temp, `${assetName}.sha256`), 'utf8')).resolves.toContain(assetName);
   });
 
   it('rejects a lightweight tag before packing', async () => {
@@ -203,7 +209,7 @@ describe('release asset scripts', () => {
   it('creates a metadata-only draft, uploads, verifies, and publishes', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     const result = run('publish-release-asset.sh', fake.bin, temp);
     expect(result.status).toBe(0);
     await expect(readFile(fake.state, 'utf8')).resolves.toBe('false yes\n');
@@ -213,7 +219,7 @@ describe('release asset scripts', () => {
   it('recovers a draft after a failed upload on a later rerun', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     expect(run('publish-release-asset.sh', fake.bin, temp, { FAKE_FAIL_UPLOAD_ONCE: 'yes', FAKE_UPLOAD_FAILED: path.join(temp, 'failed') }).status).toBe(1);
     await expect(readFile(fake.state, 'utf8')).resolves.toBe('true no\n');
     expect(run('publish-release-asset.sh', fake.bin, temp, { FAKE_FAIL_UPLOAD_ONCE: 'yes', FAKE_UPLOAD_FAILED: path.join(temp, 'failed') }).status).toBe(0);
@@ -223,7 +229,7 @@ describe('release asset scripts', () => {
   it('leaves a draft recoverable when post-upload verification download fails', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     const failureMarker = path.join(temp, 'download-failed');
     const extra = {
       FAKE_FAIL_DOWNLOAD_ONCE: 'yes',
@@ -241,7 +247,7 @@ describe('release asset scripts', () => {
   it('repairs a mismatched draft asset but never clobbers a published mismatch', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     await writeFile(fake.state, 'true yes\n');
     await writeFile(fake.remote, 'wrong');
     expect(run('publish-release-asset.sh', fake.bin, temp).status).toBe(0);
@@ -257,7 +263,7 @@ describe('release asset scripts', () => {
   it('is a no-op when a published release already has the same asset', async () => {
     const temp = await makeTemp();
     const fake = await installFakes(temp);
-    await writeFile(path.join(temp, 'goal-gen-0.1.0.tgz'), 'prepared');
+    await writeFile(path.join(temp, assetName), 'prepared');
     await writeFile(fake.state, 'false yes\n');
     await writeFile(fake.remote, 'prepared');
     expect(run('publish-release-asset.sh', fake.bin, temp).status).toBe(0);

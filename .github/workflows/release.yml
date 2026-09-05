@@ -4,8 +4,8 @@
 # actions/upload-artifact here: those artifacts expire and count against
 # Actions storage.
 #
-# The tag must be annotated (`git tag -a v0.1.0 -m v0.1.0`) and match
-# goal-gen/package.json version (v0.1.0 ↔ 0.1.0). Gates re-run on the
+# The tag must be annotated (`git tag -a vX.Y.Z -m vX.Y.Z`) and match
+# goal-gen/package.json version (vX.Y.Z ↔ X.Y.Z). Gates re-run on the
 # tagged commit before the asset is published so a bad tag cannot ship.
 # Never invoke npm run runner or --executor claude-code.
 name: Release
