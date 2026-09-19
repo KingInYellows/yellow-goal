@@ -1,6 +1,7 @@
 # PRD — GOAL Generator (self-hosted)
 
-**Status:** Draft v0.2 · **Owner:** KingInYellow · **Last updated:** 2026-06-23
+**Status:** Draft v0.2 · **Owner:** KingInYellow · **Last updated:** 2026-09-19
+M0/M1 remain implemented; the next named outcome is **verified single-milestone execution** (Yellow Harness), specified separately from M2/M3.
 **Source of truth.** This PRD governs scope. Component contracts live in [`.claude/specs/`](../.claude/specs/); architecture in [`../../docs/05-self-hosted-build-blueprint.md`](../../docs/05-self-hosted-build-blueprint.md); rationale in [`../../docs/06-fork-vs-build-decision.md`](../../docs/06-fork-vs-build-decision.md).
 
 ---
@@ -35,6 +36,10 @@ Coding-agent CLIs (Claude Code, Codex, Antigravity) are powerful but operate per
 - No marketplace, billing, or credit economy (cf. flow-nexus, [`../../docs/04-ruvnet-ecosystem-evaluation.md`](../../docs/04-ruvnet-ecosystem-evaluation.md)).
 - No fine-tuning / training of models.
 - No mobile app.
+- Not automatic merge, publication, or deployment.
+- Not expanding Provider Protocol v1 beyond stub execution.
+- Not treating the legacy scratch-worktree `bypassPermissions` runner as the approved target-bound executor.
+- Not Cursor/Claude plugin-parity as a prerequisite.
 
 ## 4. Users & personas
 
@@ -84,6 +89,10 @@ v1 ships the smallest thing that delivers the capability `goal.ruv.io` only mock
 | FR-11 | Enforce guardrails on every run: max replans, max budget (USD), wall-clock, per-action retries, max re-extractions, loop detection. Defaults in §8/§11. On a cap trip: stop dispatching, mark the run paused/blocked, and surface to the operator to raise the cap, resume, or cancel. |
 | FR-12 | **(M2)** Executor routing: explicit per-step override or automatic selection. *v1: Claude Code only.* |
 | FR-13 | When a goal's `completionPolicy` requires sign-off, on `goalState` satisfaction the run enters an **awaiting-acceptance** state; the operator accepts (→ succeeded) or rejects (→ continue/replan) before the run is marked done. |
+| FR-14 | A harness milestone names exactly one owning repository, one immutable base revision, and one writer worktree. |
+| FR-15 | Acceptance evidence records each required check as passed, failed, blocked, or not-run, with command, working directory, revision, and exit status. Missing checks stay not-run. |
+| FR-16 | A worker self-report cannot mark the milestone succeeded. Independent verification consumes FR-15 evidence (and the reviewable patch, if any). |
+| FR-17 | On missing evidence, overlapping-unreviewed PRs that touch the same files, or an unresolved stack-provider route, the milestone ends as a blocker, not as a guessed success. |
 
 ## 8. AI-specific requirements & success metrics
 
@@ -128,6 +137,13 @@ AI systems need targets traditional PRDs don't ([source](https://medium.com/@hab
 - Goals/plans/runs persist and are replayable after a restart.
 - **Gate** metrics (§8) pass; **observed** metrics are reported on the eval set.
 
+**Verified single-milestone execution (Yellow Harness, post-M1, not M1 v1 bar):**
+
+- Named milestone + repo + base SHA are recorded before a writer is dispatched.
+- The result is either a reviewable patch on that base or a blocker with FR-15 evidence.
+- Independent verification has been applied; status is not inferred from CI badges or chat claims alone.
+- No merge or deploy was performed by the harness.
+
 ## 11. Host recommendation (Proxmox)
 
 Because the orchestrator **executes arbitrary code via agents**, isolation matters. Recommended: a dedicated **unprivileged LXC or VM** on your Proxmox host for the orchestrator + Postgres, with the Claude Code CLI installed and logged in once inside it. Each agent run gets its own **git worktree** — this prevents two runs from writing the same files; it is **not** a security sandbox (an agent running arbitrary, possibly prompt-injected code in a worktree still has the whole host, the logged-in CLI, and any keys). In v1 the **host LXC/VM is the blast radius**: only mount repos/dirs you're willing to expose, and snapshot before risky runs. **At M2**, when parallel + multi-executor execution arrives, add a **per-run container** for real in-host isolation — note that nested containers inside an *unprivileged* LXC need extra config, so a **VM is the cleaner choice if you plan to run containers**.
@@ -144,6 +160,17 @@ The instance is **single-user**: reachable only on your own network (or via Tail
 - **M3 — Memory + hardening:** pgvector plan/trajectory memory + retrieval-augmented extraction; historical cost dashboards. *(Phase 4)*
 
 **Status:** M0 and M1 are implemented and green; M2/M3 remain future work.
+
+**Verified single-milestone execution (Yellow Harness, post-M1, not M2):** given one
+explicitly approved milestone, one named repository, and one immutable base revision,
+the harness coordinates **one** bounded implementation worker and returns either (a) a
+reviewable patch whose named acceptance checks were run independently of that worker, or
+(b) an evidence-backed blocker. Merge, publication, deployment, live executors, and
+Protocol v1 real-run capabilities are out of scope for this outcome.
+
+World state and acceptance status come from recorded check results, not from the
+worker's self-report. `target.repository` remains a request field, not an execution
+selector (ADR-0017).
 
 **Shipped alongside M1 — Universal Repository Goal Packet Compiler (separate subsystem):** a
 **read-only** pipeline (`npm run cli`: `request create/validate` → `inspect` → `analyze` →
