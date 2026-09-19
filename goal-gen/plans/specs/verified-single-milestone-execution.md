@@ -26,7 +26,7 @@ prerequisite. Protocol v1 stays stub-only.
 | VS-01 | One owner repository per milestone; plugins work is a separate milestone, never a dual-root write. |
 | VS-02 | Base revision is recorded before the writer starts; the writer does not retarget main silently. |
 | VS-03 | Coordinator is not the source writer. Reviewers stay `readonly: true`. |
-| VS-04 | Acceptance checks are listed up front. Each is recorded as passed / failed / blocked / not-run with command, cwd, revision, exit. Missing ≠ passed. |
+| VS-04 | Acceptance checks are listed up front. Each is recorded as passed / failed / blocked / not-run with command, cwd, and revision. Exit status is required for passed/failed; blocked or not-run checks omit exit status or record null with a reason. Missing ≠ passed. |
 | VS-05 | Independent verification consumes VS-04 plus the diff. Worker narrative cannot succeed the milestone. |
 | VS-06 | Blockers include: missing evidence, checks not-run, stack-provider unresolved when mutation is required, overlapping unreviewed file conflict, attempt to use live `claude-code` / `npm run runner` / protocol real execution. |
 | VS-07 | Compiler isolation and process-pin consumption are unchanged. No cross-repo TS import. |

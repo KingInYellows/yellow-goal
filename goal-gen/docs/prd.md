@@ -90,7 +90,7 @@ v1 ships the smallest thing that delivers the capability `goal.ruv.io` only mock
 | FR-12 | **(M2)** Executor routing: explicit per-step override or automatic selection. *v1: Claude Code only.* |
 | FR-13 | When a goal's `completionPolicy` requires sign-off, on `goalState` satisfaction the run enters an **awaiting-acceptance** state; the operator accepts (→ succeeded) or rejects (→ continue/replan) before the run is marked done. |
 | FR-14 | A harness milestone names exactly one owning repository, one immutable base revision, and one writer worktree. |
-| FR-15 | Acceptance evidence records each required check as passed, failed, blocked, or not-run, with command, working directory, revision, and exit status. Missing checks stay not-run. |
+| FR-15 | Acceptance evidence records each required check as passed, failed, blocked, or not-run, with command, working directory, and revision. Exit status is required when the check ran (passed or failed); for blocked or not-run checks that never launched, omit exit status or record null with a reason. Missing checks stay not-run. |
 | FR-16 | A worker self-report cannot mark the milestone succeeded. Independent verification consumes FR-15 evidence (and the reviewable patch, if any). |
 | FR-17 | On missing evidence, overlapping-unreviewed PRs that touch the same files, or an unresolved stack-provider route, the milestone ends as a blocker, not as a guessed success. |
 
