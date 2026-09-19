@@ -36,10 +36,12 @@ Coding-agent CLIs (Claude Code, Codex, Antigravity) are powerful but operate per
 - No marketplace, billing, or credit economy (cf. flow-nexus, [`../../docs/04-ruvnet-ecosystem-evaluation.md`](../../docs/04-ruvnet-ecosystem-evaluation.md)).
 - No fine-tuning / training of models.
 - No mobile app.
-- Not automatic merge, publication, or deployment.
-- Not expanding Provider Protocol v1 beyond stub execution.
+
+**Non-goals (verified single-milestone execution, Yellow Harness — not M1 v1 scope):**
+- Not automatic merge, publication, or deployment by the harness for this outcome.
+- Not expanding Provider Protocol v1 beyond stub execution for this outcome's increments.
 - Not treating the legacy scratch-worktree `bypassPermissions` runner as the approved target-bound executor.
-- Not Cursor/Claude plugin-parity as a prerequisite.
+- Not Cursor/Claude plugin-parity as a prerequisite for this outcome.
 
 ## 4. Users & personas
 
@@ -89,10 +91,10 @@ v1 ships the smallest thing that delivers the capability `goal.ruv.io` only mock
 | FR-11 | Enforce guardrails on every run: max replans, max budget (USD), wall-clock, per-action retries, max re-extractions, loop detection. Defaults in §8/§11. On a cap trip: stop dispatching, mark the run paused/blocked, and surface to the operator to raise the cap, resume, or cancel. |
 | FR-12 | **(M2)** Executor routing: explicit per-step override or automatic selection. *v1: Claude Code only.* |
 | FR-13 | When a goal's `completionPolicy` requires sign-off, on `goalState` satisfaction the run enters an **awaiting-acceptance** state; the operator accepts (→ succeeded) or rejects (→ continue/replan) before the run is marked done. |
-| FR-14 | A harness milestone names exactly one owning repository, one immutable base revision, and one writer worktree. |
-| FR-15 | Acceptance evidence records each required check as passed, failed, blocked, or not-run, with command, working directory, and revision. Exit status is required when the check ran (passed or failed); for blocked or not-run checks that never launched, omit exit status or record null with a reason. Missing checks stay not-run. |
-| FR-16 | A worker self-report cannot mark the milestone succeeded. Independent verification consumes FR-15 evidence (and the reviewable patch, if any). |
-| FR-17 | On missing evidence, overlapping-unreviewed PRs that touch the same files, or an unresolved stack-provider route, the milestone ends as a blocker, not as a guessed success. |
+| FR-14 | A harness milestone names exactly one owning repository, one immutable **base** revision, and one writer worktree. |
+| FR-15 | Acceptance evidence declares a **non-empty required-check set** up front — each entry is an `{id, command, cwd}` tuple in the same fixture, and each recorded row must match that tuple (ids alone would let `command: true` hide under id `test`; an empty set would vacuously satisfy "every required check passed" and is itself malformed evidence — missing evidence never becomes success) and records each required check as passed, failed, blocked, or not-run, with command, working directory, a discriminated **candidate** identity (distinct from the base; see VS spec), working-tree content measured immediately before and after the check ran, and an **observed** `exitStatus` when the check exited normally. Status is derived from that check's own observed outcome, never asserted independently: `passed` requires a normal exit with `exitStatus: 0` and leftover endpoint tree identity (`preCheckTree` equals `postCheckTree`; leftover Git tree identity plus the submodule, empty-directory, and embedded-repository post-check re-verifies, not proof working content was unchanged *during* the check — see VS spec recheck-rule bound); any other normal exit with no detected leftover mutation is `failed`. Never-launched checks are `not-run`: **omit** `exitStatus` and **require** `reason`. Launched checks killed by timeout/signal with no exit code are `blocked` (**never** `not-run`, **never** `passed`): **omit** or null `exitStatus`, **require** `signal` or `reason`; never fabricate `0`. A check whose leftover post-check tree differs from its pre-check tree, or that leaves a submodule dirty, an extra check-visible path inside a registered submodule, an empty directory, or a nested `.git` that is not a registered submodule after the check, is `blocked`, never credited to the original candidate. The aggregate `status` uses a fixed precedence (`blocked` > `failed` > `not-run`), never an undefined ordering; missing evidence can never become a success. Full contract, roles, and the complete outcome table live in the [VS spec](../plans/specs/verified-single-milestone-execution.md). |
+| FR-16 | A worker self-report cannot mark the milestone succeeded. Independent **verification** (the acceptance decider; yellow-goal semantics; may write disposable test artifacts) consumes FR-15 evidence and the reviewable patch when present. A read-only **review** role (e.g. host/provider integration in yellow-plugins) is separate and does not substitute for verification — and neither does a successful FR-15 recording by itself: the fixture-only recorder validates and aggregates already-observed check evidence into a record but does not execute checks or decide acceptance (see VS spec roles). |
+| FR-17 | On missing evidence, checks still not-run, overlapping-unreviewed PRs that touch the same files, or an unresolved stack-provider route, the milestone ends as a blocker, not as a guessed success. |
 
 ## 8. AI-specific requirements & success metrics
 
@@ -139,9 +141,9 @@ AI systems need targets traditional PRDs don't ([source](https://medium.com/@hab
 
 **Verified single-milestone execution (Yellow Harness, post-M1, not M1 v1 bar):**
 
-- Named milestone + repo + base SHA are recorded before a writer is dispatched.
-- The result is either a reviewable patch on that base or a blocker with FR-15 evidence.
-- Independent verification has been applied; status is not inferred from CI badges or chat claims alone.
+- Named milestone + repo + **base** SHA are recorded before a writer is dispatched.
+- The result is either a reviewable patch on that base (with a **candidate** commit or tree snapshot recorded) or a blocker with FR-15 evidence.
+- Independent verification has been applied against the candidate content; status is not inferred from worker narrative or a bare CI badge alone — a traceable CI record (revision, job/command, result) may count when it identifies the checked candidate.
 - No merge or deploy was performed by the harness.
 
 ## 11. Host recommendation (Proxmox)
@@ -161,16 +163,30 @@ The instance is **single-user**: reachable only on your own network (or via Tail
 
 **Status:** M0 and M1 are implemented and green; M2/M3 remain future work.
 
-**Verified single-milestone execution (Yellow Harness, post-M1, not M2):** given one
-explicitly approved milestone, one named repository, and one immutable base revision,
-the harness coordinates **one** bounded implementation worker and returns either (a) a
-reviewable patch whose named acceptance checks were run independently of that worker, or
-(b) an evidence-backed blocker. Merge, publication, deployment, live executors, and
-Protocol v1 real-run capabilities are out of scope for this outcome.
+**Verified single-milestone execution (Yellow Harness, post-M1, not M2):** the eventual
+product outcome — given one explicitly approved milestone, one named repository, and one
+immutable **base** revision — is that the harness coordinates **one** bounded
+implementation worker and returns either (a) a reviewable patch whose named acceptance
+checks were run independently of that worker against the **candidate** commit or tree
+snapshot, or (b) an evidence-backed blocker. Merge and deployment are never automatic
+parts of the outcome.
 
-World state and acceptance status come from recorded check results, not from the
-worker's self-report. `target.repository` remains a request field, not an execution
-selector (ADR-0017).
+Phasing (see [ADR-0018](decisions/0018-verified-single-milestone-execution.md) and
+[VS spec](../plans/specs/verified-single-milestone-execution.md)):
+
+1. **Documentation (landed in #34):** PRD FR-14–FR-17, proposed ADR-0018, VS-01–VS-07
+   spec. No executable harness path yet.
+2. **First code increment (next, not authorized here):** fixture-only acceptance-evidence
+   recording through an existing engine process seam; disposable git fixture; deterministic
+   local checks only.
+3. **Still deferred:** live target-bound execution, Protocol v1 real-run capabilities,
+   promoting scratch/`bypassPermissions` as an approved executor, and host/provider
+   integration semantics (yellow-plugins). Provider Protocol v1 remains stub-only today
+   (ADR-0017).
+
+World state and acceptance status come from recorded check results with **observed**
+outcomes against identified candidate content, not from the worker's self-report.
+`target.repository` remains a request field, not an execution selector (ADR-0017).
 
 **Shipped alongside M1 — Universal Repository Goal Packet Compiler (separate subsystem):** a
 **read-only** pipeline (`npm run cli`: `request create/validate` → `inspect` → `analyze` →

@@ -16,11 +16,29 @@ repository executor.
 
 ## Decision
 
-Name **verified single-milestone execution** as a post-M1 Yellow Harness outcome owned by
-yellow-goal documentation and later engine-owned evidence records. Keep Provider Protocol
-v1 stub-only. Keep `target.repository` as non-selecting for execution. Keep compiler
-isolation. Independent verification is mandatory; worker claims are not world state. Do
-not merge or deploy as part of the outcome.
+Name **verified single-milestone execution** as a post-M1 Yellow Harness outcome. Four
+layers, without authorizing real execution in this increment:
+
+1. **Eventual product outcome:** one approved milestone, one repo, one immutable **base**
+   revision, one bounded implementation worker → independently verified patch (against a
+   recorded discriminated **candidate** identity) or evidence-backed blocker. Merge and
+   deployment are never automatic.
+2. **Documentation increment (landed in #34):** PRD FR-14–FR-17, this ADR (`proposed`),
+   and the VS spec. Establishes semantics only.
+3. **First code increment (next, separate authorization):** fixture-only
+   acceptance-evidence recording through an existing engine process seam; disposable git
+   fixture; deterministic local checks.
+4. **Still deferred:** live target-bound execution, Protocol v1 real-run capabilities,
+   promoting scratch/`bypassPermissions`, and yellow-plugins host/provider integration.
+
+yellow-goal owns canonical acceptance/evidence semantics; yellow-plugins owns host/provider
+integration. A read-only **review** role is distinct from the **verification** process,
+which may write disposable test artifacts. The proposed fixture-only acceptance-evidence
+recorder (VS spec) is a third, narrower role still: it validates and aggregates
+already-observed check evidence into a record and does not execute any check itself. A
+successful recording is not itself acceptance — independent verification still decides.
+Provider Protocol v1 stays stub-only today. `target.repository` stays non-selecting for
+execution. Compiler isolation is unchanged. Worker claims are not world state.
 
 ## Alternatives considered
 
@@ -36,11 +54,18 @@ not merge or deploy as part of the outcome.
 
 ## Confirmation
 
-TBD — PRD §12/§7 IDs exist in `goal-gen/docs/prd.md`; this ADR file is accepted; no
-protocol `capabilities` array change in the same PR.
+Pending acceptance — all must be true before this ADR moves from `proposed` to `accepted`:
+
+- PRD §7 (FR-14–FR-17) and §12 phasing text exist in `goal-gen/docs/prd.md` and match
+  the four-layer model above.
+- This ADR file and
+  `goal-gen/plans/specs/verified-single-milestone-execution.md` are merged on `main`.
+- No protocol `capabilities` array change is bundled with the documentation acceptance.
+- Brad explicitly accepts ADR-0018 (documentation-only acceptance does not authorize the
+  first code increment).
 
 ## Links
 
-- [PRD §12](../../docs/prd.md), [verified single-milestone execution spec](../../plans/specs/verified-single-milestone-execution.md)
+- [PRD §12](../prd.md), [verified single-milestone execution spec](../../plans/specs/verified-single-milestone-execution.md)
 - [Provider Protocol v1](../../plans/specs/provider-protocol-v1.md), [ADR-0017](0017-provider-protocol-v1-stdio.md)
 - [Request-to-run pipeline](../../plans/specs/request-to-run-pipeline.md) (RR13–RR16)
