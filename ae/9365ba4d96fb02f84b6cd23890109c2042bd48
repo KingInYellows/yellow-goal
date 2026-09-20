@@ -1,0 +1,24 @@
+AGENTS.md
+  s_9194e78d33f233::t_a2533c36593caf 13-16
+CLAUDE.md
+  s_9194e78d33f233::t_df969e8e837683 17-21
+.github/workflows/claude-code-review.yml
+  s_9194e78d33f233::t_5c841ed83bcff3 50-54,60-61,69-70,73-75,81-83
+  740701185ee735b8 6-7,66,76-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ae9365ba4d96fb02f84b6cd23890109c2042bd48",
+  "prompts": {},
+  "sessions": {
+    "s_9194e78d33f233": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7b998a2-cc22-427d-9a6f-8c5d1824109d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
