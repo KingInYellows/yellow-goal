@@ -7,7 +7,7 @@ import {
   type CandidateFileDocument,
   type CandidateOfflineProfile,
 } from './candidate-offline-profiles';
-import { runtimeLabel } from './implementation-revision';
+import { runtimeLabel, type RuntimeLabel } from './implementation-revision';
 import type { FixtureDecision, RecorderInvocation } from './observed-fixture-decider';
 import {
   REPRODUCIBLE_COMMIT_MESSAGE,
@@ -22,7 +22,7 @@ export const BUNDLE_MANIFEST_NAME = 'manifest.json';
 export type CandidateOfflineBundle = {
   schemaVersion: typeof CandidateOfflineSchemaVersion;
   implementationRevision: string;
-  runtime: { node: string };
+  runtime: RuntimeLabel;
   profile: { id: string; version: string; digest: string };
   baseRecipe: {
     files: Record<string, string>;

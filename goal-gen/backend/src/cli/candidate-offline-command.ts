@@ -3,7 +3,7 @@
  * onto an engine-owned profile. `acceptance reproduce <bundle-dir>` reruns trusted
  * checks from the installed package; stored `accepted: true` is not re-verification.
  */
-import { readFileSync } from 'node:fs';
+import { closeSync, openSync, readSync } from 'node:fs';
 import path from 'node:path';
 import type { CommandOutput } from './commands';
 import { CliUsageError, ObservedFixtureError } from './errors';
@@ -19,6 +19,7 @@ import { decideCandidateOffline } from './candidate-offline-decider';
 import {
   CandidateFileContentSchemaVersion,
   CANDIDATE_MAX_DEPTH,
+  CANDIDATE_MAX_DOCUMENT_BYTES,
   CANDIDATE_MAX_FILE_BYTES,
   CANDIDATE_MAX_FILES,
   candidateProfileDigest,
@@ -106,6 +107,45 @@ export function unauthorizedCandidatePaths(
   profile: CandidateOfflineProfile,
 ): string[] {
   return Object.keys(candidate.files).filter((relative) => !profile.allowedPaths.includes(relative));
+}
+
+/**
+ * Read at most `maxBytes` from an untrusted file. Allocates cap+1, never the
+ * full file size, so a huge candidate cannot exhaust the heap before USAGE.
+ */
+export function readBoundedUtf8File(filePath: string, maxBytes: number): string {
+  let fd: number;
+  try {
+    fd = openSync(filePath, 'r');
+  } catch (err) {
+    const code = err instanceof Error && 'code' in err ? String((err as NodeJS.ErrnoException).code) : 'UNKNOWN';
+    const message = err instanceof Error ? err.message : String(err);
+    if (code === 'ENOENT') {
+      throw new CliUsageError(`cannot read candidate document: ${message}`);
+    }
+    throw new ObservedFixtureError('IO_ERROR', `cannot read candidate document ${filePath}: ${message}`, {
+      path: filePath,
+      code,
+    });
+  }
+  try {
+    const buf = Buffer.alloc(maxBytes + 1);
+    const n = readSync(fd, buf, 0, maxBytes + 1, 0);
+    if (n > maxBytes) {
+      throw new CliUsageError(`candidate document exceeds maxDocumentBytes (${maxBytes})`);
+    }
+    return buf.subarray(0, n).toString('utf8');
+  } catch (err) {
+    if (err instanceof CliUsageError || err instanceof ObservedFixtureError) throw err;
+    const code = err instanceof Error && 'code' in err ? String((err as NodeJS.ErrnoException).code) : 'UNKNOWN';
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ObservedFixtureError('IO_ERROR', `cannot read candidate document ${filePath}: ${message}`, {
+      path: filePath,
+      code,
+    });
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function parseVerifyArgv(argv: string[]): { json: boolean; bundleDir?: string; positionals: string[] } {
@@ -218,26 +258,14 @@ export async function runCandidateOfflineVerify(argv: string[]): Promise<Command
   }
 
   const resolvedCandidate = path.resolve(candidatePath);
-  let raw: string;
-  try {
-    raw = readFileSync(resolvedCandidate, 'utf8');
-  } catch (err) {
-    const code = err instanceof Error && 'code' in err ? String((err as NodeJS.ErrnoException).code) : 'UNKNOWN';
-    const message = err instanceof Error ? err.message : String(err);
-    if (code === 'ENOENT') {
-      throw new CliUsageError(`cannot read candidate document: ${message}`);
-    }
-    throw new ObservedFixtureError(
-      'IO_ERROR',
-      `cannot read candidate document ${resolvedCandidate}: ${message}`,
-      { path: resolvedCandidate, code },
-    );
-  }
+  const maxDocumentBytes = Math.min(profile.maxDocumentBytes, CANDIDATE_MAX_DOCUMENT_BYTES);
+  const raw = readBoundedUtf8File(resolvedCandidate, maxDocumentBytes);
   const candidate = parseCandidateDocument(raw, {
     ...profile,
     maxFiles: Math.min(profile.maxFiles, CANDIDATE_MAX_FILES),
     maxFileBytes: Math.min(profile.maxFileBytes, CANDIDATE_MAX_FILE_BYTES),
     maxDepth: Math.min(profile.maxDepth, CANDIDATE_MAX_DEPTH),
+    maxDocumentBytes,
   });
   const unauthorized = unauthorizedCandidatePaths(candidate, profile);
   const { bundle } = await verifyWithProfile(profile, candidate, unauthorized);

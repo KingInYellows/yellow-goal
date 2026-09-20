@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -28,11 +29,36 @@ export function packageVersion(): string {
 
 export type RuntimeLabel = {
   node: string;
+  dependencies: {
+    tsx: string;
+    zod: string;
+  };
 };
 
-/** Node/runtime label. Not hashed into `implementationRevision`. */
+const packageRequire = createRequire(fileURLToPath(new URL('../../../package.json', import.meta.url)));
+
+/** Resolved installed version from that package's package.json. Not coverage. */
+export function installedPackageVersion(name: string): string {
+  try {
+    const pkg = packageRequire(`${name}/package.json`) as { version?: unknown };
+    return typeof pkg.version === 'string' && pkg.version !== '' ? pkg.version : 'missing';
+  } catch {
+    return 'missing';
+  }
+}
+
+/**
+ * Node plus resolved material runtime dependencies. Label only — not hashed
+ * into `implementationRevision` and not a `node_modules` digest.
+ */
 export function runtimeLabel(): RuntimeLabel {
-  return { node: process.version };
+  return {
+    node: process.version,
+    dependencies: {
+      tsx: installedPackageVersion('tsx'),
+      zod: installedPackageVersion('zod'),
+    },
+  };
 }
 
 export type TrustedCheckInput = {
@@ -85,12 +111,13 @@ export function trustedCheckerIdentity(check: TrustedCheckInput): TrustedChecker
  * CLI boundary (`bin/goal-gen.mjs`, `index.ts`, `direct-invocation.ts`,
  * `commands.ts`, `errors.ts`). `direct-invocation.ts` is the load-time gate
  * that decides whether `index.ts` runs `main()`; a change there can skip or
- * double-invoke dispatch without a version bump. Candidate-offline command,
- * bundle, decider, and profile modules are hashed because they change
- * recorder/dispatch/check identity for that verb. Do not expand this list for
- * unrelated imports. Runtime and npm dependency trees are labeled by
- * `packageVersion()` and `runtimeLabel()`, not this digest. Checker identity
- * is `trustedCheckerIdentity()`, not argv paths. Do not hash the unrelated tree.
+ * double-invoke dispatch without a version bump. Candidate-offline and
+ * committed-source command, bundle, decider, profile, and git-read modules
+ * are hashed because they change recorder/dispatch/check identity for those
+ * verbs. Do not expand this list for unrelated imports. Runtime and npm
+ * dependency trees are labeled by `packageVersion()` and `runtimeLabel()`,
+ * not this digest. Do not hash `node_modules`. Checker identity is
+ * `trustedCheckerIdentity()`, not argv paths. Do not hash the unrelated tree.
  */
 export const ENGINE_SOURCES = [
   'bin/goal-gen.mjs',
@@ -110,6 +137,11 @@ export const ENGINE_SOURCES = [
   'backend/src/cli/candidate-offline-bundle.ts',
   'backend/src/cli/candidate-offline-decider.ts',
   'backend/src/cli/candidate-offline-profiles.ts',
+  'backend/src/cli/committed-source-command.ts',
+  'backend/src/cli/committed-source-bundle.ts',
+  'backend/src/cli/committed-source-decider.ts',
+  'backend/src/cli/committed-source-profiles.ts',
+  'backend/src/cli/committed-source-git.ts',
 ] as const;
 
 export function engineSourceDigest(): string {

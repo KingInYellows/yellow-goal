@@ -4,7 +4,7 @@ Status: proposed design; documentation slice complete (#34, merged on `36eeeae`)
 Date: 2026-09-19. Owner: Yellow Goal (Yellow Harness coordination).
 Decision: [ADR-0018](../../docs/decisions/0018-verified-single-milestone-execution.md).
 Engine bases: documentation parent `09bcd16cd25ec249e3248d3ce7dcb4536a0d348e` (#34);
-current `main` `36eeeaef016b53529b6819f9db9ba5a4728f3397` (post-merge).
+current `main` `5bc87477abdb6adf3108bfb4bf9e02dc2eea2c79` (#39 squash on #38).
 
 ## Phasing
 
@@ -16,7 +16,8 @@ Four layers — do not conflate them:
 | 2. Documentation increment | PRD FR-14–FR-17, proposed ADR-0018, this spec (VS-01–VS-07). | **Complete** (#34) |
 | 3. First code increment | Fixture-only acceptance-evidence recording through an existing engine process seam; disposable git fixture; deterministic local checks only. | **Implemented** (yellow-goal #36). Git-free JSON recorder only. |
 | 3b. Observed fixture verification | Engine-owned fixed profiles, disposable-repo observer, packed `acceptance record` subprocess, separate fixture-scoped decision. | **Implemented** (yellow-goal #37). Not live target-bound execution. |
-| 3c. Candidate-bound offline milestone | Additive FILE-CONTENT candidate path, durable bundle, installed fresh-process replay of trusted checks. | This increment. Not verified single-milestone execution completed. Not live execution. |
+| 3c. Candidate-bound offline milestone | Additive FILE-CONTENT candidate path, durable bundle, installed fresh-process replay of trusted checks. | **Implemented** (yellow-goal #39). Not verified single-milestone execution completed. Not live execution. |
+| 3d. Committed-source capture | Additive Git **object-read** capture of a pinned commit plus one engine-owned package-manifest/lockfile coherence profile. CI uses owned git fixtures; real yellow-goal capture is demonstration evidence, not a CI pin of live `main`. | This increment. Not verified single-milestone execution completed. Not live execution. |
 | 4. Still deferred | Live target-bound execution; Protocol v1 real-run capabilities; promoting scratch/`bypassPermissions`; yellow-plugins host/provider integration. Protocol v1 stays stub-only today (ADR-0017). | Deferred |
 
 ## Outcome (layer 1)
@@ -788,7 +789,7 @@ There is **no** `--fixture`, `observed:true`, or imported-JSON authorization rou
 - **Observer child lifecycle:** drain stdout/stderr with an **encoded-byte** bound (UTF-8 `StringDecoder`, including sequences split across chunks); stop collecting once the bound is hit. Escalate SIGTERM → SIGKILL based on **completion**, not `child.killed` (delivery ≠ exit); preserve the actual close `signal`/`exitStatus` plus independent `deadlineExceeded`. Do not substitute `signal ?? 'SIGTERM'`. On supported POSIX platforms, spawn the owned child in its own process group and kill that group (then destroy the parent's pipe ends) so a descendant that inherits stdout/stderr cannot hang `close`. Do not signal unrelated process groups. Timeout fixtures signal readiness (via `GOAL_GEN_OBSERVER_READY`, a file **outside** the measured tree) after installing handlers; the behavioral deadline starts only then, so Node startup cannot consume the 200 ms bound. If readiness never arrives, or the owned child exits before the ready file exists, record `readiness-failed` with the actual close status and do not treat that exit as passed. Readiness-budget expiry is not an execution deadline: do not set `deadlineExceeded`. Latch a `waitForReadyFile` `timeout` result; a ready marker that appears afterwards must not drop `readiness-failed` or turn the kill into an ordinary signal. A late poll after the readiness budget has elapsed is `timeout` even if the marker is present on that tick; evaluate elapsed time before accepting the marker. Kill the owned tree when it is still running. `timeout-probe` exits 0 **synchronously** in its SIGTERM handler so the 250 ms SIGKILL grace cannot win a deferred-exit race. Cancellation of `runBoundedArgv` uses the same owned-tree kill path and does not invent an exit code.
 - **Recorder** stays git-free and command-free. The child is given a PATH trap so a regression that shells out to `git` or the fixture `command` string fails the sentinel; the workflow asserts those marker files were **not** created. Recorder stdout/stderr is size- and deadline-bounded. A recorder that dies on a signal or otherwise lacks a numeric `exitStatus` is `RECORDER_INVOKE_FAILED`: structured stderr, workflow exit 1, **no** fabricated `recorder.exit` and **no** verify-fixture bundle. Honest numeric recorder exit 1 remains a negative bundle with workflow exit 0. Invocation tempdir cleanup covers setup failure.
 - **Decider** reads the observer's provenance plus the recorder subprocess result. Hand-authored all-passed JSON may be valid **recorder** input and still cannot produce an affirmative decision from this verb.
-- `implementationRevision` is `goal-gen@<package-version>#<sha256>` over engine sources (executed CLI boundary `bin/goal-gen.mjs` / `index.ts` / `direct-invocation.ts` / `commands.ts` / `errors.ts`, plus observer/recorder/profile-policy modules — not the unrelated tree or unrelated CLI imports) plus a portable profile digest of logical checker identities (script basename, extra argv, readiness, checker bytes), `approvedFiles`, and profile policy — not `process.execPath` or install-directory prefixes. Node/runtime versions are recorded separately as a label, not hashed into that identity. The entry-script guard is hashed because it can skip or double-invoke `main()` without a version bump.
+- `implementationRevision` is `goal-gen@<package-version>#<sha256>` over engine sources (executed CLI boundary `bin/goal-gen.mjs` / `index.ts` / `direct-invocation.ts` / `commands.ts` / `errors.ts`, plus observer/recorder/profile-policy modules — not the unrelated tree or unrelated CLI imports) plus a portable profile digest of logical checker identities (script basename, extra argv, readiness, checker bytes), `approvedFiles`, and profile policy — not `process.execPath` or install-directory prefixes. Do not hash `node_modules`. Node plus resolved versions of material runtime dependencies (`tsx`, `zod`, from those packages' installed `package.json`) are recorded separately as a **label**, not hashed into that identity and not implied measured coverage. The entry-script guard is hashed because it can skip or double-invoke `main()` without a version bump.
 - Observation faults (precondition violation, measurement abort of the **candidate identity**) are workflow blockers: `accepted: false`, recorder not invoked, **no** invented recorder fields. Per-check spawn or pre-measurement failure **after** that candidate tree was measured is not an observation fault: it produces honest `not-run` rows (later checks `not-run`); the recorder is invoked when the fixture is otherwise representable.
 
 ### Outcome table
@@ -827,7 +828,7 @@ There is **no** `--fixture`, `observed:true`, or imported-JSON authorization rou
 | OF-10 | Observation fault does not invent recorder fields | same |
 | OF-11 | Compiler cold path does not load observer; observer does not load `run-command` | isolation tests |
 | OF-12 | Owned descendant pipe lifetime, readiness failure distinct from post-ready `deadlineExceeded`, latched readiness-budget timeout, cancellation, encoded-byte bounds | `observed-fixture.test.ts` + `observed-fixture-child.test.ts` |
-| OF-13 | `implementationRevision` covers recorder/validator/profile policy/trusted checkers plus executed CLI boundary including the entry-script guard; a recorder, checker, or boundary-source change changes identity; install path and Node executable do not; Node/runtime is a separate label | `observed-fixture.test.ts` |
+| OF-13 | `implementationRevision` covers recorder/validator/profile policy/trusted checkers plus executed CLI boundary including the entry-script guard; a recorder, checker, or boundary-source change changes identity; install path and Node executable do not; Node plus resolved `tsx`/`zod` versions are a separate runtime label (not hashed, not `node_modules` bytes) | `observed-fixture.test.ts` |
 | OF-14 | Signaled recorder (no numeric exit) is `RECORDER_INVOKE_FAILED`; no bundle; CLI exit 1. Honest numeric recorder exit 1 still emits a negative bundle | `observed-fixture.test.ts` |
 
 ## Candidate-bound offline milestone increment (3c)
@@ -841,7 +842,7 @@ Authorized follow-on to layers 3 and 3b. This is **candidate-bound offline miles
 | Field | Contract |
 |---|---|
 | Profile | Engine-owned (`config-repair` in this increment): base files, allowed paths, ≥2 required checks, argv/cwd/timeout, semantic requirements. Lives next to the CLI, outside candidate-writable content. |
-| Candidate document | `yellow-goal/candidate-file-content/v1` `{ files: { relativePath: string contents } }`. Paths validated for size/depth/traversal before materialization. Only `allowedPaths` may be written. |
+| Candidate document | `yellow-goal/candidate-file-content/v1` `{ files: { relativePath: string contents } }`. The **file** is read with an encoded-byte cap (`maxDocumentBytes`) **before** `JSON.parse`. Paths validated for size/depth/traversal before materialization. Only `allowedPaths` may be written. |
 | Required checks | Profile `{id, argv, cwd, command}` — same observer as 3b. Checkers are not loaded from the candidate or the bundle. |
 | Candidate identity | Observer-measured `kind: tree`. |
 | Targets | Disposable repos under `$TMPDIR` only. No arbitrary repos, archives, scripts, URLs, or caller checkers. No eval/install of candidate code. |
@@ -865,14 +866,15 @@ Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`.
 | Recorder | Packed `acceptance record` subprocess, same as 3b, omitted when v1 cannot represent the observation honestly. |
 | Exit 0 | Bundle written (in-memory always; durable when `--bundle-dir` is given). Includes valid negatives and `accepted: false`. |
 | Exit 1 | No durable success marker: I/O, incomplete bundle, or unexpected infrastructure failure. |
-| Exit 2 | Usage (wrong arity, unknown profile, unsafe candidate path, non-empty `--bundle-dir`). |
+| Exit 2 | Usage (wrong arity, unknown profile, unsafe candidate path, oversized candidate document, non-empty `--bundle-dir`). |
 
 ### Trust boundary
 
 - **Engine-owned:** profile, argv, timeout, allowed paths, semantic requirements, checker implementations, reproduction policy.
 - **Untrusted:** candidate document bytes, bundle-stored candidate bytes, bundle-stored `decision.accepted`, bundle-stored recorder JSON, bundle-stored bindings.
 - **Observer / recorder / decider** roles stay separate. The candidate cannot redefine required checks, supply executable checkers, or self-assert acceptance.
-- `implementationRevision` is `goal-gen@<package-version>#<sha256>` over engine sources plus a portable profile digest of logical checker identities (script basename, extra argv, readiness, checker bytes), allowed paths, base files, and candidate-document limits (`maxFiles` / `maxFileBytes` / `maxDepth`) — not `process.execPath` or install-directory prefixes. Node/runtime versions are recorded separately as a label. Tightening those limits without hashing them would let `reproduce` skip profile-drift and apply different validation (USAGE_ERROR) to a stored candidate.
+- Bound the untrusted candidate **file** to `maxDocumentBytes` while reading (at most cap+1 bytes allocated). Do not `readFileSync`/`JSON.parse` an unbounded document first and then apply `maxFiles`/`maxFileBytes`. Oversized input — including a huge unknown property or whitespace — is structured `USAGE_ERROR` / exit 2, not heap death.
+- `implementationRevision` is `goal-gen@<package-version>#<sha256>` over engine sources plus a portable profile digest of logical checker identities (script basename, extra argv, readiness, checker bytes), allowed paths, base files, and candidate-document limits (`maxFiles` / `maxFileBytes` / `maxDepth` / `maxDocumentBytes`) — not `process.execPath`, install-directory prefixes, or `node_modules`. Node plus resolved `tsx`/`zod` versions are a separate runtime label, not measured coverage. Tightening those limits without hashing them would let `reproduce` skip profile-drift and apply different validation (USAGE_ERROR) to a stored candidate.
 - Synthetic Git base uses fixed author/committer dates (`1970-01-01T00:00:00+0000`) and a recorded recipe so the same files reproduce the same `baseRevision`.
 - Reproduce loads the **installed** profile by id, compares digest, reconstructs files, and reruns checks. Bundle-supplied executables and trusted-policy fields are ignored.
 
@@ -888,6 +890,7 @@ Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`.
 | Self-assert `accepted: true` in candidate data | unauthorized extra path and/or failed checks | omitted or failed | `accepted: false` | 0 |
 | Candidate tries to supply a checker | unauthorized extra path | omitted | `accepted: false` | 0 |
 | Unsafe path (`..`, absolute, `.git` in any segment) | n/a | not invoked | no bundle | 2 |
+| Oversized candidate file (before parse) | n/a | not invoked | no bundle | 2 |
 | Timeout-ignore / timeout-exit-0 / noisy / spawn / leftover-then-later / missing measurement | same as 3b table | same honesty rule | `accepted: false` | 0 |
 | Durable bundle moved; temps deleted | n/a | n/a | reproduce reruns checks | 0 |
 | Mutated `COMPLETE` / missing marker / non-regular or wrong-bytes `COMPLETE` | n/a | n/a | no stale success | 1 |
@@ -902,13 +905,84 @@ Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`.
 | CO-01 | Engine-owned profile; candidate cannot redefine required checks | `candidate-offline.test.ts` |
 | CO-02 | ≥2 required checks; ≥2 byte-distinct valid candidates; not golden `approvedFiles` | same |
 | CO-03 | Failing baseline, incorrect candidate, extra file, self-assert, weaken-check | same |
-| CO-04 | Path/size/depth validation before materialization | same |
+| CO-04 | Path/size/depth validation before materialization; candidate file byte-capped before `JSON.parse` | same |
 | CO-05 | Durable bundle + atomic `COMPLETE`; no overwrite of non-empty paths | same |
 | CO-06 | Installed fresh-process reproduce reruns trusted checks | `candidate-offline.test.ts` + `install-smoke.sh` |
-| CO-07 | Mutating candidate/bindings/profile/record/marker cannot stale-succeed; profile digest covers trusted invocation plus candidate-document limits | same |
+| CO-07 | Mutating candidate/bindings/profile/record/marker cannot stale-succeed; profile digest covers trusted invocation plus candidate-document limits including `maxDocumentBytes` | same |
 | CO-08 | `implementationRevision` is not a relabeled package version | same + observed-fixture tests |
 | CO-09 | Reproducible synthetic Git base from the recorded recipe | same |
 | CO-10 | Compiler cold path does not load the candidate workflow | isolation tests |
+
+## Committed-source capture increment (3d)
+
+Authorized follow-on to layers 3, 3b, and 3c. This is **committed-repository verification implemented** (source-capture slice), not verified single-milestone execution completed, and **not** layer 4. Do not rewrite ADR-0018 decision text. Preserve `acceptance record`, `verify-fixture`, `verify-candidate`, and `reproduce`.
+
+**Product outcome.** One engine-owned profile names a bounded allowlist of committed non-secret paths and ≥2 installed checkers. The caller names a **local** git repository and a revision. The engine resolves that revision **once** to a full 40-character commit object ID, then reads **only** those allowlisted blobs through Git object commands. Checkers run against a disposable snapshot of captured bytes (not a worktree of the source, not import/eval/`npm install` of the target). Dirty/staged/untracked/ignored source content is **uninspected**. Source non-mutation is proven with canaries (HEAD/index bytes plus planted worktree files).
+
+### Supported envelope
+
+| Field | Contract |
+|---|---|
+| Profile | Engine-owned (`package-manifest-lockfile` in this increment): allowlisted paths, ≥2 required checks, argv/cwd/timeout, `maxFiles` / `maxFileBytes` / `maxDepth`. Lives next to the CLI, outside the captured tree. |
+| Target | A **local** git directory. CI and unit tests use a disposable owned fixture with known commits/blobs — they must not `rev-parse` live `main` or fetch. Real yellow-goal capture is demonstration evidence from a local clone that already has the object, not a CI pin. No GitHub URL, no network. |
+| Revision | Named ref or object name, resolved once via `rev-parse` to a full commit object ID; all later reads use that ID. |
+| Allowlist | `goal-gen/package.json`, `goal-gen/package-lock.json`, `goal-gen/bin/goal-gen.mjs`. |
+| Required checks | `manifest-lock-agreement` (package name/version equals lockfile root/`packages[""]`; `lockfileVersion` 3) and `packaging-entry` (`package.json` `bin.goal-gen` is `bin/goal-gen.mjs`; captured blob is a regular file starting with `#!/usr/bin/env node`). Checkers are installed with the engine, never loaded from the captured tree. |
+| Git | Object reads only: `rev-parse`, `cat-file`, `ls-tree`. `GIT_OPTIONAL_LOCKS=0`, `core.hooksPath=/dev/null`, no `GIT_WORK_TREE`, no checkout/index/object writes, no source worktree create, no target hooks/executables. Blob reads are size-capped before content allocation. |
+| Snapshot | Disposable directory under `$TMPDIR` holding captured bytes. Not a git worktree of the source. Deleted after checks. |
+
+### Process interface
+
+Verb:
+
+- `acceptance capture-source <profile-id> <repo> <commit> [--json] [--bundle-dir <dir>]`
+
+Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`. Existing `acceptance record`, `verify-fixture`, `verify-candidate`, and `reproduce` stay intact.
+
+| Property | Contract |
+|---|---|
+| stdout | One JSON bundle `yellow-goal/committed-source-capture/v1` when the workflow finishes (affirmative **or** negative). Empty on usage/I/O failure. |
+| stderr | Structured `{"error":{"code","message"}}` on usage (exit 2) or I/O/unexpected (exit 1) only. |
+| `--bundle-dir` | Same empty-directory / atomic `COMPLETE` rule as 3c. Marker bytes are this schema version. |
+| Recorder | Omitted. Acceptance-evidence v1 cannot honestly represent Git-object capture without minting a candidate git identity of the source. Decision is from observed checker exits plus capture faults. |
+| Exit 0 | Bundle written. Includes valid negatives (`accepted: false`). |
+| Exit 1 | Source mutation detected after capture, I/O, incomplete bundle, or unexpected infrastructure failure. |
+| Exit 2 | Usage (wrong arity, unknown profile, non-local repo, unresolvable revision, non-empty `--bundle-dir`). |
+
+### Trust boundary
+
+- **Engine-owned:** profile, allowlist, argv, timeout, checker implementations, Git verb allowlist.
+- **Untrusted:** named source repository contents, requested revision string, captured blob bytes, bundle-stored `decision.accepted`.
+- **Uninspected:** dirty, staged, untracked, ignored paths. They are not part of the decision. Tests plant canaries to prove the engine did not mutate them.
+- `implementationRevision` follows 3c (engine sources plus this increment's capture modules once they exist; portable checker identity; runtime label separately; no `node_modules` hash).
+- Checkers must not import, `eval`, or `npm install` captured bytes.
+
+### Outcome table
+
+| Case | Capture | Checks | Decision | Workflow exit |
+|---|---|---|---|---|
+| Owned fixture at pinned commit; lockfile agrees; packaging entry present | 3 blobs | both passed | `accepted: true` | 0 |
+| Lockfile name/version disagrees with manifest | blobs read | `manifest-lock-agreement` failed | `accepted: false` | 0 |
+| Missing packaging entry / not a blob / missing shebang | missing or captured | `packaging-entry` failed | `accepted: false` | 0 |
+| Allowlisted path absent from commit | listed in `missing` | failed | `accepted: false` | 0 |
+| Unknown profile / URL repo / extra args | n/a | not launched | no bundle | 2 |
+| Unresolvable revision | n/a | not launched | no bundle | 2 |
+| Source HEAD/index bytes changed during capture | n/a | n/a | no bundle | 1 |
+| Git write verb attempted | refused | not launched | no bundle | 1 |
+
+### Requirement-to-test mapping
+
+| ID | Requirement | Test |
+|---|---|---|
+| CS-01 | Engine-owned `package-manifest-lockfile` profile; ≥2 checks; allowlist fixed | `committed-source.test.ts` |
+| CS-02 | Capture an owned git fixture at a pinned full commit object ID via Git object reads (not live `main`; real yellow-goal is demonstration evidence) | same |
+| CS-03 | Manifest/lock agreement and packaging-entry both required | same |
+| CS-04 | Incoherent lockfile is an honest negative | same |
+| CS-05 | Dirty/untracked canaries survive; HEAD/index bytes unchanged | same |
+| CS-06 | Git helper refuses non-read verbs (`checkout`, `update-index`, …) | same |
+| CS-07 | Blob/document reads are byte-capped before unbounded allocation | same + candidate-offline tests |
+| CS-08 | Additive verb; record / verify-fixture / verify-candidate / reproduce unchanged | same + isolation tests |
+| CS-09 | Compiler cold path does not load capture; Protocol v1 does not advertise it | isolation + `install-smoke.sh` |
 
 ## Failure / blocked cases (documentation and publication)
 

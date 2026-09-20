@@ -29,6 +29,7 @@ import {
   ENGINE_SOURCES,
   engineSourceDigest,
   implementationRevision,
+  installedPackageVersion,
   runtimeLabel,
   sha256File,
   sha256Hex,
@@ -157,7 +158,13 @@ describe('observed fixture verification', () => {
     expect(result.output.implementationRevision).toMatch(/^goal-gen@0\.2\.0#[0-9a-f]{64}$/);
     expect(result.output.implementationRevision).not.toContain(process.version);
     expect(result.output.implementationRevision).not.toContain(process.execPath);
-    expect(result.output.runtime).toEqual({ node: process.version });
+    expect(result.output.runtime).toEqual({
+      node: process.version,
+      dependencies: {
+        tsx: installedPackageVersion('tsx'),
+        zod: installedPackageVersion('zod'),
+      },
+    });
   });
 
   it('OF-07: incorrect candidate is a real failed observation, not accepted', async () => {
@@ -373,6 +380,11 @@ describe('observed fixture verification', () => {
       'backend/src/cli/candidate-offline-bundle.ts',
       'backend/src/cli/candidate-offline-decider.ts',
       'backend/src/cli/candidate-offline-profiles.ts',
+      'backend/src/cli/committed-source-command.ts',
+      'backend/src/cli/committed-source-bundle.ts',
+      'backend/src/cli/committed-source-decider.ts',
+      'backend/src/cli/committed-source-profiles.ts',
+      'backend/src/cli/committed-source-git.ts',
     ]);
     const pieces = ENGINE_SOURCES.map((name) => `${name}:${sha256File(path.join(packageRoot, name))}`);
     expect(engineSourceDigest()).toBe(sha256Hex(pieces.join('\n')));
@@ -452,8 +464,18 @@ describe('observed fixture verification', () => {
     expect(revA).not.toContain(process.version);
     expect(revA).not.toContain(process.execPath);
     expect(revA).not.toContain(path.join(cliDir, 'observed-fixture-checks'));
-    expect(runtimeLabel()).toEqual({ node: process.version });
-    expect(revA).not.toContain(runtimeLabel().node);
+    const label = runtimeLabel();
+    expect(label).toEqual({
+      node: process.version,
+      dependencies: {
+        tsx: installedPackageVersion('tsx'),
+        zod: installedPackageVersion('zod'),
+      },
+    });
+    expect(label.dependencies.tsx).not.toBe('missing');
+    expect(label.dependencies.zod).not.toBe('missing');
+    expect(ENGINE_SOURCES.every((source) => !source.includes('node_modules'))).toBe(true);
+    expect(revA).not.toContain(label.node);
   });
 
   it('leftover mutation keeps completed rows and marks later checks not-run', async () => {

@@ -141,7 +141,7 @@ caps="$("$bin" capabilities --json)"
 node -e '
 const o = JSON.parse(process.argv[1]);
 const ops = o.operations;
-if (!Array.isArray(ops) || ops.includes("acceptance") || ops.includes("acceptance.record") || ops.includes("acceptance.verify-fixture") || ops.includes("acceptance.verify-candidate") || ops.includes("acceptance.reproduce")) {
+if (!Array.isArray(ops) || ops.includes("acceptance") || ops.includes("acceptance.record") || ops.includes("acceptance.verify-fixture") || ops.includes("acceptance.verify-candidate") || ops.includes("acceptance.reproduce") || ops.includes("acceptance.capture-source")) {
   throw new Error("Protocol v1 operations must not advertise acceptance verbs: " + process.argv[1]);
 }
 const expected = ["capabilities", "request.create", "request.validate", "run", "version"];
@@ -265,7 +265,45 @@ if (!o.outcomes || o.outcomes[0].signal !== "SIGKILL") {
 }
 ' "$out"
 
-# 11. Read-only proof: the target repository is untouched.
+# 11. Committed-source capture through the installed bin. Fixture git repo only
+# (never the product checkout). Object reads; source canary must survive.
+csrepo="$workdir/capture-source-repo"
+mkdir -p "$csrepo/goal-gen/bin"
+cat >"$csrepo/goal-gen/package.json" <<'EOF'
+{"name":"goal-gen","version":"0.2.0","bin":{"goal-gen":"bin/goal-gen.mjs"}}
+EOF
+cat >"$csrepo/goal-gen/package-lock.json" <<'EOF'
+{"name":"goal-gen","version":"0.2.0","lockfileVersion":3,"packages":{"":{"name":"goal-gen","version":"0.2.0"}}}
+EOF
+printf '%s\n' '#!/usr/bin/env node' 'export {};' > "$csrepo/goal-gen/bin/goal-gen.mjs"
+git -C "$csrepo" init -q
+git -C "$csrepo" add -A
+git -C "$csrepo" -c user.name=smoke -c user.email=smoke@invalid commit -q -m capture
+csrev="$(git -C "$csrepo" rev-parse HEAD)"
+printf 'capture canary\n' > "$csrepo/untracked-canary.txt"
+out="$("$bin" acceptance capture-source package-manifest-lockfile "$csrepo" "$csrev" --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.schemaVersion !== "yellow-goal/committed-source-capture/v1") {
+  throw new Error("unexpected schemaVersion: " + process.argv[1]);
+}
+if (o.decision.accepted !== true) throw new Error("coherent capture must be accepted: " + process.argv[1]);
+if (o.source.commit !== process.argv[2]) throw new Error("commit must stay pinned: " + process.argv[1]);
+if (o.recorder !== null) throw new Error("capture must omit recorder: " + process.argv[1]);
+if (!o.runtime || !o.runtime.dependencies || !o.runtime.dependencies.tsx || !o.runtime.dependencies.zod) {
+  throw new Error("runtime label must include resolved tsx/zod: " + process.argv[1]);
+}
+' "$out" "$csrev"
+test -f "$csrepo/untracked-canary.txt"
+if git -C "$csrepo" diff --quiet && [ "$(git -C "$csrepo" rev-parse HEAD)" = "$csrev" ]; then
+  :
+else
+  echo "capture-source mutated fixture HEAD or tracked files" >&2
+  git -C "$csrepo" status >&2
+  exit 1
+fi
+
+# 12. Read-only proof: the target repository is untouched.
 status="$(git -C "$target" status --porcelain)"
 if [ -n "$status" ]; then
   echo "target repository mutated during smoke:" >&2

@@ -11,6 +11,7 @@ export const CandidateOfflineSchemaVersion = 'yellow-goal/candidate-offline-mile
 export const CANDIDATE_MAX_FILES = 16;
 export const CANDIDATE_MAX_FILE_BYTES = 16 * 1024;
 export const CANDIDATE_MAX_DEPTH = 4;
+export const CANDIDATE_MAX_DOCUMENT_BYTES = 512 * 1024;
 
 export type CandidateOfflineProfileId = 'config-repair';
 
@@ -25,6 +26,7 @@ export type CandidateOfflineProfile = {
   maxFiles: number;
   maxFileBytes: number;
   maxDepth: number;
+  maxDocumentBytes: number;
 };
 
 export type CandidateFileDocument = {
@@ -64,6 +66,7 @@ function configRepairProfile(): CandidateOfflineProfile {
     maxFiles: CANDIDATE_MAX_FILES,
     maxFileBytes: CANDIDATE_MAX_FILE_BYTES,
     maxDepth: CANDIDATE_MAX_DEPTH,
+    maxDocumentBytes: CANDIDATE_MAX_DOCUMENT_BYTES,
   };
 }
 
@@ -153,6 +156,7 @@ export function candidateProfileDigest(profile: CandidateOfflineProfile): string
       maxFiles: profile.maxFiles,
       maxFileBytes: profile.maxFileBytes,
       maxDepth: profile.maxDepth,
+      maxDocumentBytes: profile.maxDocumentBytes,
       checkers: profile.checks.map(trustedCheckerIdentity),
     }),
   );

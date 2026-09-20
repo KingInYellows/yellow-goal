@@ -19,9 +19,10 @@ const observerCommand = '../../backend/src/cli/observed-fixture-command';
 const observer = '../../backend/src/cli/observed-fixture-observer';
 const recorderCommand = '../../backend/src/cli/acceptance-record-command';
 const candidateCommand = '../../backend/src/cli/candidate-offline-command';
+const captureCommand = '../../backend/src/cli/committed-source-command';
 
 afterEach(() => {
-  for (const modulePath of [...forbiddenModules, observerCommand, observer, recorderCommand, candidateCommand]) {
+  for (const modulePath of [...forbiddenModules, observerCommand, observer, recorderCommand, candidateCommand, captureCommand]) {
     vi.doUnmock(modulePath);
   }
   vi.resetModules();
@@ -39,6 +40,9 @@ describe('observed fixture isolation (OF-11)', () => {
     });
     vi.doMock(candidateCommand, () => {
       throw new Error('unexpected candidate-offline import');
+    });
+    vi.doMock(captureCommand, () => {
+      throw new Error('unexpected committed-source import');
     });
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -159,5 +163,13 @@ describe('candidate-offline isolation (CO-10)', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('committed-source isolation (CS-09)', () => {
+  it('committed-source sources do not load run-command', () => {
+    const commandFile = path.join(packageRoot, 'backend/src/cli/committed-source-command.ts');
+    const source = readFileSync(commandFile, 'utf8');
+    expect(source).not.toMatch(/from ['"]\.\/run-command['"]/);
   });
 });

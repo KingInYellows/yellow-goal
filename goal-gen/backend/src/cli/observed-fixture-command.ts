@@ -13,7 +13,7 @@ import {
   AcceptanceEvidenceSchemaVersion,
   type AcceptanceEvidenceRecord,
 } from './acceptance-evidence';
-import { implementationRevision, runtimeLabel } from './implementation-revision';
+import { implementationRevision, runtimeLabel, type RuntimeLabel } from './implementation-revision';
 import { RECORDER_OUTPUT_LIMIT, runBoundedArgv } from './observed-fixture-child';
 import { decideObservedFixture, type RecorderInvocation } from './observed-fixture-decider';
 import { observeFixture, removeObservationRepo, type ObservedCheckOutcome } from './observed-fixture-observer';
@@ -30,7 +30,7 @@ export type ObservedFixtureBundle = {
   schemaVersion: typeof ObservedFixtureSchemaVersion;
   profile: { id: string; version: string };
   implementationRevision: string;
-  runtime: { node: string };
+  runtime: RuntimeLabel;
   identities: {
     baseRevision: string;
     candidateIdentity: { kind: 'tree'; value: string };

@@ -22,6 +22,7 @@ import {
   candidateProfileDigest,
   getCandidateOfflineProfile,
 } from '../../backend/src/cli/candidate-offline-profiles';
+import { installedPackageVersion } from '../../backend/src/cli/implementation-revision';
 import { observeFixture, removeObservationRepo } from '../../backend/src/cli/observed-fixture-observer';
 import { runObservedFixtureVerify } from '../../backend/src/cli/observed-fixture-command';
 
@@ -75,7 +76,13 @@ describe('candidate-bound offline milestone', () => {
       expect(alpha.output.implementationRevision).toMatch(/^goal-gen@0\.2\.0#[0-9a-f]{64}$/);
       expect(alpha.output.implementationRevision).not.toBe('goal-gen@0.2.0');
       expect(alpha.output.implementationRevision).not.toContain(process.execPath);
-      expect(alpha.output.runtime).toEqual({ node: process.version });
+      expect(alpha.output.runtime).toEqual({
+        node: process.version,
+        dependencies: {
+          tsx: installedPackageVersion('tsx'),
+          zod: installedPackageVersion('zod'),
+        },
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -154,6 +161,21 @@ describe('candidate-bound offline milestone', () => {
       });
       expect(await main(['acceptance', 'verify-candidate', 'config-repair', candidatePath, '--json'])).toBe(2);
       expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(stdoutText()).toBe('');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('CO-04: oversized candidate file is USAGE_ERROR before JSON.parse', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'co-doc-'));
+    try {
+      const profile = getCandidateOfflineProfile('config-repair');
+      const candidatePath = path.join(dir, 'huge.json');
+      await writeFile(candidatePath, ' '.repeat(profile.maxDocumentBytes + 1), 'utf8');
+      expect(await main(['acceptance', 'verify-candidate', 'config-repair', candidatePath, '--json'])).toBe(2);
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(JSON.parse(stderrText()).error.message).toMatch(/maxDocumentBytes/);
       expect(stdoutText()).toBe('');
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -328,6 +350,8 @@ describe('candidate-bound offline milestone', () => {
     expect(candidateProfileDigest(bytesShift)).not.toBe(baseline);
     const depthShift = { ...profile, maxDepth: profile.maxDepth - 1 };
     expect(candidateProfileDigest(depthShift)).not.toBe(baseline);
+    const documentShift = { ...profile, maxDocumentBytes: profile.maxDocumentBytes - 1 };
+    expect(candidateProfileDigest(documentShift)).not.toBe(baseline);
   });
 
   it('CO-07: profile digest mismatch cannot succeed', async () => {
