@@ -31,3 +31,16 @@ export class AcceptanceEvidenceError extends Error {
     if (details !== undefined) this.details = details;
   }
 }
+
+/** Observed-fixture workflow failure that is not a recorder-field invention. */
+export class ObservedFixtureError extends Error {
+  readonly code: string;
+  readonly details?: unknown;
+
+  constructor(code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = 'ObservedFixtureError';
+    this.code = code;
+    if (details !== undefined) this.details = details;
+  }
+}

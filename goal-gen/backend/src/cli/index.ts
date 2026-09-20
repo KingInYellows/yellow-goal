@@ -5,7 +5,8 @@
  * Commands: `request create`, `request validate <file>`, `inspect <request>`, `analyze
  * <request>`, `compile <request>`, `packet verify <path>`, `run <request>` (RR11),
  * `version` (RR17, identity probe only), `acceptance record <fixture.json>` (VS spec
- * fixture-only recorder). `--json`
+ * fixture-only recorder), `acceptance verify-fixture <profile-id> <variant-id>` (VS spec
+ * observed fixture verification). `--json`
  * selects machine-readable stdout for successful command output; failures are always a
  * single-line structured JSON object on stderr with a nonzero exit code, `--json` or not, so
  * scripts can rely on it either way. `run` streams run-event/v1 JSON Lines on stdout instead of
@@ -21,7 +22,7 @@ import {
   runVersion,
   type CommandOutput,
 } from './commands';
-import { AcceptanceEvidenceError, CliUsageError, NotWiredError } from './errors';
+import { AcceptanceEvidenceError, CliUsageError, NotWiredError, ObservedFixtureError } from './errors';
 import { runCapabilities } from './provider-capabilities';
 import { IntakeValidationFailure } from '../intake';
 import { isDirectInvocation } from './direct-invocation';
@@ -98,7 +99,14 @@ async function dispatch(argv: string[]): Promise<number> {
         writeSuccess(await runAcceptanceRecord(subRest));
         return 0;
       }
-      throw new CliUsageError(`unknown 'acceptance' subcommand: ${sub ?? '(none)'} (expected record)`);
+      if (sub === 'verify-fixture') {
+        const { runObservedFixtureVerify } = await import('./observed-fixture-command');
+        writeSuccess(await runObservedFixtureVerify(subRest));
+        return 0;
+      }
+      throw new CliUsageError(
+        `unknown 'acceptance' subcommand: ${sub ?? '(none)'} (expected record|verify-fixture)`,
+      );
     }
     case 'inspect':
       writeSuccess(await runInspect(rest));
@@ -125,6 +133,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 2;
     }
     if (err instanceof AcceptanceEvidenceError) {
+      writeError(err.code, err.message, err.details);
+      return 1;
+    }
+    if (err instanceof ObservedFixtureError) {
       writeError(err.code, err.message, err.details);
       return 1;
     }

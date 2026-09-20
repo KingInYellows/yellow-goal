@@ -86,6 +86,7 @@ describe('CLI dispatcher', () => {
     const parsed = JSON.parse(stderrText().trim()) as { error: { code: string; message: string } };
     expect(parsed.error.code).toBe('USAGE_ERROR');
     expect(parsed.error.message).toContain('record');
+    expect(parsed.error.message).toContain('verify-fixture');
     expect(stdoutText()).toBe('');
   });
 

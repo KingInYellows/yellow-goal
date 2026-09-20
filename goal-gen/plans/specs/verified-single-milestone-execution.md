@@ -14,7 +14,8 @@ Four layers — do not conflate them:
 |---|---|---|
 | 1. Eventual product outcome | One approved milestone, one repo, one immutable **base** revision, one bounded implementation worker → independently verified patch (against a recorded **candidate** commit or tree snapshot) or evidence-backed blocker. No automatic merge or deployment. | Named; not executable yet |
 | 2. Documentation increment | PRD FR-14–FR-17, proposed ADR-0018, this spec (VS-01–VS-07). | **Complete** (#34) |
-| 3. First code increment | Fixture-only acceptance-evidence recording through an existing engine process seam; disposable git fixture; deterministic local checks only. | Next; **not authorized** by this document |
+| 3. First code increment | Fixture-only acceptance-evidence recording through an existing engine process seam; disposable git fixture; deterministic local checks only. | **Implemented** (yellow-goal #36; unmerged). Git-free JSON recorder only. |
+| 3b. Observed fixture verification | Engine-owned fixed profiles, disposable-repo observer, packed `acceptance record` subprocess, separate fixture-scoped decision. | This increment. Not live target-bound execution. |
 | 4. Still deferred | Live target-bound execution; Protocol v1 real-run capabilities; promoting scratch/`bypassPermissions`; yellow-plugins host/provider integration. Protocol v1 stays stub-only today (ADR-0017). | Deferred |
 
 ## Outcome (layer 1)
@@ -736,6 +737,85 @@ evidence about the candidate, while `not-run` means nothing was even attempted. 
 order replaces any undefined "least favorable" judgment call. An otherwise valid record in
 which every required check exited `0` is a valid `passed` record even though the aggregate
 itself carries no `exitStatus` to check.
+
+## Observed fixture verification increment (3b)
+
+Authorized follow-on to the layer-3 recorder. This is **not** verified single-milestone
+execution completed and is **not** layer 4. Do not rewrite ADR-0018 decision text.
+
+**Product outcome.** An engine-owned fixed profile plus an approved fixture base and a
+controlled candidate/diff are materialized in a **disposable git repository** (never the
+live yellow-goal or yellow-plugins checkout). The observer runs only that profile's fixed
+local checks, measures trees per the recheck rule above, writes an internally consistent
+`yellow-goal/acceptance-evidence/v1` fixture, and invokes the **packed/installed**
+`acceptance record` binary as a subprocess. A separate decider then emits a
+fixture-scoped decision and a reconstructable bundle. Recorder exit 0 remains necessary
+evidence, never acceptance.
+
+### Supported envelope
+
+| Field | Contract |
+|---|---|
+| Profile | Engine-owned (`id`, `version`, required check IDs, implementations/args, cwd, timeout bounds, base files, variants, approved candidate overlay). Lives next to the CLI, outside candidate-writable content. |
+| Variant | Named overlay of candidate files onto the profile base. Cannot add, remove, or retarget required checks. |
+| Required checks | Profile `{id, argv, cwd, command}` — `argv` is the only execution vector. The `command` string is recorder-facing identity, never passed to a shell. |
+| Candidate identity | Observer-measured `kind: tree` (disposable fixtures include extra check-visible content such as `STATUS`). |
+| Targets | Disposable repos under `$TMPDIR` only. |
+
+### Process interface
+
+Verb: `acceptance verify-fixture <profile-id> <variant-id> [--json]`
+
+Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`.
+
+| Property | Contract |
+|---|---|
+| stdout | One JSON bundle `yellow-goal/observed-fixture-verification/v1` when the workflow finishes (affirmative **or** negative decision). Empty on usage/I/O failure. |
+| stderr | Structured `{"error":{"code","message"}}` on usage (exit 2) or I/O/unexpected (exit 1) only. Empty when a bundle is written. |
+| Recorder | Child process: `goal-gen acceptance record <fixture.json> --json` via `bin/goal-gen.mjs`. The workflow does **not** import the recorder. |
+| Exit 0 | Bundle written. Includes valid negative records and `accepted: false`. |
+| Exit 1 | No bundle: I/O or unexpected infrastructure failure. |
+| Exit 2 | Usage (wrong arity, unknown profile/variant). |
+
+There is **no** `--fixture`, `observed:true`, or imported-JSON authorization route.
+
+### Trust boundary
+
+- **Engine-owned:** profile, argv, timeout, approved overlay, check implementations.
+- **Candidate-writable:** disposable working tree only.
+- **Observer** measures trees (temporary index, isolated object store, `git add -A --force`), keeps the real index clean, rejects escaping symlinks / empty directories / nested `.git` / dirty submodules **before** measurement, and re-verifies those after every launched check.
+- **Recorder** stays git-free and command-free. The child is given a PATH trap so a regression that shells out to `git` or the fixture `command` string fails the sentinel.
+- **Decider** reads the observer's provenance plus the recorder subprocess result. Hand-authored all-passed JSON may be valid **recorder** input and still cannot produce an affirmative decision from this verb.
+- Observation faults (precondition violation, measurement abort, spawn failure) are workflow blockers: `accepted: false`, recorder not invoked, **no** invented recorder fields.
+
+### Outcome table
+
+| Case | Observer | Recorder subprocess | Decision | Workflow exit |
+|---|---|---|---|---|
+| Failing baseline (required check nonzero, no leftover mutation) | real failed row | record written, aggregate `failed`, exit 0 | `accepted: false` | 0 |
+| Approved/correct candidate, all required checks pass, no leftover mutation, overlay matches | real passed rows | record `passed`, exit 0 | `accepted: true` | 0 |
+| Incorrect candidate (real check fails) | real failed row | record `failed`, exit 0 | `accepted: false` | 0 |
+| Timeout / signal | launched, `blocked` + `signal`, no `exitStatus` even if the child later exits | record `blocked`, exit 0 | `accepted: false` | 0 |
+| Leftover mutation (changed tree, empty dir, nested `.git`, dirty submodule) | `blocked` + `candidate mutated by check` | record `blocked`, exit 0 | `accepted: false` | 0 |
+| Observation fault (escaping symlink, empty dir / nested `.git` / dirty submodule **before** start, measurement abort) | no honest fixture | **not invoked** | `accepted: false` | 0 |
+| Hand-authored all-passed JSON | n/a | valid `acceptance record` input | cannot substitute for this verb | n/a |
+| Unknown profile/variant or imported JSON path | n/a | not invoked | no bundle | 2 |
+
+### Requirement-to-test mapping
+
+| ID | Requirement | Test |
+|---|---|---|
+| OF-01 | Engine-owned profile; candidate cannot redefine required checks | `observed-fixture.test.ts` |
+| OF-02 | Disposable repo only; argument-vector spawn; no shell interpolation | same |
+| OF-03 | Trees via temporary-index + isolated object store + `--force` | same |
+| OF-04 | Empty-dir / nested `.git` / escaping symlink / submodule re-verifies | same |
+| OF-05 | Timeout stays `blocked` even if the child later exits | same |
+| OF-06 | Packed/installed `acceptance record` is a subprocess | `observed-fixture.test.ts` + `install-smoke.sh` |
+| OF-07 | Failing baseline, correct candidate, incorrect candidate from real observations | same |
+| OF-08 | Valid negative record is not acceptance | same |
+| OF-09 | Hand-authored all-passed JSON records but cannot authorize this workflow | same |
+| OF-10 | Observation fault does not invent recorder fields | same |
+| OF-11 | Compiler cold path does not load observer; observer does not load `run-command` | isolation tests |
 
 ## Failure / blocked cases (documentation and publication)
 

@@ -141,8 +141,8 @@ caps="$("$bin" capabilities --json)"
 node -e '
 const o = JSON.parse(process.argv[1]);
 const ops = o.operations;
-if (!Array.isArray(ops) || ops.includes("acceptance") || ops.includes("acceptance.record")) {
-  throw new Error("Protocol v1 operations must not advertise acceptance record: " + process.argv[1]);
+if (!Array.isArray(ops) || ops.includes("acceptance") || ops.includes("acceptance.record") || ops.includes("acceptance.verify-fixture")) {
+  throw new Error("Protocol v1 operations must not advertise acceptance verbs: " + process.argv[1]);
 }
 const expected = ["capabilities", "request.create", "request.validate", "run", "version"];
 if (ops.length !== expected.length || expected.some((value, index) => ops[index] !== value)) {
@@ -150,7 +150,47 @@ if (ops.length !== expected.length || expected.some((value, index) => ops[index]
 }
 ' "$caps"
 
-# 9. Read-only proof: the target repository is untouched.
+# 9. Observed fixture verification through the installed bin. Disposable git
+# under TMPDIR only; packed `acceptance record` is a subprocess. Protocol v1
+# stays unchanged.
+out="$("$bin" acceptance verify-fixture status-probe baseline --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.schemaVersion !== "yellow-goal/observed-fixture-verification/v1") {
+  throw new Error("unexpected schemaVersion: " + process.argv[1]);
+}
+if (o.identities.candidateIdentity.kind !== "tree") {
+  throw new Error("failing baseline must be kind tree: " + process.argv[1]);
+}
+if (o.identities.candidateTree === o.identities.baseRevision) {
+  throw new Error("tree-kind candidate must not equal commit baseRevision: " + process.argv[1]);
+}
+if (o.decision.accepted !== false) throw new Error("baseline must not be accepted: " + process.argv[1]);
+if (!o.recorder || o.recorder.exit !== 0 || o.recorder.record.status !== "failed") {
+  throw new Error("baseline must write a valid failed record: " + process.argv[1]);
+}
+' "$out"
+
+out="$("$bin" acceptance verify-fixture status-probe correct --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.decision.accepted !== true) throw new Error("correct candidate must be accepted: " + process.argv[1]);
+if (!o.recorder || o.recorder.record.status !== "passed") {
+  throw new Error("correct candidate must write a passed record: " + process.argv[1]);
+}
+' "$out"
+
+set +e
+err="$("$bin" acceptance verify-fixture 2>&1 >/dev/null)"
+code=$?
+set -e
+if [ "$code" -ne 2 ]; then
+  echo "expected exit 2 for acceptance verify-fixture usage error, got $code" >&2
+  exit 1
+fi
+node -e "const o=JSON.parse(process.argv[1]); if(o.error.code!=='USAGE_ERROR') throw new Error('expected USAGE_ERROR, got: '+process.argv[1])" "$err"
+
+# 10. Read-only proof: the target repository is untouched.
 status="$(git -C "$target" status --porcelain)"
 if [ -n "$status" ]; then
   echo "target repository mutated during smoke:" >&2

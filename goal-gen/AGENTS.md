@@ -9,7 +9,7 @@ Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction �
 - Install: `npm install` (npm only; CI uses `npm ci`)
 - Dev: `TBD` (not scaffolded yet)
 - Test: `npm test` · `npm run test:watch` (watch mode) · Evals: `npm run eval` (all) / `npm run eval:planner` (planner gate) · Typecheck: `npm run typecheck`
-- Compiler CLI: `npm run cli -- <subcommand> [--json]` · Identity: `npm run cli -- version --json` · Acceptance recorder: `npm run cli -- acceptance record <fixture.json> [--json]` (fixture-only; never executes checks/git) · Run: `npm run cli -- run <request.json> --executor stub|claude-code` (`stub` only from tests/CI)
+- Compiler CLI: `npm run cli -- <subcommand> [--json]` · Identity: `npm run cli -- version --json` · Acceptance recorder: `npm run cli -- acceptance record <fixture.json> [--json]` (fixture-only; never executes checks/git) · Observed fixture verification: `npm run cli -- acceptance verify-fixture <profile-id> <variant-id> [--json]` (disposable observer + packed recorder subprocess; not live execution) · Run: `npm run cli -- run <request.json> --executor stub|claude-code` (`stub` only from tests/CI)
 - Install gate: `bash scripts/install-smoke.sh` · Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (the migration gate `tests/db/migrations.test.ts` fails otherwise)
 - Test-only zero-spend run: `npm run cli -- run <request.json> --executor stub`. The M1 runner (`npm run runner -- [--yes] "<goal>"` or `--request <file>`) is human-only: it can invoke real `claude -p`; never copy it into CI or an autonomous session.
 - Lint/format: `TBD` (not configured yet)
