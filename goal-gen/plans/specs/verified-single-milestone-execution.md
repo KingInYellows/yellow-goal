@@ -995,7 +995,7 @@ Authorized follow-on to layer 3d. This is **committed-repository verification im
 
 | Field | Contract |
 |---|---|
-| Capture bundle | `COMPLETE` bytes are this schema version plus a trailing newline, `manifest.json`, and `blobs/<allowlisted-path>` exact selected bytes. Compare the marker to that exact string; a truncated schema-without-newline is incomplete. Missing blob files, wrong `COMPLETE`, sha256 mismatch, `stat.size` over the installed `maxFileBytes`, or a selected path outside the installed profile `allowedPaths` is incomplete/invalid — no snapshot, no stale success. Persist and reproduce bound blob `stat.size` and read at most that cap before allocation. |
+| Capture bundle | `COMPLETE` bytes are this schema version plus a trailing newline, `manifest.json`, and `blobs/<allowlisted-path>` exact selected bytes. Compare the marker to that exact string; a truncated schema-without-newline is incomplete. Missing blob files, wrong `COMPLETE`, sha256 mismatch, `stat.size` over the installed `maxFileBytes`, a selected path outside the installed profile `allowedPaths`, a duplicate selected path, or `selected.length > maxFiles` is incomplete/invalid — no snapshot, no stale success. Persist and reproduce bound blob `stat.size` and read at most that cap before allocation; selected metadata is checked before any blob read. |
 | Selected bytes | The snapshot checkers ran on. For a plain capture that is the pinned blob bytes. For `--from-capture` that is captured bytes with allowlisted overlay applied. Modes stay the captured blob modes. Identities (`gitSha`) stay the pinned commit's blobs; overlay does not mint a source git identity. |
 | Overlay candidate | `yellow-goal/candidate-file-content/v1`. Same path/size/depth/`maxDocumentBytes` bounds as 3c, applied to the capture profile allowlist. Only `package-manifest-lockfile` may be used with `--from-capture`. |
 | Checks | Installed `package-manifest-lockfile` argv/cwd. Bundle-stored bindings and candidate-supplied checkers are ignored. |
@@ -1035,6 +1035,7 @@ Additive verbs / options:
 | Intentional lockfile/manifest metadata reject | overlay applied | `manifest-lock-agreement` failed | `accepted: false` | 0 |
 | Extra unauthorized file in candidate | not launched as authorized overlay | omitted | `accepted: false` (`unauthorized-path`) | 0 |
 | Tampered extra `source.selected` + blob outside installed `allowedPaths` | not launched | omitted | no stale success (`BUNDLE_INVALID`) | 1 |
+| Duplicate `source.selected` paths or `selected.length > maxFiles` | not launched | omitted | no stale success (`BUNDLE_INVALID`) | 1 |
 | Truncated `COMPLETE` (schema without trailing newline) | n/a | not launched | no stale success (`BUNDLE_INCOMPLETE`) | 1 |
 | Persisted blob `stat.size` over installed `maxFileBytes` | n/a | not launched | no stale success (`BUNDLE_INCOMPLETE`) | 1 |
 | `--from-capture` candidate file over 3c `maxFileBytes` | n/a | not launched | no bundle (`USAGE_ERROR`) | 2 |
@@ -1049,7 +1050,7 @@ Additive verbs / options:
 |---|---|---|
 | CS-10 | Capture `--bundle-dir` persists selected bytes/modes/identities; moved bundle `acceptance reproduce` from a fresh process reruns trusted checks | `committed-source.test.ts` + `install-smoke.sh` |
 | CS-11 | FILE-CONTENT overlay onto captured base: valid extra-field alternative and intentional metadata reject | `committed-source.test.ts` |
-| CS-12 | Unauthorized extra candidate files, tampered extra `source.selected` paths, truncated `COMPLETE`, oversized persisted blobs, and mutated stored bindings cannot authorize success; `--bundle-dir` through a symlink ancestor into the source is refused; `--from-capture` uses 3c candidate file byte bounds; source checkout unmodified | same |
+| CS-12 | Unauthorized extra candidate files, tampered extra `source.selected` paths, duplicate selected paths, `selected.length > maxFiles`, truncated `COMPLETE`, oversized persisted blobs, and mutated stored bindings cannot authorize success; `--bundle-dir` through a symlink ancestor into the source is refused; `--from-capture` uses 3c candidate file byte bounds; source checkout unmodified | same |
 
 ## Failure / blocked cases (documentation and publication)
 

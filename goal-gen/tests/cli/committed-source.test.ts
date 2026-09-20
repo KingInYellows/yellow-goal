@@ -33,6 +33,7 @@ import {
 import { ObservedFixtureError } from '../../backend/src/cli/errors';
 import {
   CAPTURE_MAX_FILE_BYTES,
+  CAPTURE_MAX_FILES,
   getCommittedSourceProfile,
   committedSourceProfileDigest,
 } from '../../backend/src/cli/committed-source-profiles';
@@ -857,6 +858,79 @@ describe('committed-source capture', () => {
       expect(stdoutText()).toBe('');
       expect(JSON.parse(stderrText()).error.code).toBe('BUNDLE_INVALID');
       expect(JSON.parse(stderrText()).error.message).toMatch(/notes\.md/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects duplicate source.selected paths before reading blobs', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-dup-selected-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const manifestPath = path.join(bundleDir, 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        source: { selected: { path: string; mode: string; sha256: string; byteLength: number }[] };
+      };
+      const first = manifest.source.selected[0];
+      expect(first).toBeDefined();
+      expect(manifest.source.selected.length + 1).toBeLessThanOrEqual(CAPTURE_MAX_FILES);
+      manifest.source.selected.push({ ...first! });
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', bundleDir, '--json'])).toBe(1);
+      expect(stdoutText()).toBe('');
+      expect(JSON.parse(stderrText()).error.code).toBe('BUNDLE_INVALID');
+      expect(JSON.parse(stderrText()).error.message).toMatch(/duplicate selected blob path/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects source.selected longer than maxFiles before reading blobs', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-maxfiles-selected-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const manifestPath = path.join(bundleDir, 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        source: { selected: { path: string; mode: string; sha256: string; byteLength: number }[] };
+      };
+      const first = manifest.source.selected[0];
+      expect(first).toBeDefined();
+      manifest.source.selected = Array.from({ length: CAPTURE_MAX_FILES + 1 }, () => ({ ...first! }));
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', bundleDir, '--json'])).toBe(1);
+      expect(stdoutText()).toBe('');
+      expect(JSON.parse(stderrText()).error.code).toBe('BUNDLE_INVALID');
+      expect(JSON.parse(stderrText()).error.message).toMatch(/maxFiles/);
     } finally {
       await rm(dir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });

@@ -127,8 +127,18 @@ function installedCaptureProfile(id: string): CommittedSourceProfile {
   }
 }
 
-function assertSelectedAgainstAllowlist(selected: readonly SelectedBlob[], allowedPaths: readonly string[]): void {
-  const allowed = new Set(allowedPaths);
+function assertSelectedMetadata(
+  selected: readonly SelectedBlob[],
+  profile: { allowedPaths: readonly string[]; maxFiles: number },
+): void {
+  if (selected.length > profile.maxFiles) {
+    throw new ObservedFixtureError(
+      'BUNDLE_INVALID',
+      `selected blob count exceeds maxFiles (${profile.maxFiles})`,
+    );
+  }
+  const allowed = new Set(profile.allowedPaths);
+  const seen = new Set<string>();
   for (const row of selected) {
     assertBundleBlobPath(row.path);
     if (!allowed.has(row.path)) {
@@ -137,6 +147,10 @@ function assertSelectedAgainstAllowlist(selected: readonly SelectedBlob[], allow
         `selected blob path is not in the installed profile allowlist: ${row.path}`,
       );
     }
+    if (seen.has(row.path)) {
+      throw new ObservedFixtureError('BUNDLE_INVALID', `duplicate selected blob path: ${row.path}`);
+    }
+    seen.add(row.path);
   }
 }
 
@@ -147,7 +161,7 @@ export function persistCommittedSourceBundle(
 ): void {
   requireEmptyDirectory(dir);
   const profile = installedCaptureProfile(bundle.profile.id);
-  assertSelectedAgainstAllowlist(bundle.source.selected, profile.allowedPaths);
+  assertSelectedMetadata(bundle.source.selected, profile);
   const allowed = new Set(bundle.source.selected.map((row) => row.path));
   for (const blob of blobs) {
     if (!allowed.has(blob.path)) {
@@ -257,7 +271,7 @@ export function readPersistedCommittedSourceBundle(
     throw new ObservedFixtureError('BUNDLE_INCOMPLETE', 'capture bundle is missing selected blob metadata');
   }
   const profile = installedCaptureProfile(parsed.profile.id);
-  assertSelectedAgainstAllowlist(parsed.source.selected, profile.allowedPaths);
+  assertSelectedMetadata(parsed.source.selected, profile);
   const capturedByPath = new Map(parsed.source.captured.map((row) => [row.path, row]));
   const blobs: CapturedBlobWithBytes[] = [];
   for (const selected of parsed.source.selected) {
