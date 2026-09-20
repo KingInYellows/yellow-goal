@@ -44,7 +44,13 @@ function knownProfiles(): string {
 const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
 const FORBIDDEN_PATH_NAMES = new Set(['__proto__', 'constructor', 'prototype', '.git']);
 
-export function parseCandidateDocument(raw: string, profile: CandidateOfflineProfile): CandidateFileDocument {
+export type CandidatePathLimits = {
+  maxFiles: number;
+  maxFileBytes: number;
+  maxDepth: number;
+};
+
+export function parseCandidateDocument(raw: string, profile: CandidatePathLimits): CandidateFileDocument {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
@@ -79,7 +85,7 @@ export function parseCandidateDocument(raw: string, profile: CandidateOfflinePro
   return { schemaVersion: CandidateFileContentSchemaVersion, files };
 }
 
-export function assertSafeCandidatePath(relative: string, profile: CandidateOfflineProfile): void {
+export function assertSafeCandidatePath(relative: string, profile: CandidatePathLimits): void {
   if (relative === '' || relative.startsWith('/') || relative.startsWith('\\') || relative.startsWith('-')) {
     throw new CliUsageError(`unsafe candidate path: ${relative}`);
   }
@@ -104,7 +110,7 @@ export function assertSafeCandidatePath(relative: string, profile: CandidateOffl
 
 export function unauthorizedCandidatePaths(
   candidate: CandidateFileDocument,
-  profile: CandidateOfflineProfile,
+  profile: { allowedPaths: readonly string[] },
 ): string[] {
   return Object.keys(candidate.files).filter((relative) => !profile.allowedPaths.includes(relative));
 }
@@ -261,11 +267,9 @@ export async function runCandidateOfflineVerify(argv: string[]): Promise<Command
   const maxDocumentBytes = Math.min(profile.maxDocumentBytes, CANDIDATE_MAX_DOCUMENT_BYTES);
   const raw = readBoundedUtf8File(resolvedCandidate, maxDocumentBytes);
   const candidate = parseCandidateDocument(raw, {
-    ...profile,
     maxFiles: Math.min(profile.maxFiles, CANDIDATE_MAX_FILES),
     maxFileBytes: Math.min(profile.maxFileBytes, CANDIDATE_MAX_FILE_BYTES),
     maxDepth: Math.min(profile.maxDepth, CANDIDATE_MAX_DEPTH),
-    maxDocumentBytes,
   });
   const unauthorized = unauthorizedCandidatePaths(candidate, profile);
   const { bundle } = await verifyWithProfile(profile, candidate, unauthorized);

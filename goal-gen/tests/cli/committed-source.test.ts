@@ -1,12 +1,23 @@
 /**
- * Requirement-to-test matrix for `acceptance capture-source` (VS spec CS-01–CS-09).
+ * Requirement-to-test matrix for `acceptance capture-source` and captured-base
+ * replay (VS spec CS-01–CS-12).
  * Git object reads only. Checkers are installed. Dirty/untracked source is uninspected
  * except as mutation canaries. CI uses disposable owned git fixtures with known
  * commits/blobs — never a live `main` pin, never a network fetch. Real yellow-goal
  * capture is demonstration evidence, not a CI target.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -46,6 +57,42 @@ afterEach(() => {
 
 function stderrText(): string {
   return stderrSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+}
+
+function stdoutText(): string {
+  return stdoutSpy.mock.calls.map((call: unknown[]) => String(call[0])).join('');
+}
+
+function extraFieldManifest(): string {
+  return `${JSON.stringify(
+    {
+      name: 'goal-gen',
+      version: '0.2.0',
+      bin: { 'goal-gen': 'bin/goal-gen.mjs' },
+      description: 'captured-base extra-field alternative',
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function mismatchedManifest(): string {
+  return `${JSON.stringify(
+    {
+      name: 'goal-gen',
+      version: '9.9.9',
+      bin: { 'goal-gen': 'bin/goal-gen.mjs' },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function fileContentCandidate(files: Record<string, string>): string {
+  return `${JSON.stringify({
+    schemaVersion: 'yellow-goal/candidate-file-content/v1',
+    files,
+  })}\n`;
 }
 
 function gitIsolated(dir: string, args: string[]): void {
@@ -521,5 +568,249 @@ describe('committed-source capture', () => {
     expect(() =>
       assertGitReadArgv(['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', 'ls-tree', 'HEAD']),
     ).not.toThrow();
+  });
+
+  it('CS-10: capture --bundle-dir persists selected bytes; moved reproduce reruns checks', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const expected = knownBlobs(dir, commit, coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-persist-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const captured = JSON.parse(stdoutText()) as {
+        source: { selected: { path: string; mode: string; sha256: string; byteLength: number }[]; captured: KnownBlob[] };
+        decision: { accepted: boolean };
+      };
+      expect(captured.decision.accepted).toBe(true);
+      expect(readFileSync(path.join(bundleDir, 'COMPLETE'), 'utf8')).toBe('yellow-goal/committed-source-capture/v1\n');
+      for (const row of expected) {
+        const blobPath = path.join(bundleDir, 'blobs', row.path);
+        const bytes = readFileSync(blobPath);
+        expect(bytes.length).toBe(row.byteLength);
+        expect(sha256Hex(bytes)).toBe(row.sha256);
+        const selected = captured.source.selected.find((item) => item.path === row.path);
+        expect(selected).toMatchObject({
+          path: row.path,
+          mode: row.mode,
+          sha256: row.sha256,
+          byteLength: row.byteLength,
+        });
+        expect(captured.source.captured.find((item) => item.path === row.path)?.gitSha).toBe(row.gitSha);
+      }
+      const moved = `${bundleDir}-moved`;
+      renameSync(bundleDir, moved);
+      stdoutSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', moved, '--json'])).toBe(0);
+      const reproduced = JSON.parse(stdoutText()) as {
+        schemaVersion: string;
+        decision: { accepted: boolean };
+        outcomes: { id: string; status: string }[];
+        source: { overlay: null };
+      };
+      expect(reproduced.schemaVersion).toBe('yellow-goal/committed-source-capture/v1');
+      expect(reproduced.decision.accepted).toBe(true);
+      expect(reproduced.outcomes.map((row) => row.status)).toEqual(['passed', 'passed']);
+      expect(reproduced.source.overlay).toBeNull();
+      await rm(moved, { recursive: true, force: true });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+      await rm(`${bundleDir}-moved`, { recursive: true, force: true });
+    }
+  });
+
+  it('CS-11: FILE-CONTENT overlay extra-field alternative and metadata reject', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const expected = knownBlobs(dir, commit, coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-overlay-base-'));
+    const work = await mkdtemp(path.join(tmpdir(), 'cs-overlay-work-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const extraPath = path.join(work, 'extra.json');
+      const rejectPath = path.join(work, 'reject.json');
+      await writeFile(
+        extraPath,
+        fileContentCandidate({ 'goal-gen/package.json': extraFieldManifest() }),
+        'utf8',
+      );
+      await writeFile(
+        rejectPath,
+        fileContentCandidate({ 'goal-gen/package.json': mismatchedManifest() }),
+        'utf8',
+      );
+      stdoutSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'verify-candidate',
+          'package-manifest-lockfile',
+          extraPath,
+          '--from-capture',
+          bundleDir,
+          '--json',
+        ]),
+      ).toBe(0);
+      const extra = JSON.parse(stdoutText()) as {
+        decision: { accepted: boolean };
+        outcomes: { id: string; status: string }[];
+        source: {
+          captured: KnownBlob[];
+          selected: { path: string; sha256: string; mode: string }[];
+          overlay: { files: Record<string, string> };
+        };
+      };
+      expect(extra.decision.accepted).toBe(true);
+      expect(extra.outcomes.map((row) => row.status)).toEqual(['passed', 'passed']);
+      expect(extra.source.overlay.files['goal-gen/package.json']).toBe(extraFieldManifest());
+      expect(extra.source.captured.find((row) => row.path === 'goal-gen/package.json')?.gitSha).toBe(
+        expected.find((row) => row.path === 'goal-gen/package.json')?.gitSha,
+      );
+      expect(extra.source.selected.find((row) => row.path === 'goal-gen/package.json')?.sha256).toBe(
+        sha256Hex(extraFieldManifest()),
+      );
+      expect(extra.source.selected.find((row) => row.path === 'goal-gen/package.json')?.mode).toBe('100644');
+      stdoutSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'verify-candidate',
+          'package-manifest-lockfile',
+          rejectPath,
+          '--from-capture',
+          bundleDir,
+          '--json',
+        ]),
+      ).toBe(0);
+      const rejected = JSON.parse(stdoutText()) as {
+        decision: { accepted: boolean };
+        outcomes: { id: string; status: string }[];
+      };
+      expect(rejected.decision.accepted).toBe(false);
+      expect(rejected.outcomes.find((row) => row.id === 'manifest-lock-agreement')?.status).toBe('failed');
+      expect(rejected.outcomes.find((row) => row.id === 'packaging-entry')?.status).toBe('passed');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('CS-12: unauthorized extra files and mutated bindings cannot authorize; source unmodified', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const canaryPath = path.join(dir, `.capture-canary-${process.pid}`);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-trust-base-'));
+    const work = await mkdtemp(path.join(tmpdir(), 'cs-trust-work-'));
+    try {
+      await writeFile(canaryPath, `canary-${Date.now()}\n`, 'utf8');
+      const headBefore = gitFileHash(dir, 'HEAD');
+      const indexBefore = gitFileHash(dir, 'index');
+      const headShaBefore = gitOut(dir, ['rev-parse', 'HEAD']);
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const extraPath = path.join(work, 'extra.json');
+      await writeFile(
+        extraPath,
+        fileContentCandidate({
+          'goal-gen/package.json': coherentFiles['goal-gen/package.json'],
+          'goal-gen/extra.txt': 'unauthorized\n',
+        }),
+        'utf8',
+      );
+      stdoutSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'verify-candidate',
+          'package-manifest-lockfile',
+          extraPath,
+          '--from-capture',
+          bundleDir,
+          '--json',
+        ]),
+      ).toBe(0);
+      const unauthorized = JSON.parse(stdoutText()) as {
+        decision: { accepted: boolean; reasons: string[] };
+        outcomes: unknown[];
+      };
+      expect(unauthorized.decision.accepted).toBe(false);
+      expect(unauthorized.decision.reasons).toEqual(['unauthorized-path:goal-gen/extra.txt']);
+      expect(unauthorized.outcomes).toEqual([]);
+      const manifestPath = path.join(bundleDir, 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        bindings: { id: string; command: string; cwd: string }[];
+        decision: { accepted: boolean; reasons: string[] };
+      };
+      manifest.bindings = [{ id: 'manifest-lock-agreement', command: 'forged-binding', cwd: '.' }];
+      manifest.decision = { accepted: false, reasons: ['forged'] };
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+      stdoutSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', bundleDir, '--json'])).toBe(0);
+      const reproduced = JSON.parse(stdoutText()) as {
+        decision: { accepted: boolean; reasons: string[] };
+        outcomes: { id: string; status: string; command: string }[];
+        bindings: { command: string }[];
+      };
+      expect(reproduced.decision.accepted).toBe(true);
+      expect(reproduced.decision.reasons).not.toContain('forged');
+      expect(reproduced.outcomes.map((row) => row.status)).toEqual(['passed', 'passed']);
+      expect(reproduced.outcomes.every((row) => !row.command.includes('forged'))).toBe(true);
+      expect(reproduced.bindings.every((row) => row.command !== 'forged-binding')).toBe(true);
+      expect(readFileSync(canaryPath, 'utf8')).toMatch(/^canary-/);
+      expect(gitOut(dir, ['rev-parse', 'HEAD'])).toBe(headShaBefore);
+      expect(gitFileHash(dir, 'HEAD')).toBe(headBefore);
+      expect(gitFileHash(dir, 'index')).toBe(indexBefore);
+      stderrSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'verify-candidate',
+          'config-repair',
+          extraPath,
+          '--from-capture',
+          bundleDir,
+          '--json',
+        ]),
+      ).toBe(2);
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      unlinkSync(path.join(bundleDir, 'blobs', 'goal-gen/package.json'));
+      stderrSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', bundleDir, '--json'])).toBe(1);
+      expect(JSON.parse(stderrText()).error.code).toBe('BUNDLE_INCOMPLETE');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+      await rm(work, { recursive: true, force: true });
+    }
   });
 });
