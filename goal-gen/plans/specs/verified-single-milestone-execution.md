@@ -928,7 +928,7 @@ Authorized follow-on to layers 3, 3b, and 3c. This is **committed-repository ver
 | Revision | Named ref or object name, resolved once via `rev-parse` to a full commit object ID; all later reads use that ID. |
 | Allowlist | `goal-gen/package.json`, `goal-gen/package-lock.json`, `goal-gen/bin/goal-gen.mjs`. |
 | Required checks | `manifest-lock-agreement` (package name/version equals lockfile root/`packages[""]`; `lockfileVersion` 3) and `packaging-entry` (`package.json` `bin.goal-gen` is `bin/goal-gen.mjs`; captured blob is a regular file starting with `#!/usr/bin/env node`). Checkers are installed with the engine, never loaded from the captured tree. |
-| Git | Object reads only: `rev-parse`, `cat-file`, `ls-tree`. `GIT_OPTIONAL_LOCKS=0`, `core.hooksPath=/dev/null`, no `GIT_WORK_TREE`, no checkout/index/object writes, no source worktree create, no target hooks/executables. Blob reads are size-capped before content allocation. |
+| Git | Object reads only: `rev-parse`, `cat-file`, `ls-tree`. `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1` plus `--no-replace-objects` on every object-read, `core.hooksPath=/dev/null`, no `GIT_WORK_TREE`, no checkout/index/object writes, no source worktree create, no target hooks/executables. Missing local objects fail closed without contacting a remote or writing the source object store. Blob hashes and checker snapshots use original bytes (not UTF-8 U+FFFD replacement). `--bundle-dir` must be outside the source worktree and `.git`. Blob reads are size-capped before content allocation. |
 | Snapshot | Disposable directory under `$TMPDIR` holding captured bytes. Not a git worktree of the source. Deleted after checks. |
 
 ### Process interface
@@ -947,7 +947,7 @@ Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`.
 | Recorder | Omitted. Acceptance-evidence v1 cannot honestly represent Git-object capture without minting a candidate git identity of the source. Decision is from observed checker exits plus capture faults. |
 | Exit 0 | Bundle written. Includes valid negatives (`accepted: false`). |
 | Exit 1 | Source mutation detected after capture, I/O, incomplete bundle, or unexpected infrastructure failure. |
-| Exit 2 | Usage (wrong arity, unknown profile, non-local repo, unresolvable revision, non-empty `--bundle-dir`). |
+| Exit 2 | Usage (wrong arity, unknown profile, non-local repo, unresolvable revision, unsafe revision, `--bundle-dir` inside the source worktree or `.git`, non-empty `--bundle-dir`). |
 
 ### Trust boundary
 

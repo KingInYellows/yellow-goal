@@ -20,8 +20,10 @@ import {
 } from './committed-source-bundle';
 import { decideCommittedSource } from './committed-source-decider';
 import {
+  assertBundleDirOutsideSource,
   canariesEqual,
   captureGitObjects,
+  resolveSourceIdentity,
   rereadCanary,
   snapshotFiles,
 } from './committed-source-git';
@@ -64,12 +66,12 @@ function parseCaptureArgv(argv: string[]): { json: boolean; bundleDir?: string; 
   return { json, bundleDir, positionals };
 }
 
-function writeSnapshot(files: Record<string, string>): string {
+function writeSnapshot(files: Record<string, Buffer>): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'committed-source-'));
   for (const [relative, contents] of Object.entries(files)) {
     const full = path.join(dir, relative);
     mkdirSync(path.dirname(full), { recursive: true });
-    writeFileSync(full, contents, 'utf8');
+    writeFileSync(full, contents);
   }
   return dir;
 }
@@ -155,6 +157,9 @@ export async function runCommittedSourceCapture(argv: string[]): Promise<Command
     throw new CliUsageError(`unknown committed-source profile: ${profileId} (profiles: ${knownProfiles()})`);
   }
   const digest = committedSourceProfileDigest(profile);
+  if (bundleDir !== undefined) {
+    assertBundleDirOutsideSource(bundleDir, resolveSourceIdentity(repo));
+  }
   const capture = captureGitObjects(repo, commitArg, profile);
   const snapshot = writeSnapshot(snapshotFiles(capture.blobs));
   try {

@@ -6,14 +6,19 @@
  * capture is demonstration evidence, not a CI target.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main } from '../../backend/src/cli/index';
 import { runCommittedSourceCapture } from '../../backend/src/cli/committed-source-command';
-import { assertGitReadArgv } from '../../backend/src/cli/committed-source-git';
+import {
+  assertGitReadArgv,
+  snapshotFiles,
+  type CapturedBlobWithBytes,
+} from '../../backend/src/cli/committed-source-git';
+import { ObservedFixtureError } from '../../backend/src/cli/errors';
 import {
   getCommittedSourceProfile,
   committedSourceProfileDigest,
@@ -135,6 +140,35 @@ function gitFileHash(dir: string, gitPathName: string): string {
     encoding: 'utf8',
   }).stdout.trim();
   return sha256File(path.resolve(gitDir, rel));
+}
+
+function walkFiles(root: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(root)) {
+    const full = path.join(root, name);
+    const stat = lstatSync(full);
+    if (stat.isDirectory()) out.push(...walkFiles(full));
+    else out.push(full);
+  }
+  return out;
+}
+
+function objectStoreFingerprint(dir: string): string {
+  const gitDir = gitOut(dir, ['rev-parse', '--absolute-git-dir']);
+  const objects = path.join(gitDir, 'objects');
+  const rows = walkFiles(objects)
+    .map((full) => `${path.relative(objects, full)}:${lstatSync(full).size}:${sha256File(full)}`)
+    .sort();
+  return sha256Hex(rows.join('\n'));
+}
+
+async function partialClone(src: string): Promise<string> {
+  gitIsolated(src, ['config', 'uploadpack.allowFilter', 'true']);
+  const dest = await mkdtemp(path.join(tmpdir(), 'cs-partial-'));
+  gitIsolated(dest, ['init', '-q']);
+  gitIsolated(dest, ['remote', 'add', 'origin', src]);
+  gitIsolated(dest, ['fetch', '--filter=blob:none', 'origin']);
+  return dest;
 }
 
 const coherentFiles = {
@@ -304,5 +338,188 @@ describe('committed-source capture', () => {
       await main(['acceptance', 'capture-source', 'package-manifest-lockfile', 'https://example.invalid/repo.git', UNUSED_COMMIT]),
     ).toBe(2);
     expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+  });
+
+  it('fails closed on missing local objects without writing the source object store or contacting origin', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    let partial: string | undefined;
+    try {
+      partial = await partialClone(dir);
+      const before = objectStoreFingerprint(partial);
+      await expect(
+        runCommittedSourceCapture(['package-manifest-lockfile', partial, commit, '--json']),
+      ).rejects.toMatchObject({
+        name: 'ObservedFixtureError',
+        code: 'GIT_READ_FAILED',
+      });
+      expect(objectStoreFingerprint(partial)).toBe(before);
+      gitIsolated(partial, ['remote', 'set-url', 'origin', 'http://127.0.0.1:1/does-not-exist.git']);
+      await expect(
+        runCommittedSourceCapture(['package-manifest-lockfile', partial, commit, '--json']),
+      ).rejects.toSatisfy((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        return err instanceof ObservedFixtureError
+          && err.code === 'GIT_READ_FAILED'
+          && /lazy fetching disabled/i.test(message)
+          && !/Failed to connect/i.test(message);
+      });
+      expect(objectStoreFingerprint(partial)).toBe(before);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      if (partial !== undefined) await rm(partial, { recursive: true, force: true });
+    }
+  });
+
+  it('reads the pinned commit tree, not refs/replace/', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    try {
+      const expected = knownBlobs(dir, commit, coherentFiles);
+      applyFiles(dir, {
+        ...coherentFiles,
+        'goal-gen/package.json': `${JSON.stringify({
+          name: 'goal-gen',
+          version: '9.9.9',
+          bin: { 'goal-gen': 'bin/goal-gen.mjs' },
+        }, null, 2)}\n`,
+      });
+      const replacement = commitAll(dir, 'replacement');
+      gitIsolated(dir, ['replace', commit, replacement]);
+      const result = await runCommittedSourceCapture(['package-manifest-lockfile', dir, commit, '--json']);
+      expect(result.output.source.commit).toBe(commit);
+      expect(result.output.source.captured).toEqual(expected);
+      expect(result.output.decision.accepted).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects --bundle-dir inside the source worktree or git directory', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const nested = path.join(dir, 'evidence');
+    const gitNested = path.join(dir, '.git', 'evidence');
+    try {
+      expect(await main([
+        'acceptance',
+        'capture-source',
+        'package-manifest-lockfile',
+        dir,
+        commit,
+        '--bundle-dir',
+        nested,
+        '--json',
+      ])).toBe(2);
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(existsSync(path.join(nested, 'manifest.json'))).toBe(false);
+      stderrSpy.mockClear();
+      expect(await main([
+        'acceptance',
+        'capture-source',
+        'package-manifest-lockfile',
+        dir,
+        commit,
+        '--bundle-dir',
+        gitNested,
+        '--json',
+      ])).toBe(2);
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(existsSync(path.join(gitNested, 'manifest.json'))).toBe(false);
+      expect(existsSync(path.join(gitNested, 'COMPLETE'))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('hashes and materializes original blob bytes rather than UTF-8 U+FFFD', async () => {
+    const invalid = Buffer.from([0x7b, 0x22, 0x6e, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d, 0x0a]);
+    expect(invalid.toString('utf8')).toContain('\uFFFD');
+    const dir = await mkdtemp(path.join(tmpdir(), 'cs-repo-'));
+    try {
+      gitIsolated(dir, ['init', '-q']);
+      applyFiles(dir, {
+        'goal-gen/package-lock.json': coherentFiles['goal-gen/package-lock.json'],
+        'goal-gen/bin/goal-gen.mjs': coherentFiles['goal-gen/bin/goal-gen.mjs'],
+      });
+      mkdirSync(path.join(dir, 'goal-gen'), { recursive: true });
+      writeFileSync(path.join(dir, 'goal-gen/package.json'), invalid);
+      const commit = commitAll(dir, 'invalid-utf8');
+      const result = await runCommittedSourceCapture(['package-manifest-lockfile', dir, commit, '--json']);
+      const captured = result.output.source.captured.find((row) => row.path === 'goal-gen/package.json');
+      expect(captured?.byteLength).toBe(invalid.length);
+      expect(captured?.sha256).toBe(sha256Hex(invalid));
+      expect(captured?.sha256).not.toBe(sha256Hex(invalid.toString('utf8')));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('snapshotFiles keeps original Buffer bytes', () => {
+    const contents = Buffer.from([0xff, 0xfe, 0x00]);
+    const blob: CapturedBlobWithBytes = {
+      path: 'goal-gen/package.json',
+      mode: '100644',
+      type: 'blob',
+      gitSha: 'a'.repeat(40),
+      sha256: sha256Hex(contents),
+      byteLength: contents.length,
+      contents,
+    };
+    expect(snapshotFiles([blob])['goal-gen/package.json']).toEqual(contents);
+    expect(Buffer.isBuffer(snapshotFiles([blob])['goal-gen/package.json'])).toBe(true);
+  });
+
+  it('keeps the revision whitelist; leading dash and NUL stay rejected', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    try {
+      gitIsolated(dir, ['branch', 'feat/ok', commit]);
+      const named = await runCommittedSourceCapture(['package-manifest-lockfile', dir, 'feat/ok', '--json']);
+      expect(named.output.source.commit).toBe(commit);
+      expect(await main([
+        'acceptance',
+        'capture-source',
+        'package-manifest-lockfile',
+        dir,
+        '-evil',
+        '--json',
+      ])).toBe(2);
+      expect(JSON.parse(stderrText()).error.message).toMatch(/unsafe revision/);
+      stderrSpy.mockClear();
+      expect(await main([
+        'acceptance',
+        'capture-source',
+        'package-manifest-lockfile',
+        dir,
+        'release/v1.0+meta',
+        '--json',
+      ])).toBe(2);
+      expect(JSON.parse(stderrText()).error.message).toMatch(/unsafe revision/);
+      stderrSpy.mockClear();
+      expect(await main([
+        'acceptance',
+        'capture-source',
+        'package-manifest-lockfile',
+        dir,
+        'v1.0@meta',
+        '--json',
+      ])).toBe(2);
+      expect(JSON.parse(stderrText()).error.message).toMatch(/unsafe revision/);
+      stderrSpy.mockClear();
+      expect(await main([
+        'acceptance',
+        'capture-source',
+        'package-manifest-lockfile',
+        dir,
+        'abc\0def',
+        '--json',
+      ])).toBe(2);
+      expect(JSON.parse(stderrText()).error.message).toMatch(/unsafe revision/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('CS-06: --no-replace-objects remains a read-only git option', () => {
+    expect(() =>
+      assertGitReadArgv(['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', 'ls-tree', 'HEAD']),
+    ).not.toThrow();
   });
 });

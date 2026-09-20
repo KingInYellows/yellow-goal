@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { CliUsageError, ObservedFixtureError } from './errors';
 import { sha256FileIfPresent, sha256Hex } from './implementation-revision';
@@ -23,8 +24,15 @@ export type SourceCanary = {
   indexSha256: string;
 };
 
+export type SourceIdentity = {
+  repoPath: string;
+  gitDir: string;
+  worktree: string | null;
+};
+
 export type GitObjectCapture = {
   gitDir: string;
+  worktree: string | null;
   requestedRev: string;
   commit: string;
   captured: CapturedBlob[];
@@ -67,6 +75,8 @@ function gitEnv(): NodeJS.ProcessEnv {
     GIT_OPTIONAL_LOCKS: '0',
     GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_NOSYSTEM: '1',
+    GIT_NO_LAZY_FETCH: '1',
+    GIT_NO_REPLACE_OBJECTS: '1',
   };
 }
 
@@ -106,7 +116,11 @@ function runGitBuffer(args: string[], maxBuffer: number): Buffer {
 }
 
 function withGitDir(gitDir: string, rest: string[]): string[] {
-  return ['-c', 'core.hooksPath=/dev/null', `--git-dir=${gitDir}`, ...rest];
+  return ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', `--git-dir=${gitDir}`, ...rest];
+}
+
+function withRepoPath(repoPath: string, rest: string[]): string[] {
+  return ['--no-replace-objects', '-c', 'core.hooksPath=/dev/null', '-C', repoPath, ...rest];
 }
 
 export function assertLocalRepoPath(raw: string): string {
@@ -188,10 +202,58 @@ function captureBlob(
     mode: parsed.mode,
     type: 'blob',
     gitSha: parsed.sha,
-    sha256: sha256Hex(contents.toString('utf8')),
+    sha256: sha256Hex(contents),
     byteLength: contents.length,
     contents,
   };
+}
+
+export function resolveSourceIdentity(repo: string): SourceIdentity {
+  const repoPath = assertLocalRepoPath(repo);
+  let gitDir: string;
+  try {
+    gitDir = runGitUtf8(withRepoPath(repoPath, ['rev-parse', '--absolute-git-dir']));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CliUsageError(`not a local git repository: ${message}`);
+  }
+  let worktree: string | null = null;
+  try {
+    worktree = runGitUtf8(withRepoPath(repoPath, ['rev-parse', '--show-toplevel']));
+  } catch {
+    worktree = null;
+  }
+  return { repoPath, gitDir, worktree };
+}
+
+function pathContainedBy(root: string, candidate: string): boolean {
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidate);
+  const rel = path.relative(resolvedRoot, resolvedCandidate);
+  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+    return true;
+  }
+  try {
+    const realRoot = realpathSync(resolvedRoot);
+    const realCandidate = existsSync(resolvedCandidate) ? realpathSync(resolvedCandidate) : resolvedCandidate;
+    const relReal = path.relative(realRoot, realCandidate);
+    return relReal === '' || (!relReal.startsWith('..') && !path.isAbsolute(relReal));
+  } catch {
+    return false;
+  }
+}
+
+export function assertBundleDirOutsideSource(bundleDir: string, identity: SourceIdentity): void {
+  if (pathContainedBy(identity.gitDir, bundleDir)) {
+    throw new CliUsageError(
+      'acceptance capture-source --bundle-dir must not be inside the source git directory',
+    );
+  }
+  if (identity.worktree !== null && pathContainedBy(identity.worktree, bundleDir)) {
+    throw new CliUsageError(
+      'acceptance capture-source --bundle-dir must not be inside the source worktree',
+    );
+  }
 }
 
 export function captureGitObjects(
@@ -199,18 +261,11 @@ export function captureGitObjects(
   requestedRev: string,
   profile: CommittedSourceProfile,
 ): GitObjectCapture & { blobs: CapturedBlobWithBytes[] } {
-  const repoPath = assertLocalRepoPath(repo);
+  const identity = resolveSourceIdentity(repo);
   const revision = assertRevision(requestedRev);
-  let gitDir: string;
-  try {
-    gitDir = runGitUtf8(['-c', 'core.hooksPath=/dev/null', '-C', repoPath, 'rev-parse', '--absolute-git-dir']);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new CliUsageError(`not a local git repository: ${message}`);
-  }
   let commit: string;
   try {
-    commit = runGitUtf8(withGitDir(gitDir, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]));
+    commit = runGitUtf8(withGitDir(identity.gitDir, ['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new CliUsageError(`cannot resolve revision ${revision}: ${message}`);
@@ -218,14 +273,14 @@ export function captureGitObjects(
   if (!/^[0-9a-f]{40}$/.test(commit)) {
     throw new CliUsageError(`revision did not resolve to a full commit object ID: ${commit}`);
   }
-  const canaryBefore = readCanary(gitDir);
+  const canaryBefore = readCanary(identity.gitDir);
   if (profile.allowedPaths.length > profile.maxFiles) {
     throw new ObservedFixtureError('PROFILE_INVALID', 'profile allowlist exceeds maxFiles');
   }
   const blobs: CapturedBlobWithBytes[] = [];
   const missing: string[] = [];
   for (const relative of profile.allowedPaths) {
-    const captured = captureBlob(gitDir, commit, relative, profile.maxFileBytes);
+    const captured = captureBlob(identity.gitDir, commit, relative, profile.maxFileBytes);
     if (captured === 'missing' || captured === 'oversized') {
       missing.push(relative);
       continue;
@@ -233,7 +288,8 @@ export function captureGitObjects(
     blobs.push(captured);
   }
   return {
-    gitDir,
+    gitDir: identity.gitDir,
+    worktree: identity.worktree,
     requestedRev: revision,
     commit,
     captured: blobs.map(({ contents: _contents, ...meta }) => meta),
@@ -247,14 +303,10 @@ export function rereadCanary(gitDir: string): SourceCanary {
   return readCanary(gitDir);
 }
 
-export function blobText(blob: CapturedBlobWithBytes): string {
-  return blob.contents.toString('utf8');
-}
-
-export function snapshotFiles(blobs: CapturedBlobWithBytes[]): Record<string, string> {
-  const files: Record<string, string> = {};
+export function snapshotFiles(blobs: CapturedBlobWithBytes[]): Record<string, Buffer> {
+  const files: Record<string, Buffer> = {};
   for (const blob of blobs) {
-    files[blob.path] = blobText(blob);
+    files[blob.path] = blob.contents;
   }
   return files;
 }
