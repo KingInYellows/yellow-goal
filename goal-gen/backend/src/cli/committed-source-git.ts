@@ -238,18 +238,22 @@ function nearestExistingRealPath(candidate: string): string {
   }
 }
 
+function relativePathWithinRoot(rel: string): boolean {
+  return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));
+}
+
 function pathContainedBy(root: string, candidate: string): boolean {
   const resolvedRoot = path.resolve(root);
   const resolvedCandidate = path.resolve(candidate);
   const rel = path.relative(resolvedRoot, resolvedCandidate);
-  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+  if (relativePathWithinRoot(rel)) {
     return true;
   }
   try {
     const realRoot = realpathSync(resolvedRoot);
     const realCandidate = nearestExistingRealPath(resolvedCandidate);
     const relReal = path.relative(realRoot, realCandidate);
-    return relReal === '' || (!relReal.startsWith('..') && !path.isAbsolute(relReal));
+    return relativePathWithinRoot(relReal);
   } catch {
     return true;
   }

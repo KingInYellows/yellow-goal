@@ -937,6 +937,47 @@ describe('committed-source capture', () => {
     }
   });
 
+  it('rejects --bundle-dir when the path segment starts with .. but is not parent traversal', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const dotDotBundle = path.join(dir, '..bundle');
+    const dotDotCacheChild = path.join(dir, '..cache', 'nested-bundle');
+    const canaryPath = path.join(dir, `.capture-canary-${process.pid}`);
+    try {
+      mkdirSync(path.join(dir, '..cache'), { recursive: true });
+      mkdirSync(dotDotBundle, { recursive: true });
+      await writeFile(canaryPath, `canary-${Date.now()}\n`, 'utf8');
+      const headBefore = gitFileHash(dir, 'HEAD');
+      const indexBefore = gitFileHash(dir, 'index');
+
+      for (const bundleDir of [dotDotBundle, dotDotCacheChild]) {
+        stderrSpy.mockClear();
+        expect(
+          await main([
+            'acceptance',
+            'capture-source',
+            'package-manifest-lockfile',
+            dir,
+            commit,
+            '--json',
+            '--bundle-dir',
+            bundleDir,
+          ]),
+        ).toBe(2);
+        expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+        expect(existsSync(path.join(bundleDir, 'manifest.json'))).toBe(false);
+        expect(existsSync(path.join(bundleDir, 'COMPLETE'))).toBe(false);
+      }
+
+      expect(readdirSync(dotDotBundle)).toEqual([]);
+      expect(readdirSync(path.join(dir, '..cache'))).toEqual([]);
+      expect(readFileSync(canaryPath, 'utf8')).toMatch(/^canary-/);
+      expect(gitFileHash(dir, 'HEAD')).toBe(headBefore);
+      expect(gitFileHash(dir, 'index')).toBe(indexBefore);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('rejects --bundle-dir via a symlink ancestor into the source worktree', async () => {
     const { dir, commit } = await fixtureRepo(coherentFiles);
     const outside = await mkdtemp(path.join(tmpdir(), 'cs-symlink-out-'));
