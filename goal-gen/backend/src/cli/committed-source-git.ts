@@ -226,6 +226,18 @@ export function resolveSourceIdentity(repo: string): SourceIdentity {
   return { repoPath, gitDir, worktree };
 }
 
+function nearestExistingRealPath(candidate: string): string {
+  let current = path.resolve(candidate);
+  const { root } = path.parse(current);
+  for (;;) {
+    if (existsSync(current)) {
+      return realpathSync(current);
+    }
+    if (current === root) return current;
+    current = path.dirname(current);
+  }
+}
+
 function pathContainedBy(root: string, candidate: string): boolean {
   const resolvedRoot = path.resolve(root);
   const resolvedCandidate = path.resolve(candidate);
@@ -235,11 +247,11 @@ function pathContainedBy(root: string, candidate: string): boolean {
   }
   try {
     const realRoot = realpathSync(resolvedRoot);
-    const realCandidate = existsSync(resolvedCandidate) ? realpathSync(resolvedCandidate) : resolvedCandidate;
+    const realCandidate = nearestExistingRealPath(resolvedCandidate);
     const relReal = path.relative(realRoot, realCandidate);
     return relReal === '' || (!relReal.startsWith('..') && !path.isAbsolute(relReal));
   } catch {
-    return false;
+    return true;
   }
 }
 

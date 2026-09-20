@@ -1,4 +1,15 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { CliUsageError, ObservedFixtureError } from './errors';
 import { sha256Hex, runtimeLabel, type RuntimeLabel } from './implementation-revision';
@@ -6,6 +17,7 @@ import type { FixtureDecision } from './observed-fixture-decider';
 import type { ObservedCheckOutcome } from './observed-fixture-observer';
 import {
   CommittedSourceSchemaVersion,
+  getCommittedSourceProfile,
   type CommittedSourceProfile,
 } from './committed-source-profiles';
 import type { CapturedBlob, CapturedBlobWithBytes, SourceCanary } from './committed-source-git';
@@ -105,12 +117,37 @@ export function assertBundleDirWritable(raw: string): string {
   return resolved;
 }
 
+const CAPTURE_COMPLETE_BYTES = `${CommittedSourceSchemaVersion}\n`;
+
+function installedCaptureProfile(id: string): CommittedSourceProfile {
+  try {
+    return getCommittedSourceProfile(id);
+  } catch {
+    throw new CliUsageError(`unknown committed-source profile in bundle: ${id}`);
+  }
+}
+
+function assertSelectedAgainstAllowlist(selected: readonly SelectedBlob[], allowedPaths: readonly string[]): void {
+  const allowed = new Set(allowedPaths);
+  for (const row of selected) {
+    assertBundleBlobPath(row.path);
+    if (!allowed.has(row.path)) {
+      throw new ObservedFixtureError(
+        'BUNDLE_INVALID',
+        `selected blob path is not in the installed profile allowlist: ${row.path}`,
+      );
+    }
+  }
+}
+
 export function persistCommittedSourceBundle(
   dir: string,
   bundle: CommittedSourceBundle,
   blobs: CapturedBlobWithBytes[],
 ): void {
   requireEmptyDirectory(dir);
+  const profile = installedCaptureProfile(bundle.profile.id);
+  assertSelectedAgainstAllowlist(bundle.source.selected, profile.allowedPaths);
   const allowed = new Set(bundle.source.selected.map((row) => row.path));
   for (const blob of blobs) {
     if (!allowed.has(blob.path)) {
@@ -125,7 +162,7 @@ export function persistCommittedSourceBundle(
   const markerPath = path.join(dir, BUNDLE_COMPLETE_MARKER);
   const markerTmp = `${markerPath}.tmp`;
   writeFileSync(manifestPath, `${JSON.stringify(bundle, null, 2)}\n`, 'utf8');
-  writeFileSync(markerTmp, `${bundle.schemaVersion}\n`, 'utf8');
+  writeFileSync(markerTmp, CAPTURE_COMPLETE_BYTES, 'utf8');
   renameSync(markerTmp, markerPath);
 }
 
@@ -158,7 +195,10 @@ export function peekCompleteMarker(dir: string): string | undefined {
   try {
     const stat = lstatSync(markerPath);
     if (!stat.isFile() || stat.isSymbolicLink()) return undefined;
-    return readFileSync(markerPath, 'utf8').replace(/\n$/, '');
+    const expectedSize = Buffer.byteLength(CAPTURE_COMPLETE_BYTES, 'utf8');
+    if (stat.size !== expectedSize) return undefined;
+    if (readFileSync(markerPath, 'utf8') !== CAPTURE_COMPLETE_BYTES) return undefined;
+    return CommittedSourceSchemaVersion;
   } catch {
     return undefined;
   }
@@ -166,6 +206,40 @@ export function peekCompleteMarker(dir: string): string | undefined {
 
 export function bundleComplete(dir: string): boolean {
   return peekCompleteMarker(dir) === CommittedSourceSchemaVersion;
+}
+
+function readBoundedSelectedBlob(
+  full: string,
+  relative: string,
+  maxBytes: number,
+  expectedLength: number,
+): Buffer {
+  let stat;
+  try {
+    stat = lstatSync(full);
+  } catch {
+    throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob missing: ${relative}`);
+  }
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob is not a regular file: ${relative}`);
+  }
+  if (!Number.isInteger(expectedLength) || expectedLength < 0 || expectedLength > maxBytes || stat.size > maxBytes) {
+    throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob exceeds maxFileBytes: ${relative}`);
+  }
+  if (stat.size !== expectedLength) {
+    throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob bytes do not match manifest: ${relative}`);
+  }
+  const fd = openSync(full, 'r');
+  try {
+    const buf = Buffer.alloc(stat.size);
+    const n = readSync(fd, buf, 0, stat.size, 0);
+    if (n !== stat.size) {
+      throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob bytes do not match manifest: ${relative}`);
+    }
+    return buf;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function readPersistedCommittedSourceBundle(
@@ -182,22 +256,13 @@ export function readPersistedCommittedSourceBundle(
   if (!Array.isArray(parsed.source?.selected)) {
     throw new ObservedFixtureError('BUNDLE_INCOMPLETE', 'capture bundle is missing selected blob metadata');
   }
+  const profile = installedCaptureProfile(parsed.profile.id);
+  assertSelectedAgainstAllowlist(parsed.source.selected, profile.allowedPaths);
   const capturedByPath = new Map(parsed.source.captured.map((row) => [row.path, row]));
   const blobs: CapturedBlobWithBytes[] = [];
   for (const selected of parsed.source.selected) {
-    assertBundleBlobPath(selected.path);
     const full = path.join(dir, BUNDLE_BLOBS_DIR, selected.path);
-    let contents: Buffer;
-    try {
-      const stat = lstatSync(full);
-      if (!stat.isFile() || stat.isSymbolicLink()) {
-        throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob is not a regular file: ${selected.path}`);
-      }
-      contents = readFileSync(full);
-    } catch (err) {
-      if (err instanceof ObservedFixtureError) throw err;
-      throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob missing: ${selected.path}`);
-    }
+    const contents = readBoundedSelectedBlob(full, selected.path, profile.maxFileBytes, selected.byteLength);
     if (contents.length !== selected.byteLength || sha256Hex(contents) !== selected.sha256) {
       throw new ObservedFixtureError('BUNDLE_INCOMPLETE', `selected blob bytes do not match manifest: ${selected.path}`);
     }

@@ -929,7 +929,7 @@ Authorized follow-on to layers 3, 3b, and 3c. This is **committed-repository ver
 | Revision | Named ref or object name, resolved once via `rev-parse` to a full commit object ID; all later reads use that ID. |
 | Allowlist | `goal-gen/package.json`, `goal-gen/package-lock.json`, `goal-gen/bin/goal-gen.mjs`. |
 | Required checks | `manifest-lock-agreement` (package name/version equals lockfile root/`packages[""]`; `lockfileVersion` 3) and `packaging-entry` (`package.json` `bin.goal-gen` is `bin/goal-gen.mjs`; captured blob is a regular file starting with `#!/usr/bin/env node`). Checkers are installed with the engine, never loaded from the captured tree. |
-| Git | Object reads only: `rev-parse`, `cat-file`, `ls-tree`. `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1` plus `--no-replace-objects` on every object-read, `core.hooksPath=/dev/null`, no `GIT_WORK_TREE`, no checkout/index/object writes, no source worktree create, no target hooks/executables. Missing local objects fail closed without contacting a remote or writing the source object store. Blob hashes and checker snapshots use original bytes (not UTF-8 U+FFFD replacement). `--bundle-dir` must be outside the source worktree and `.git`. Blob reads are size-capped before content allocation. |
+| Git | Object reads only: `rev-parse`, `cat-file`, `ls-tree`. `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`, `GIT_NO_REPLACE_OBJECTS=1` plus `--no-replace-objects` on every object-read, `core.hooksPath=/dev/null`, no `GIT_WORK_TREE`, no checkout/index/object writes, no source worktree create, no target hooks/executables. Missing local objects fail closed without contacting a remote or writing the source object store. Blob hashes and checker snapshots use original bytes (not UTF-8 U+FFFD replacement). `--bundle-dir` must be outside the source worktree and `.git`, including when a symlink ancestor would resolve the destination into either; compare the realpath of the nearest existing ancestor. Blob reads are size-capped before content allocation. |
 | Snapshot | Disposable directory under `$TMPDIR` holding captured bytes. Not a git worktree of the source. Deleted after checks. |
 
 ### Process interface
@@ -995,7 +995,7 @@ Authorized follow-on to layer 3d. This is **committed-repository verification im
 
 | Field | Contract |
 |---|---|
-| Capture bundle | `COMPLETE` bytes are this schema version plus a trailing newline, `manifest.json`, and `blobs/<allowlisted-path>` exact selected bytes. Missing blob files, wrong `COMPLETE`, or sha256 mismatch is incomplete — no stale success. |
+| Capture bundle | `COMPLETE` bytes are this schema version plus a trailing newline, `manifest.json`, and `blobs/<allowlisted-path>` exact selected bytes. Compare the marker to that exact string; a truncated schema-without-newline is incomplete. Missing blob files, wrong `COMPLETE`, sha256 mismatch, `stat.size` over the installed `maxFileBytes`, or a selected path outside the installed profile `allowedPaths` is incomplete/invalid — no snapshot, no stale success. Persist and reproduce bound blob `stat.size` and read at most that cap before allocation. |
 | Selected bytes | The snapshot checkers ran on. For a plain capture that is the pinned blob bytes. For `--from-capture` that is captured bytes with allowlisted overlay applied. Modes stay the captured blob modes. Identities (`gitSha`) stay the pinned commit's blobs; overlay does not mint a source git identity. |
 | Overlay candidate | `yellow-goal/candidate-file-content/v1`. Same path/size/depth/`maxDocumentBytes` bounds as 3c, applied to the capture profile allowlist. Only `package-manifest-lockfile` may be used with `--from-capture`. |
 | Checks | Installed `package-manifest-lockfile` argv/cwd. Bundle-stored bindings and candidate-supplied checkers are ignored. |
@@ -1023,7 +1023,7 @@ Additive verbs / options:
 
 - **Engine-owned:** profile, allowlist, argv, timeout, checkers, schema dispatch, blob-path allowlist inside the bundle.
 - **Untrusted:** candidate document, persisted blob bytes, stored `decision.accepted`, stored bindings.
-- Unauthorized extra candidate paths are `accepted: false` (`unauthorized-path`), not a launched overlay. Mutated stored bindings cannot change which checkers run.
+- Unauthorized extra candidate paths are `accepted: false` (`unauthorized-path`), not a launched overlay. Tampered extra `source.selected` paths (even with a matching blob) are `BUNDLE_INVALID` before snapshot; they cannot `accepted: true`. Mutated stored bindings cannot change which checkers run.
 - Overlay and reproduce do not checkout, fetch, or write the original source repository.
 
 ### Outcome table
@@ -1034,6 +1034,10 @@ Additive verbs / options:
 | Valid extra-field alternative overlay on captured base | overlay applied | both passed | `accepted: true` | 0 |
 | Intentional lockfile/manifest metadata reject | overlay applied | `manifest-lock-agreement` failed | `accepted: false` | 0 |
 | Extra unauthorized file in candidate | not launched as authorized overlay | omitted | `accepted: false` (`unauthorized-path`) | 0 |
+| Tampered extra `source.selected` + blob outside installed `allowedPaths` | not launched | omitted | no stale success (`BUNDLE_INVALID`) | 1 |
+| Truncated `COMPLETE` (schema without trailing newline) | n/a | not launched | no stale success (`BUNDLE_INCOMPLETE`) | 1 |
+| Persisted blob `stat.size` over installed `maxFileBytes` | n/a | not launched | no stale success (`BUNDLE_INCOMPLETE`) | 1 |
+| `--from-capture` candidate file over 3c `maxFileBytes` | n/a | not launched | no bundle (`USAGE_ERROR`) | 2 |
 | Stored bindings mutated; installed profile unchanged | selected bytes restored | installed checkers rerun | decision from rerun, not stored bindings | 0 |
 | Missing `COMPLETE` / missing blob file / sha256 mismatch | n/a | not launched | no stale success | 1 |
 | 3c reproduce of a candidate-offline bundle | 3c path | 3c checkers | 3c contract | 0 |
@@ -1045,7 +1049,7 @@ Additive verbs / options:
 |---|---|---|
 | CS-10 | Capture `--bundle-dir` persists selected bytes/modes/identities; moved bundle `acceptance reproduce` from a fresh process reruns trusted checks | `committed-source.test.ts` + `install-smoke.sh` |
 | CS-11 | FILE-CONTENT overlay onto captured base: valid extra-field alternative and intentional metadata reject | `committed-source.test.ts` |
-| CS-12 | Unauthorized extra files and mutated stored bindings cannot authorize success; source checkout unmodified | same |
+| CS-12 | Unauthorized extra candidate files, tampered extra `source.selected` paths, truncated `COMPLETE`, oversized persisted blobs, and mutated stored bindings cannot authorize success; `--bundle-dir` through a symlink ancestor into the source is refused; `--from-capture` uses 3c candidate file byte bounds; source checkout unmodified | same |
 
 ## Failure / blocked cases (documentation and publication)
 

@@ -15,6 +15,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -31,11 +32,15 @@ import {
 } from '../../backend/src/cli/committed-source-git';
 import { ObservedFixtureError } from '../../backend/src/cli/errors';
 import {
+  CAPTURE_MAX_FILE_BYTES,
   getCommittedSourceProfile,
   committedSourceProfileDigest,
 } from '../../backend/src/cli/committed-source-profiles';
 import { runCandidateOfflineVerify } from '../../backend/src/cli/candidate-offline-command';
-import { configRepairCandidates } from '../../backend/src/cli/candidate-offline-profiles';
+import {
+  CANDIDATE_MAX_FILE_BYTES,
+  configRepairCandidates,
+} from '../../backend/src/cli/candidate-offline-profiles';
 import { runObservedFixtureVerify } from '../../backend/src/cli/observed-fixture-command';
 import { sha256File, sha256Hex } from '../../backend/src/cli/implementation-revision';
 
@@ -814,6 +819,206 @@ describe('committed-source capture', () => {
       await rm(dir, { recursive: true, force: true });
       await rm(bundleDir, { recursive: true, force: true });
       await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects tampered extra source.selected paths before snapshot', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-extra-selected-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const extra = Buffer.from('tampered extra\n');
+      const manifestPath = path.join(bundleDir, 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        source: { selected: { path: string; mode: string; sha256: string; byteLength: number }[] };
+      };
+      manifest.source.selected.push({
+        path: 'goal-gen/notes.md',
+        mode: '100644',
+        sha256: sha256Hex(extra),
+        byteLength: extra.length,
+      });
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+      writeFileSync(path.join(bundleDir, 'blobs/goal-gen/notes.md'), extra);
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', bundleDir, '--json'])).toBe(1);
+      expect(stdoutText()).toBe('');
+      expect(JSON.parse(stderrText()).error.code).toBe('BUNDLE_INVALID');
+      expect(JSON.parse(stderrText()).error.message).toMatch(/notes\.md/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects --bundle-dir via a symlink ancestor into the source worktree', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const outside = await mkdtemp(path.join(tmpdir(), 'cs-symlink-out-'));
+    const canaryPath = path.join(dir, `.capture-canary-${process.pid}`);
+    try {
+      await writeFile(canaryPath, `canary-${Date.now()}\n`, 'utf8');
+      const headBefore = gitFileHash(dir, 'HEAD');
+      const indexBefore = gitFileHash(dir, 'index');
+      const link = path.join(outside, 'into-source');
+      symlinkSync(dir, link);
+      const nested = path.join(link, 'nested-bundle');
+      stderrSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          nested,
+        ]),
+      ).toBe(2);
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(existsSync(path.join(dir, 'nested-bundle'))).toBe(false);
+      expect(existsSync(nested)).toBe(false);
+      expect(readFileSync(canaryPath, 'utf8')).toMatch(/^canary-/);
+      expect(gitFileHash(dir, 'HEAD')).toBe(headBefore);
+      expect(gitFileHash(dir, 'index')).toBe(indexBefore);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('clamps --from-capture candidate files to 3c maxFileBytes', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-overlay-size-'));
+    const work = await mkdtemp(path.join(tmpdir(), 'cs-overlay-size-work-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const largePkg = `${JSON.stringify(
+        {
+          name: 'goal-gen',
+          version: '0.2.0',
+          bin: { 'goal-gen': 'bin/goal-gen.mjs' },
+          description: 'x'.repeat(20 * 1024),
+        },
+        null,
+        2,
+      )}\n`;
+      expect(Buffer.byteLength(largePkg, 'utf8')).toBeGreaterThan(CANDIDATE_MAX_FILE_BYTES);
+      expect(Buffer.byteLength(largePkg, 'utf8')).toBeLessThan(CAPTURE_MAX_FILE_BYTES);
+      const candPath = path.join(work, 'large.json');
+      await writeFile(candPath, fileContentCandidate({ 'goal-gen/package.json': largePkg }), 'utf8');
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'verify-candidate',
+          'package-manifest-lockfile',
+          candPath,
+          '--from-capture',
+          bundleDir,
+          '--json',
+        ]),
+      ).toBe(2);
+      expect(stdoutText()).toBe('');
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(JSON.parse(stderrText()).error.message).toMatch(/maxFileBytes/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('treats COMPLETE without the trailing newline as incomplete', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-complete-trunc-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const marker = path.join(bundleDir, 'COMPLETE');
+      writeFileSync(marker, 'yellow-goal/committed-source-capture/v1');
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', bundleDir, '--json'])).toBe(1);
+      expect(stdoutText()).toBe('');
+      expect(JSON.parse(stderrText()).error.code).toBe('BUNDLE_INCOMPLETE');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects persisted blobs over maxFileBytes before allocating contents', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const bundleDir = await mkdtemp(path.join(tmpdir(), 'cs-blob-cap-'));
+    try {
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          bundleDir,
+        ]),
+      ).toBe(0);
+      const huge = Buffer.alloc(CAPTURE_MAX_FILE_BYTES + 1, 0x61);
+      const blobPath = path.join(bundleDir, 'blobs/goal-gen/package.json');
+      writeFileSync(blobPath, huge);
+      const manifestPath = path.join(bundleDir, 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        source: { selected: { path: string; sha256: string; byteLength: number }[] };
+      };
+      const selected = manifest.source.selected.find((row) => row.path === 'goal-gen/package.json');
+      expect(selected).toBeDefined();
+      selected!.byteLength = huge.length;
+      selected!.sha256 = sha256Hex(huge);
+      writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(await main(['acceptance', 'reproduce', bundleDir, '--json'])).toBe(1);
+      expect(stdoutText()).toBe('');
+      expect(JSON.parse(stderrText()).error.code).toBe('BUNDLE_INCOMPLETE');
+      expect(JSON.parse(stderrText()).error.message).toMatch(/maxFileBytes/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(bundleDir, { recursive: true, force: true });
     }
   });
 });

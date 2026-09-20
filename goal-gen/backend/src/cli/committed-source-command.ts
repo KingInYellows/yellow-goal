@@ -12,7 +12,10 @@ import { CliUsageError, ObservedFixtureError } from './errors';
 import type { CapturedBlobWithBytes } from './committed-source-git';
 import { implementationRevision, sha256Hex } from './implementation-revision';
 import {
+  CANDIDATE_MAX_DEPTH,
   CANDIDATE_MAX_DOCUMENT_BYTES,
+  CANDIDATE_MAX_FILE_BYTES,
+  CANDIDATE_MAX_FILES,
   CandidateFileContentSchemaVersion,
   type CandidateFileDocument,
 } from './candidate-offline-profiles';
@@ -331,7 +334,11 @@ export async function runCommittedSourceOverlay(argv: string[]): Promise<Command
   }
   const maxDocumentBytes = Math.min(CANDIDATE_MAX_DOCUMENT_BYTES, profile.maxFileBytes * profile.maxFiles);
   const raw = readBoundedUtf8File(path.resolve(candidatePath), maxDocumentBytes);
-  const candidate = parseCandidateDocument(raw, profile);
+  const candidate = parseCandidateDocument(raw, {
+    maxFiles: Math.min(profile.maxFiles, CANDIDATE_MAX_FILES),
+    maxFileBytes: Math.min(profile.maxFileBytes, CANDIDATE_MAX_FILE_BYTES),
+    maxDepth: Math.min(profile.maxDepth, CANDIDATE_MAX_DEPTH),
+  });
   const unauthorized = unauthorizedCandidatePaths(candidate, profile);
   const overlay = {
     schemaVersion: CandidateFileContentSchemaVersion,
