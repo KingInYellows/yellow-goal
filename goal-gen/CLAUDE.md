@@ -67,10 +67,11 @@ tests/                # unit + contract + fixture + adversarial + integration + 
 - Test: `npm test` (`vitest run`, full deterministic suite — no live network/model calls) · `npm run test:watch`
 - Evals: `npm run eval` (all) · `npm run eval:planner` (planner gate)
 - Typecheck: `npm run typecheck` (`tsc --noEmit`, strict)
-- Compiler CLI: `npm run cli -- <request create|request validate|inspect|analyze|compile|packet verify|acceptance record|acceptance verify-fixture> ... [--json]`
+- Compiler CLI: `npm run cli -- <request create|request validate|inspect|analyze|compile|packet verify|acceptance record|acceptance verify-fixture|acceptance verify-candidate|acceptance reproduce> ... [--json]`
 - Identity probe: `npm run cli -- version --json` (RR17; installed bin: `goal-gen version --json`)
 - Acceptance evidence recorder: `npm run cli -- acceptance record <fixture.json> [--json]` (VS spec fixture-only JSON recorder; exit 0 emits a record including failed/blocked/not-run checks; never executes fixture commands or git; not a Protocol v1 capability)
 - Observed fixture verification: `npm run cli -- acceptance verify-fixture <profile-id> <variant-id> [--json]` (VS spec layer 3b; disposable-repo observer + packed `acceptance record` subprocess + fixture-scoped decision; not a Protocol v1 capability; not live execution)
+- Candidate-bound offline milestone: `npm run cli -- acceptance verify-candidate <profile-id> <candidate.json> [--json] [--bundle-dir <dir>]` and `npm run cli -- acceptance reproduce <bundle-dir> [--json]` (VS spec layer 3c; FILE-CONTENT overlay onto an engine-owned profile; durable bundle; installed replay reruns trusted checks; not live execution; not verified single-milestone execution completed)
 - Run: `npm run cli -- run <request.json> --executor stub|claude-code` (RR11–RR20). `stub` is zero-spend and the only executor tests/CI may use. `claude-code` is real spend — never from CI or an autonomous session.
 - Install gate: `bash scripts/install-smoke.sh` (packs the tarball, installs it in a scratch dir, drives the `goal-gen` bin as a process — safe locally)
 - Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (writes the SQL + journal + snapshot that `tests/db/migrations.test.ts` replays) · `npm run db:migrate`

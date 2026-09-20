@@ -369,6 +369,10 @@ describe('observed fixture verification', () => {
       'backend/src/cli/observed-fixture-profiles.ts',
       'backend/src/cli/acceptance-record-command.ts',
       'backend/src/cli/acceptance-evidence.ts',
+      'backend/src/cli/candidate-offline-command.ts',
+      'backend/src/cli/candidate-offline-bundle.ts',
+      'backend/src/cli/candidate-offline-decider.ts',
+      'backend/src/cli/candidate-offline-profiles.ts',
     ]);
     const pieces = ENGINE_SOURCES.map((name) => `${name}:${sha256File(path.join(packageRoot, name))}`);
     expect(engineSourceDigest()).toBe(sha256Hex(pieces.join('\n')));

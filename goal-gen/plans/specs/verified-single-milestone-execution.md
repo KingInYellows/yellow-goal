@@ -14,8 +14,9 @@ Four layers — do not conflate them:
 |---|---|---|
 | 1. Eventual product outcome | One approved milestone, one repo, one immutable **base** revision, one bounded implementation worker → independently verified patch (against a recorded **candidate** commit or tree snapshot) or evidence-backed blocker. No automatic merge or deployment. | Named; not executable yet |
 | 2. Documentation increment | PRD FR-14–FR-17, proposed ADR-0018, this spec (VS-01–VS-07). | **Complete** (#34) |
-| 3. First code increment | Fixture-only acceptance-evidence recording through an existing engine process seam; disposable git fixture; deterministic local checks only. | **Implemented** (yellow-goal #36; unmerged). Git-free JSON recorder only. |
-| 3b. Observed fixture verification | Engine-owned fixed profiles, disposable-repo observer, packed `acceptance record` subprocess, separate fixture-scoped decision. | This increment. Not live target-bound execution. |
+| 3. First code increment | Fixture-only acceptance-evidence recording through an existing engine process seam; disposable git fixture; deterministic local checks only. | **Implemented** (yellow-goal #36). Git-free JSON recorder only. |
+| 3b. Observed fixture verification | Engine-owned fixed profiles, disposable-repo observer, packed `acceptance record` subprocess, separate fixture-scoped decision. | **Implemented** (yellow-goal #37). Not live target-bound execution. |
+| 3c. Candidate-bound offline milestone | Additive FILE-CONTENT candidate path, durable bundle, installed fresh-process replay of trusted checks. | This increment. Not verified single-milestone execution completed. Not live execution. |
 | 4. Still deferred | Live target-bound execution; Protocol v1 real-run capabilities; promoting scratch/`bypassPermissions`; yellow-plugins host/provider integration. Protocol v1 stays stub-only today (ADR-0017). | Deferred |
 
 ## Outcome (layer 1)
@@ -828,6 +829,86 @@ There is **no** `--fixture`, `observed:true`, or imported-JSON authorization rou
 | OF-12 | Owned descendant pipe lifetime, readiness failure distinct from post-ready `deadlineExceeded`, latched readiness-budget timeout, cancellation, encoded-byte bounds | `observed-fixture.test.ts` + `observed-fixture-child.test.ts` |
 | OF-13 | `implementationRevision` covers recorder/validator/profile policy/trusted checkers plus executed CLI boundary including the entry-script guard; a recorder, checker, or boundary-source change changes identity; install path and Node executable do not; Node/runtime is a separate label | `observed-fixture.test.ts` |
 | OF-14 | Signaled recorder (no numeric exit) is `RECORDER_INVOKE_FAILED`; no bundle; CLI exit 1. Honest numeric recorder exit 1 still emits a negative bundle | `observed-fixture.test.ts` |
+
+## Candidate-bound offline milestone increment (3c)
+
+Authorized follow-on to layers 3 and 3b. This is **candidate-bound offline milestone implemented**, not verified single-milestone execution completed, and **not** layer 4. Do not rewrite ADR-0018 decision text.
+
+**Product outcome.** One engine-owned profile owns the base, milestone identity, allowed paths, fixed checkers/argv/bounds, and semantic requirements. A caller-supplied **FILE-CONTENT** candidate document is untrusted proposed data — not evidence, not authorization. The observer materializes those files onto a disposable repo, runs the profile's fixed checks, records through packed `acceptance record`, and emits a fixture-scoped decision. A durable bundle survives temp-repo deletion and directory move. Fresh-process `acceptance reproduce` reconstructs the measured tree and **reruns** trusted checks from the **installed** package. Parsing stored `accepted: true` is not re-verification.
+
+### Supported envelope
+
+| Field | Contract |
+|---|---|
+| Profile | Engine-owned (`config-repair` in this increment): base files, allowed paths, ≥2 required checks, argv/cwd/timeout, semantic requirements. Lives next to the CLI, outside candidate-writable content. |
+| Candidate document | `yellow-goal/candidate-file-content/v1` `{ files: { relativePath: string contents } }`. Paths validated for size/depth/traversal before materialization. Only `allowedPaths` may be written. |
+| Required checks | Profile `{id, argv, cwd, command}` — same observer as 3b. Checkers are not loaded from the candidate or the bundle. |
+| Candidate identity | Observer-measured `kind: tree`. |
+| Targets | Disposable repos under `$TMPDIR` only. No arbitrary repos, archives, scripts, URLs, or caller checkers. No eval/install of candidate code. |
+
+There is **no** golden `approvedFiles` equality gate on this path. ≥2 byte-distinct valid candidates can both satisfy the same semantic requirements.
+
+### Process interface
+
+Verbs:
+
+- `acceptance verify-candidate <profile-id> <candidate.json> [--json] [--bundle-dir <dir>]`
+- `acceptance reproduce <bundle-dir> [--json]`
+
+Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`. Existing `acceptance record` and `acceptance verify-fixture` stay intact.
+
+| Property | Contract |
+|---|---|
+| stdout | One JSON bundle `yellow-goal/candidate-offline-milestone/v1` when the workflow finishes (affirmative **or** negative). Empty on usage/I/O failure. |
+| stderr | Structured `{"error":{"code","message"}}` on usage (exit 2) or I/O/unexpected (exit 1) only. |
+| `--bundle-dir` | Must be missing or an **empty** directory (created if needed). Never overwrites a non-empty user path. Writes `manifest.json` then atomically renames `COMPLETE`. |
+| Recorder | Packed `acceptance record` subprocess, same as 3b, omitted when v1 cannot represent the observation honestly. |
+| Exit 0 | Bundle written (in-memory always; durable when `--bundle-dir` is given). Includes valid negatives and `accepted: false`. |
+| Exit 1 | No durable success marker: I/O, incomplete bundle, or unexpected infrastructure failure. |
+| Exit 2 | Usage (wrong arity, unknown profile, unsafe candidate path, non-empty `--bundle-dir`). |
+
+### Trust boundary
+
+- **Engine-owned:** profile, argv, timeout, allowed paths, semantic requirements, checker implementations, reproduction policy.
+- **Untrusted:** candidate document bytes, bundle-stored candidate bytes, bundle-stored `decision.accepted`, bundle-stored recorder JSON, bundle-stored bindings.
+- **Observer / recorder / decider** roles stay separate. The candidate cannot redefine required checks, supply executable checkers, or self-assert acceptance.
+- `implementationRevision` is `goal-gen@<package-version>#<sha256>` over engine sources plus a portable profile digest of logical checker identities (script basename, extra argv, readiness, checker bytes), allowed paths, base files, and candidate-document limits (`maxFiles` / `maxFileBytes` / `maxDepth`) — not `process.execPath` or install-directory prefixes. Node/runtime versions are recorded separately as a label. Tightening those limits without hashing them would let `reproduce` skip profile-drift and apply different validation (USAGE_ERROR) to a stored candidate.
+- Synthetic Git base uses fixed author/committer dates (`1970-01-01T00:00:00+0000`) and a recorded recipe so the same files reproduce the same `baseRevision`.
+- Reproduce loads the **installed** profile by id, compares digest, reconstructs files, and reruns checks. Bundle-supplied executables and trusted-policy fields are ignored.
+
+### Outcome table
+
+| Case | Observer | Recorder | Decision | Workflow exit |
+|---|---|---|---|---|
+| Byte-distinct valid candidate A (alpha) | both required checks passed | record `passed` | `accepted: true` | 0 |
+| Byte-distinct valid candidate B (beta) | both required checks passed | record `passed` | `accepted: true` | 0 |
+| Failing baseline (no overlay / still-broken config) | real failed row | record `failed` | `accepted: false` | 0 |
+| Incorrect candidate | real failed row | record `failed` | `accepted: false` | 0 |
+| Extra unauthorized file | not launched as authorized overlay | omitted or not-run | `accepted: false` (`unauthorized-path`) | 0 |
+| Self-assert `accepted: true` in candidate data | unauthorized extra path and/or failed checks | omitted or failed | `accepted: false` | 0 |
+| Candidate tries to supply a checker | unauthorized extra path | omitted | `accepted: false` | 0 |
+| Unsafe path (`..`, absolute, `.git` in any segment) | n/a | not invoked | no bundle | 2 |
+| Timeout-ignore / timeout-exit-0 / noisy / spawn / leftover-then-later / missing measurement | same as 3b table | same honesty rule | `accepted: false` | 0 |
+| Durable bundle moved; temps deleted | n/a | n/a | reproduce reruns checks | 0 |
+| Mutated `COMPLETE` / missing marker / non-regular or wrong-bytes `COMPLETE` | n/a | n/a | no stale success | 1 |
+| Mutated bundle `decision.accepted` | n/a | n/a | reproduce ignores it and reruns | 0 |
+| Profile digest mismatch vs installed | n/a | not treated as success | `accepted: false` | 0 |
+| Unknown profile / missing candidate file | n/a | not invoked | no bundle | 2 |
+
+### Requirement-to-test mapping
+
+| ID | Requirement | Test |
+|---|---|---|
+| CO-01 | Engine-owned profile; candidate cannot redefine required checks | `candidate-offline.test.ts` |
+| CO-02 | ≥2 required checks; ≥2 byte-distinct valid candidates; not golden `approvedFiles` | same |
+| CO-03 | Failing baseline, incorrect candidate, extra file, self-assert, weaken-check | same |
+| CO-04 | Path/size/depth validation before materialization | same |
+| CO-05 | Durable bundle + atomic `COMPLETE`; no overwrite of non-empty paths | same |
+| CO-06 | Installed fresh-process reproduce reruns trusted checks | `candidate-offline.test.ts` + `install-smoke.sh` |
+| CO-07 | Mutating candidate/bindings/profile/record/marker cannot stale-succeed; profile digest covers trusted invocation plus candidate-document limits | same |
+| CO-08 | `implementationRevision` is not a relabeled package version | same + observed-fixture tests |
+| CO-09 | Reproducible synthetic Git base from the recorded recipe | same |
+| CO-10 | Compiler cold path does not load the candidate workflow | isolation tests |
 
 ## Failure / blocked cases (documentation and publication)
 

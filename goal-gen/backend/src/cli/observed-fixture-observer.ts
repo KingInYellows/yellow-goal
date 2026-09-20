@@ -14,7 +14,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { MUTATED_CANDIDATE_REASON } from './acceptance-evidence';
 import { OBSERVER_OUTPUT_LIMIT, observerToolPath, runBoundedArgv } from './observed-fixture-child';
-import type { ObservedCheckSpec, ObservedFixtureProfile, ObservedFixtureVariant } from './observed-fixture-profiles';
+import type { ObservedCheckSpec, ObservedFixtureVariant } from './observed-fixture-profiles';
+
+export const REPRODUCIBLE_GIT_DATE = '1970-01-01T00:00:00+0000';
+export const REPRODUCIBLE_COMMIT_MESSAGE = 'observed-fixture-base';
+
+export type ObservableProfile = {
+  timeoutMs: number;
+  checks: ObservedCheckSpec[];
+  baseFiles: Record<string, string>;
+};
 
 export type ObservedCheckOutcome = {
   id: string;
@@ -30,6 +39,8 @@ export type ObservedCheckOutcome = {
   outputTruncated?: boolean;
   rawExitStatus?: number;
   rawSignal?: string;
+  stdout?: string;
+  stderr?: string;
 };
 
 export type ObservationFault = {
@@ -75,6 +86,8 @@ function gitEnv(home: string): NodeJS.ProcessEnv {
     GIT_AUTHOR_EMAIL: 'observed-fixture@invalid',
     GIT_COMMITTER_NAME: 'observed-fixture',
     GIT_COMMITTER_EMAIL: 'observed-fixture@invalid',
+    GIT_AUTHOR_DATE: REPRODUCIBLE_GIT_DATE,
+    GIT_COMMITTER_DATE: REPRODUCIBLE_GIT_DATE,
     GOAL_GEN_DISPOSABLE_OBSERVER: '1',
   };
 }
@@ -247,7 +260,7 @@ function notRunRow(spec: ObservedCheckSpec, reason: string): ObservedCheckOutcom
 }
 
 export async function observeFixture(
-  profile: ObservedFixtureProfile,
+  profile: ObservableProfile,
   variant: ObservedFixtureVariant,
 ): Promise<ObservationResult> {
   const cleanupDir = await mkdtemp(path.join(tmpdir(), 'observed-fixture-'));
@@ -270,7 +283,7 @@ export async function observeFixture(
     git(repo, ['init', '-q', '--initial-branch=main'], env);
     writeFiles(repo, profile.baseFiles);
     git(repo, ['add', '-A'], env);
-    git(repo, ['commit', '-qm', 'observed-fixture-base'], env);
+    git(repo, ['commit', '-qm', REPRODUCIBLE_COMMIT_MESSAGE], env);
     const baseRevision = git(repo, ['rev-parse', 'HEAD'], env);
     writeFiles(repo, variant.files);
     writeSymlinks(repo, variant.symlinks);
@@ -388,6 +401,8 @@ async function runOneCheck(
     outputTruncated: truncated || undefined,
     rawExitStatus: run.exitStatus,
     rawSignal: run.signal,
+    stdout: run.stdout === '' ? undefined : run.stdout,
+    stderr: run.stderr === '' ? undefined : run.stderr,
   };
 
   if (leftover || mutatedTrees) {
@@ -425,6 +440,8 @@ async function runOneCheck(
       preCheckTree,
       postCheckTree,
       exitStatus: 0,
+      stdout: run.stdout === '' ? undefined : run.stdout,
+      stderr: run.stderr === '' ? undefined : run.stderr,
     };
   }
   return {
@@ -435,6 +452,8 @@ async function runOneCheck(
     preCheckTree,
     postCheckTree,
     exitStatus: run.exitStatus ?? 1,
+    stdout: run.stdout === '' ? undefined : run.stdout,
+    stderr: run.stderr === '' ? undefined : run.stderr,
   };
 }
 

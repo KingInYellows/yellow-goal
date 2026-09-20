@@ -59,11 +59,14 @@ function omitUndefined<T extends Record<string, unknown>>(row: T): T {
   return Object.fromEntries(entries) as T;
 }
 
-function buildRecorderFixture(profile: ObservedFixtureProfile, observation: {
-  baseRevision: string;
-  candidateTree: string;
-  checks: ObservedCheckOutcome[];
-}): Record<string, unknown> {
+export function buildRecorderFixture(
+  profile: { checks: Array<{ id: string; command: string; cwd: string }> },
+  observation: {
+    baseRevision: string;
+    candidateTree: string;
+    checks: ObservedCheckOutcome[];
+  },
+): Record<string, unknown> {
   const identity = { kind: 'tree' as const, value: observation.candidateTree };
   return {
     schemaVersion: AcceptanceEvidenceSchemaVersion,
@@ -92,7 +95,7 @@ function buildRecorderFixture(profile: ObservedFixtureProfile, observation: {
   };
 }
 
-function recorderRepresentable(checks: ObservedCheckOutcome[]): boolean {
+export function recorderRepresentable(checks: ObservedCheckOutcome[]): boolean {
   return checks.every((row) => {
     if (row.deadlineExceeded === true && row.rawExitStatus !== undefined && row.signal === undefined) {
       return false;
@@ -115,7 +118,7 @@ function writeSentinel(dir: string, name: string, marker: string): void {
   chmodSync(path.join(dir, name), 0o755);
 }
 
-async function invokeInstalledRecorder(
+export async function invokeInstalledRecorder(
   fixture: Record<string, unknown>,
 ): Promise<RecorderInvocation> {
   const work = await mkdtemp(path.join(tmpdir(), 'observed-recorder-'));

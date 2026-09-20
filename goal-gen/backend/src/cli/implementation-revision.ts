@@ -85,7 +85,9 @@ export function trustedCheckerIdentity(check: TrustedCheckInput): TrustedChecker
  * CLI boundary (`bin/goal-gen.mjs`, `index.ts`, `direct-invocation.ts`,
  * `commands.ts`, `errors.ts`). `direct-invocation.ts` is the load-time gate
  * that decides whether `index.ts` runs `main()`; a change there can skip or
- * double-invoke dispatch without a version bump. Do not expand this list for
+ * double-invoke dispatch without a version bump. Candidate-offline command,
+ * bundle, decider, and profile modules are hashed because they change
+ * recorder/dispatch/check identity for that verb. Do not expand this list for
  * unrelated imports. Runtime and npm dependency trees are labeled by
  * `packageVersion()` and `runtimeLabel()`, not this digest. Checker identity
  * is `trustedCheckerIdentity()`, not argv paths. Do not hash the unrelated tree.
@@ -104,6 +106,10 @@ export const ENGINE_SOURCES = [
   'backend/src/cli/observed-fixture-profiles.ts',
   'backend/src/cli/acceptance-record-command.ts',
   'backend/src/cli/acceptance-evidence.ts',
+  'backend/src/cli/candidate-offline-command.ts',
+  'backend/src/cli/candidate-offline-bundle.ts',
+  'backend/src/cli/candidate-offline-decider.ts',
+  'backend/src/cli/candidate-offline-profiles.ts',
 ] as const;
 
 export function engineSourceDigest(): string {

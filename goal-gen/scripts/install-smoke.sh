@@ -141,7 +141,7 @@ caps="$("$bin" capabilities --json)"
 node -e '
 const o = JSON.parse(process.argv[1]);
 const ops = o.operations;
-if (!Array.isArray(ops) || ops.includes("acceptance") || ops.includes("acceptance.record") || ops.includes("acceptance.verify-fixture")) {
+if (!Array.isArray(ops) || ops.includes("acceptance") || ops.includes("acceptance.record") || ops.includes("acceptance.verify-fixture") || ops.includes("acceptance.verify-candidate") || ops.includes("acceptance.reproduce")) {
   throw new Error("Protocol v1 operations must not advertise acceptance verbs: " + process.argv[1]);
 }
 const expected = ["capabilities", "request.create", "request.validate", "run", "version"];
@@ -190,7 +190,82 @@ if [ "$code" -ne 2 ]; then
 fi
 node -e "const o=JSON.parse(process.argv[1]); if(o.error.code!=='USAGE_ERROR') throw new Error('expected USAGE_ERROR, got: '+process.argv[1])" "$err"
 
-# 10. Read-only proof: the target repository is untouched.
+# 10. Candidate-bound offline milestone through the installed bin: FILE-CONTENT
+# candidate, durable bundle, move, fresh reproduce. Protocol v1 stays unchanged.
+cand="$workdir/candidate-offline"
+mkdir -p "$cand"
+node -e '
+const fs = require("fs");
+const alpha = {
+  schemaVersion: "yellow-goal/candidate-file-content/v1",
+  files: {
+    "site.json": "{\"host\":\"alpha.test\",\"retries\":2,\"mode\":\"offline\"}\n",
+    SITE: "alpha.test\n"
+  }
+};
+const beta = {
+  schemaVersion: "yellow-goal/candidate-file-content/v1",
+  files: {
+    "site.json": "{\"host\":\"beta.example\",\"retries\":5,\"mode\":\"offline\"}\n",
+    SITE: "beta.example\n"
+  }
+};
+fs.writeFileSync(process.argv[1], JSON.stringify(alpha) + "\n");
+fs.writeFileSync(process.argv[2], JSON.stringify(beta) + "\n");
+' "$cand/alpha.json" "$cand/beta.json"
+bundle="$workdir/offline-bundle"
+out="$("$bin" acceptance verify-candidate config-repair "$cand/alpha.json" --json --bundle-dir "$bundle")"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.schemaVersion !== "yellow-goal/candidate-offline-milestone/v1") {
+  throw new Error("unexpected schemaVersion: " + process.argv[1]);
+}
+if (o.decision.accepted !== true) throw new Error("alpha candidate must be accepted: " + process.argv[1]);
+if (!/^goal-gen@0\.2\.0#[0-9a-f]{64}$/.test(o.implementationRevision)) {
+  throw new Error("implementationRevision must not be a relabeled package version: " + process.argv[1]);
+}
+if (!o.recorder || o.recorder.record.status !== "passed") {
+  throw new Error("alpha must write a passed record: " + process.argv[1]);
+}
+' "$out"
+test -f "$bundle/COMPLETE"
+out="$("$bin" acceptance verify-candidate config-repair "$cand/beta.json" --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.decision.accepted !== true) throw new Error("beta candidate must be accepted: " + process.argv[1]);
+' "$out"
+moved="$workdir/moved-offline-bundle"
+mv "$bundle" "$moved"
+rm -rf "$cand"
+out="$("$bin" acceptance reproduce "$moved" --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.decision.accepted !== true) throw new Error("reproduce after move must still accept: " + process.argv[1]);
+if (!o.outcomes || o.outcomes.some((row) => row.status !== "passed")) {
+  throw new Error("reproduce must rerun trusted checks: " + process.argv[1]);
+}
+' "$out"
+rm -f "$moved/COMPLETE"
+set +e
+err="$("$bin" acceptance reproduce "$moved" 2>&1 >/dev/null)"
+code=$?
+set -e
+if [ "$code" -ne 1 ]; then
+  echo "expected exit 1 for incomplete bundle reproduce, got $code" >&2
+  exit 1
+fi
+node -e "const o=JSON.parse(process.argv[1]); if(o.error.code!=='BUNDLE_INCOMPLETE') throw new Error('expected BUNDLE_INCOMPLETE, got: '+process.argv[1])" "$err"
+
+out="$("$bin" acceptance verify-fixture timeout-ignore case --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.decision.accepted !== false) throw new Error("timeout-ignore must not be accepted");
+if (!o.outcomes || o.outcomes[0].signal !== "SIGKILL") {
+  throw new Error("timeout-ignore must record SIGKILL: " + process.argv[1]);
+}
+' "$out"
+
+# 11. Read-only proof: the target repository is untouched.
 status="$(git -C "$target" status --porcelain)"
 if [ -n "$status" ]; then
   echo "target repository mutated during smoke:" >&2

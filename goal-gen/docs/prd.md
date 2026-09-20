@@ -176,10 +176,12 @@ Phasing (see [ADR-0018](decisions/0018-verified-single-milestone-execution.md) a
 
 1. **Documentation (landed in #34):** PRD FR-14–FR-17, proposed ADR-0018, VS-01–VS-07
    spec. No executable harness path yet.
-2. **First code increment (next, not authorized here):** fixture-only acceptance-evidence
-   recording through an existing engine process seam; disposable git fixture; deterministic
-   local checks only.
-3. **Still deferred:** live target-bound execution, Protocol v1 real-run capabilities,
+2. **Fixture recorder (landed in #36) and observed fixture verification (landed in #37):**
+   git-free JSON recording plus engine-owned disposable-repo observation. Not live execution.
+3. **Candidate-bound offline milestone (this increment):** FILE-CONTENT candidate path,
+   durable bundle, installed fresh-process replay of trusted checks. Not verified
+   single-milestone execution completed.
+4. **Still deferred:** live target-bound execution, Protocol v1 real-run capabilities,
    promoting scratch/`bypassPermissions` as an approved executor, and host/provider
    integration semantics (yellow-plugins). Provider Protocol v1 remains stub-only today
    (ADR-0017).

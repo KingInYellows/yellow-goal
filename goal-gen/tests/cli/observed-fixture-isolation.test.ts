@@ -18,9 +18,10 @@ const forbiddenModules = [
 const observerCommand = '../../backend/src/cli/observed-fixture-command';
 const observer = '../../backend/src/cli/observed-fixture-observer';
 const recorderCommand = '../../backend/src/cli/acceptance-record-command';
+const candidateCommand = '../../backend/src/cli/candidate-offline-command';
 
 afterEach(() => {
-  for (const modulePath of [...forbiddenModules, observerCommand, observer, recorderCommand]) {
+  for (const modulePath of [...forbiddenModules, observerCommand, observer, recorderCommand, candidateCommand]) {
     vi.doUnmock(modulePath);
   }
   vi.resetModules();
@@ -35,6 +36,9 @@ describe('observed fixture isolation (OF-11)', () => {
     });
     vi.doMock(observer, () => {
       throw new Error('unexpected observer import');
+    });
+    vi.doMock(candidateCommand, () => {
+      throw new Error('unexpected candidate-offline import');
     });
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -114,5 +118,46 @@ describe('observed fixture isolation (OF-11)', () => {
     expect(stderr.mock.calls).toHaveLength(0);
     stdout.mockRestore();
     stderr.mockRestore();
+  });
+});
+
+describe('candidate-offline isolation (CO-10)', () => {
+  it('candidate-offline sources do not load run-command', () => {
+    const commandFile = path.join(packageRoot, 'backend/src/cli/candidate-offline-command.ts');
+    const source = readFileSync(commandFile, 'utf8');
+    expect(source).not.toMatch(/from ['"]\.\/run-command['"]/);
+  });
+
+  it('acceptance verify-candidate does not load run-command or executor modules', async () => {
+    vi.resetModules();
+    for (const modulePath of forbiddenModules) {
+      vi.doMock(modulePath, () => {
+        throw new Error(`unexpected execution import: ${modulePath}`);
+      });
+    }
+    const dir = await mkdtemp(path.join(tmpdir(), 'candidate-iso-'));
+    try {
+      const candidatePath = path.join(dir, 'alpha.json');
+      await writeFile(
+        candidatePath,
+        JSON.stringify({
+          schemaVersion: 'yellow-goal/candidate-file-content/v1',
+          files: {
+            'site.json': '{"host":"alpha.test","retries":2,"mode":"offline"}\n',
+            SITE: 'alpha.test\n',
+          },
+        }),
+        'utf8',
+      );
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const { main } = await import('../../backend/src/cli/index');
+      expect(await main(['acceptance', 'verify-candidate', 'config-repair', candidatePath, '--json'])).toBe(0);
+      expect(stderr.mock.calls).toHaveLength(0);
+      stdout.mockRestore();
+      stderr.mockRestore();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -87,6 +87,8 @@ describe('CLI dispatcher', () => {
     expect(parsed.error.code).toBe('USAGE_ERROR');
     expect(parsed.error.message).toContain('record');
     expect(parsed.error.message).toContain('verify-fixture');
+    expect(parsed.error.message).toContain('verify-candidate');
+    expect(parsed.error.message).toContain('reproduce');
     expect(stdoutText()).toBe('');
   });
 

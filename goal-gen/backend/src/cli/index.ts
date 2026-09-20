@@ -6,7 +6,8 @@
  * <request>`, `compile <request>`, `packet verify <path>`, `run <request>` (RR11),
  * `version` (RR17, identity probe only), `acceptance record <fixture.json>` (VS spec
  * fixture-only recorder), `acceptance verify-fixture <profile-id> <variant-id>` (VS spec
- * observed fixture verification). `--json`
+ * observed fixture verification), `acceptance verify-candidate <profile-id> <candidate.json>`
+ * and `acceptance reproduce <bundle-dir>` (candidate-bound offline milestone). `--json`
  * selects machine-readable stdout for successful command output; failures are always a
  * single-line structured JSON object on stderr with a nonzero exit code, `--json` or not, so
  * scripts can rely on it either way. `run` streams run-event/v1 JSON Lines on stdout instead of
@@ -104,8 +105,18 @@ async function dispatch(argv: string[]): Promise<number> {
         writeSuccess(await runObservedFixtureVerify(subRest));
         return 0;
       }
+      if (sub === 'verify-candidate') {
+        const { runCandidateOfflineVerify } = await import('./candidate-offline-command');
+        writeSuccess(await runCandidateOfflineVerify(subRest));
+        return 0;
+      }
+      if (sub === 'reproduce') {
+        const { runCandidateOfflineReproduce } = await import('./candidate-offline-command');
+        writeSuccess(await runCandidateOfflineReproduce(subRest));
+        return 0;
+      }
       throw new CliUsageError(
-        `unknown 'acceptance' subcommand: ${sub ?? '(none)'} (expected record|verify-fixture)`,
+        `unknown 'acceptance' subcommand: ${sub ?? '(none)'} (expected record|verify-fixture|verify-candidate|reproduce)`,
       );
     }
     case 'inspect':
