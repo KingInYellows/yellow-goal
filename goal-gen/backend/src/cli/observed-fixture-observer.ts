@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import {
   lstatSync,
   mkdirSync,
@@ -13,6 +13,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { MUTATED_CANDIDATE_REASON } from './acceptance-evidence';
+import { OBSERVER_OUTPUT_LIMIT, observerToolPath, runBoundedArgv } from './observed-fixture-child';
 import type { ObservedCheckSpec, ObservedFixtureProfile, ObservedFixtureVariant } from './observed-fixture-profiles';
 
 export type ObservedCheckOutcome = {
@@ -25,6 +26,10 @@ export type ObservedCheckOutcome = {
   reason?: string;
   preCheckTree?: string;
   postCheckTree?: string;
+  deadlineExceeded?: boolean;
+  outputTruncated?: boolean;
+  rawExitStatus?: number;
+  rawSignal?: string;
 };
 
 export type ObservationFault = {
@@ -44,21 +49,34 @@ export type ObservationResult = {
 };
 
 function gitEnv(home: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
+  mkdirSync(home, { recursive: true });
+  writeFileSync(
+    path.join(home, '.gitconfig'),
+    [
+      '[user]',
+      '\tname = observed-fixture',
+      '\temail = observed-fixture@invalid',
+      '[commit]',
+      '\tgpgsign = false',
+      '[init]',
+      '\tdefaultBranch = main',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  return {
     HOME: home,
+    TMPDIR: home,
+    PATH: observerToolPath(),
+    LANG: 'C',
     GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig'),
     GIT_AUTHOR_NAME: 'observed-fixture',
     GIT_AUTHOR_EMAIL: 'observed-fixture@invalid',
     GIT_COMMITTER_NAME: 'observed-fixture',
     GIT_COMMITTER_EMAIL: 'observed-fixture@invalid',
+    GOAL_GEN_DISPOSABLE_OBSERVER: '1',
   };
-  delete env.GIT_DIR;
-  delete env.GIT_WORK_TREE;
-  delete env.GIT_INDEX_FILE;
-  delete env.GIT_OBJECT_DIRECTORY;
-  delete env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
-  return env;
 }
 
 function git(repo: string, args: string[], env: NodeJS.ProcessEnv, extra?: NodeJS.ProcessEnv): string {
@@ -218,47 +236,14 @@ function measureTree(repo: string, env: NodeJS.ProcessEnv): string {
   }
 }
 
-function runArgv(
-  argv: string[],
-  cwd: string,
-  timeoutMs: number,
-  env: NodeJS.ProcessEnv,
-): Promise<{ exitStatus?: number; signal?: string; timedOut: boolean }> {
-  return new Promise((resolve, reject) => {
-    if (argv.length === 0) {
-      reject(new Error('empty argv'));
-      return;
-    }
-    const child = spawn(argv[0]!, argv.slice(1), {
-      cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => {
-        if (!child.killed) child.kill('SIGKILL');
-      }, 100);
-    }, timeoutMs);
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      // Wait for the child to actually exit so post-check measurement sees the
-      // leftover tree. A later normal exit (hang traps SIGTERM then exits 0)
-      // must not rewrite a timeout into passed/failed.
-      if (timedOut) {
-        resolve({ timedOut: true, signal: signal ?? 'SIGTERM' });
-        return;
-      }
-      if (signal) resolve({ timedOut: false, signal });
-      else resolve({ timedOut: false, exitStatus: code ?? 1 });
-    });
-  });
+function notRunRow(spec: ObservedCheckSpec, reason: string): ObservedCheckOutcome {
+  return {
+    id: spec.id,
+    command: spec.command,
+    cwd: spec.cwd,
+    status: 'not-run',
+    reason,
+  };
 }
 
 export async function observeFixture(
@@ -282,7 +267,6 @@ export async function observeFixture(
     mkdirSync(repo);
     mkdirSync(home);
     const env = gitEnv(home);
-    env.TMPDIR = home;
     git(repo, ['init', '-q', '--initial-branch=main'], env);
     writeFiles(repo, profile.baseFiles);
     git(repo, ['add', '-A'], env);
@@ -317,11 +301,21 @@ export async function observeFixture(
       .stdout ?? '';
 
     const checks: ObservedCheckOutcome[] = [];
+    let stopped = false;
+    let stopReason = '';
     for (const spec of profile.checks) {
-      const outcome = await runOneCheck(repo, env, spec, candidateTree, profile.timeoutMs);
+      if (stopped) {
+        checks.push(notRunRow(spec, `never-launched: ${stopReason}`));
+        continue;
+      }
+      const outcome = await runOneCheck(repo, cleanupDir, env, spec, candidateTree, profile.timeoutMs);
       checks.push(outcome);
       if (outcome.status === 'blocked' && outcome.reason === MUTATED_CANDIDATE_REASON) {
-        break;
+        stopped = true;
+        stopReason = 'stopped after leftover mutation';
+      } else if (outcome.status === 'not-run') {
+        stopped = true;
+        stopReason = 'stopped after a check could not be launched';
       }
     }
     return { repo, cleanupDir, baseRevision, candidateTree, diff, overlay, checks, faults: [] };
@@ -335,6 +329,7 @@ export async function observeFixture(
 
 async function runOneCheck(
   repo: string,
+  cleanupDir: string,
   env: NodeJS.ProcessEnv,
   spec: ObservedCheckSpec,
   candidateTree: string,
@@ -345,30 +340,31 @@ async function runOneCheck(
   try {
     preCheckTree = measureTree(repo, env);
   } catch (err) {
+    return notRunRow(spec, `never-launched: pre-measurement failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (preCheckTree !== candidateTree) {
     return {
       id: spec.id,
       command: spec.command,
       cwd: spec.cwd,
       status: 'blocked',
-      reason: err instanceof Error ? err.message : String(err),
+      preCheckTree,
+      reason: 'preCheckTree does not equal candidateTree',
     };
   }
-  const launched: ObservedCheckOutcome = {
-    id: spec.id,
-    command: spec.command,
-    cwd: spec.cwd,
-    status: 'blocked',
-    preCheckTree,
-  };
-  if (preCheckTree !== candidateTree) {
-    return { ...launched, reason: 'preCheckTree does not equal candidateTree' };
-  }
 
-  let run: { exitStatus?: number; signal?: string; timedOut: boolean };
-  try {
-    run = await runArgv(spec.argv, cwd, timeoutMs, env);
-  } catch (err) {
-    return { ...launched, reason: err instanceof Error ? err.message : String(err) };
+  const readyPath = spec.awaitReady === true ? path.join(cleanupDir, `ready-${spec.id}`) : undefined;
+  const run = await runBoundedArgv({
+    argv: spec.argv,
+    cwd,
+    env,
+    timeoutMs,
+    outputLimit: OBSERVER_OUTPUT_LIMIT,
+    readyPath,
+    startupReadyMs: spec.awaitReadyMs,
+  });
+  if (run.spawnError !== undefined) {
+    return notRunRow(spec, `never-launched: spawn failed: ${run.spawnError}`);
   }
 
   let postCheckTree: string | undefined;
@@ -380,28 +376,66 @@ async function runOneCheck(
 
   const leftover = leftoverMutationReason(repo, env);
   const mutatedTrees = postCheckTree !== undefined && postCheckTree !== preCheckTree;
+  const truncated = run.stdoutTruncated || run.stderrTruncated;
+  const launched: ObservedCheckOutcome = {
+    id: spec.id,
+    command: spec.command,
+    cwd: spec.cwd,
+    status: 'blocked',
+    preCheckTree,
+    postCheckTree,
+    deadlineExceeded: run.timedOut && !run.readyFailed ? true : undefined,
+    outputTruncated: truncated || undefined,
+    rawExitStatus: run.exitStatus,
+    rawSignal: run.signal,
+  };
+
   if (leftover || mutatedTrees) {
-    const blocked: ObservedCheckOutcome = {
-      ...launched,
-      status: 'blocked',
-      postCheckTree,
-      reason: MUTATED_CANDIDATE_REASON,
-    };
-    if (run.timedOut || run.signal) blocked.signal = run.signal ?? 'SIGTERM';
+    const blocked: ObservedCheckOutcome = { ...launched, reason: MUTATED_CANDIDATE_REASON };
+    if (run.signal !== undefined) blocked.signal = run.signal;
     else if (typeof run.exitStatus === 'number') blocked.exitStatus = run.exitStatus;
-    if (blocked.signal !== undefined && blocked.exitStatus !== undefined) {
-      delete blocked.exitStatus;
-    }
     return blocked;
   }
 
-  if (run.timedOut || run.signal) {
-    return { ...launched, status: 'blocked', postCheckTree, signal: run.signal ?? 'SIGTERM', reason: 'killed by timeout' };
+  if (run.readyFailed) {
+    const blocked: ObservedCheckOutcome = { ...launched, reason: 'readiness-failed' };
+    if (run.signal !== undefined) blocked.signal = run.signal;
+    return blocked;
+  }
+  if (run.timedOut) {
+    const blocked: ObservedCheckOutcome = { ...launched, reason: 'deadline-exceeded' };
+    if (run.signal !== undefined) blocked.signal = run.signal;
+    return blocked;
+  }
+  if (run.signal !== undefined) {
+    return { ...launched, signal: run.signal, reason: `killed by ${run.signal}` };
+  }
+  if (truncated) {
+    return { ...launched, reason: 'output-truncated' };
+  }
+  if (postCheckTree === undefined) {
+    return { ...launched, reason: 'missing post-check measurement' };
   }
   if (run.exitStatus === 0) {
-    return { ...launched, status: 'passed', postCheckTree, exitStatus: 0 };
+    return {
+      id: spec.id,
+      command: spec.command,
+      cwd: spec.cwd,
+      status: 'passed',
+      preCheckTree,
+      postCheckTree,
+      exitStatus: 0,
+    };
   }
-  return { ...launched, status: 'failed', postCheckTree, exitStatus: run.exitStatus ?? 1 };
+  return {
+    id: spec.id,
+    command: spec.command,
+    cwd: spec.cwd,
+    status: 'failed',
+    preCheckTree,
+    postCheckTree,
+    exitStatus: run.exitStatus ?? 1,
+  };
 }
 
 export async function removeObservationRepo(repo: string): Promise<void> {

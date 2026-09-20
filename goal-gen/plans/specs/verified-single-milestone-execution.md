@@ -770,8 +770,8 @@ Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`.
 
 | Property | Contract |
 |---|---|
-| stdout | One JSON bundle `yellow-goal/observed-fixture-verification/v1` when the workflow finishes (affirmative **or** negative decision). Empty on usage/I/O failure. |
-| stderr | Structured `{"error":{"code","message"}}` on usage (exit 2) or I/O/unexpected (exit 1) only. Empty when a bundle is written. |
+| stdout | One JSON bundle `yellow-goal/observed-fixture-verification/v1` when the workflow finishes (affirmative **or** negative decision). Empty on usage/I/O failure, including a signaled recorder. |
+| stderr | Structured `{"error":{"code","message"}}` on usage (exit 2) or I/O/unexpected (exit 1) only. Empty when a bundle is written. `RECORDER_INVOKE_FAILED` is exit 1. |
 | Recorder | Child process: `goal-gen acceptance record <fixture.json> --json` via `bin/goal-gen.mjs`. The workflow does **not** import the recorder. |
 | Exit 0 | Bundle written. Includes valid negative records and `accepted: false`. |
 | Exit 1 | No bundle: I/O or unexpected infrastructure failure. |
@@ -783,10 +783,12 @@ There is **no** `--fixture`, `observed:true`, or imported-JSON authorization rou
 
 - **Engine-owned:** profile, argv, timeout, approved overlay, check implementations.
 - **Candidate-writable:** disposable working tree only.
-- **Observer** measures trees (temporary index, isolated object store, `git add -A --force`), keeps the real index clean, rejects escaping symlinks / empty directories / nested `.git` / dirty submodules **before** measurement, and re-verifies those after every launched check.
-- **Recorder** stays git-free and command-free. The child is given a PATH trap so a regression that shells out to `git` or the fixture `command` string fails the sentinel.
+- **Observer** measures trees (temporary index, isolated object store, `git add -A --force`), keeps the real index clean, rejects escaping symlinks / empty directories / nested `.git` / dirty submodules **before** measurement, and re-verifies those after every launched check. Check subprocesses use a **minimal deliberate env** (controlled `HOME`/`TMPDIR`/`PATH` of explicit tool dirs, `GIT_CONFIG_GLOBAL` + `GIT_CONFIG_NOSYSTEM`, synthetic `GOAL_GEN_DISPOSABLE_OBSERVER` only). Host env is not copied. Disposable `HOME` is not a network sandbox.
+- **Observer child lifecycle:** drain stdout/stderr with an **encoded-byte** bound (UTF-8 `StringDecoder`, including sequences split across chunks); stop collecting once the bound is hit. Escalate SIGTERM → SIGKILL based on **completion**, not `child.killed` (delivery ≠ exit); preserve the actual close `signal`/`exitStatus` plus independent `deadlineExceeded`. Do not substitute `signal ?? 'SIGTERM'`. On supported POSIX platforms, spawn the owned child in its own process group and kill that group (then destroy the parent's pipe ends) so a descendant that inherits stdout/stderr cannot hang `close`. Do not signal unrelated process groups. Timeout fixtures signal readiness (via `GOAL_GEN_OBSERVER_READY`, a file **outside** the measured tree) after installing handlers; the behavioral deadline starts only then, so Node startup cannot consume the 200 ms bound. If readiness never arrives, or the owned child exits before the ready file exists, record `readiness-failed` with the actual close status and do not treat that exit as passed. Readiness-budget expiry is not an execution deadline: do not set `deadlineExceeded`. Latch a `waitForReadyFile` `timeout` result; a ready marker that appears afterwards must not drop `readiness-failed` or turn the kill into an ordinary signal. A late poll after the readiness budget has elapsed is `timeout` even if the marker is present on that tick; evaluate elapsed time before accepting the marker. Kill the owned tree when it is still running. `timeout-probe` exits 0 **synchronously** in its SIGTERM handler so the 250 ms SIGKILL grace cannot win a deferred-exit race. Cancellation of `runBoundedArgv` uses the same owned-tree kill path and does not invent an exit code.
+- **Recorder** stays git-free and command-free. The child is given a PATH trap so a regression that shells out to `git` or the fixture `command` string fails the sentinel; the workflow asserts those marker files were **not** created. Recorder stdout/stderr is size- and deadline-bounded. A recorder that dies on a signal or otherwise lacks a numeric `exitStatus` is `RECORDER_INVOKE_FAILED`: structured stderr, workflow exit 1, **no** fabricated `recorder.exit` and **no** verify-fixture bundle. Honest numeric recorder exit 1 remains a negative bundle with workflow exit 0. Invocation tempdir cleanup covers setup failure.
 - **Decider** reads the observer's provenance plus the recorder subprocess result. Hand-authored all-passed JSON may be valid **recorder** input and still cannot produce an affirmative decision from this verb.
-- Observation faults (precondition violation, measurement abort, spawn failure) are workflow blockers: `accepted: false`, recorder not invoked, **no** invented recorder fields.
+- `implementationRevision` is `goal-gen@<package-version>#<sha256>` over engine sources (executed CLI boundary `bin/goal-gen.mjs` / `index.ts` / `direct-invocation.ts` / `commands.ts` / `errors.ts`, plus observer/recorder/profile-policy modules — not the unrelated tree or unrelated CLI imports) plus a portable profile digest of logical checker identities (script basename, extra argv, readiness, checker bytes), `approvedFiles`, and profile policy — not `process.execPath` or install-directory prefixes. Node/runtime versions are recorded separately as a label, not hashed into that identity. The entry-script guard is hashed because it can skip or double-invoke `main()` without a version bump.
+- Observation faults (precondition violation, measurement abort of the **candidate identity**) are workflow blockers: `accepted: false`, recorder not invoked, **no** invented recorder fields. Per-check spawn or pre-measurement failure **after** that candidate tree was measured is not an observation fault: it produces honest `not-run` rows (later checks `not-run`); the recorder is invoked when the fixture is otherwise representable.
 
 ### Outcome table
 
@@ -795,11 +797,18 @@ There is **no** `--fixture`, `observed:true`, or imported-JSON authorization rou
 | Failing baseline (required check nonzero, no leftover mutation) | real failed row | record written, aggregate `failed`, exit 0 | `accepted: false` | 0 |
 | Approved/correct candidate, all required checks pass, no leftover mutation, overlay matches | real passed rows | record `passed`, exit 0 | `accepted: true` | 0 |
 | Incorrect candidate (real check fails) | real failed row | record `failed`, exit 0 | `accepted: false` | 0 |
-| Timeout / signal | launched, `blocked` + `signal`, no `exitStatus` even if the child later exits | record `blocked`, exit 0 | `accepted: false` | 0 |
+| Timeout that actually delivers SIGKILL/SIGTERM | launched, `blocked` + actual `signal`, no `exitStatus`, `deadlineExceeded` | record `blocked`, exit 0 | `accepted: false` | 0 |
+| Timeout then later normal exit (no actual signal) | launched, `blocked` + `reason: deadline-exceeded`, raw exit preserved on the bundle, **no invented `signal`** | **not invoked** (v1 cannot carry deadline + numeric exit honestly) | `accepted: false` | 0 |
+| Noisy output truncated | launched, `blocked` + `reason: output-truncated` | **not invoked** | `accepted: false` | 0 |
+| Spawn / pre-measurement failure of a required check | `not-run` (never launched); later checks `not-run`; candidate tree present | record `not-run`, exit 0 | `accepted: false` | 0 |
+| Readiness never signaled, including exit before the ready file | launched, `blocked` + `reason: readiness-failed`, actual close `signal`/`exitStatus`, **no** `deadlineExceeded` | record when representable; **not invoked** when the close is a numeric exit without a signal | `accepted: false` | 0 |
+| Owned descendant holds inherited pipes after the direct child exits | launched, bounded collection, owned process-group cleanup on supported platforms, actual close status (no invented `signal`) | same honesty rule as timeout / truncated | `accepted: false` | 0 |
+| Leftover mutation then remaining checks | completed row `blocked`; later rows `not-run` | record written when representable | `accepted: false` | 0 |
 | Leftover mutation (changed tree, empty dir, nested `.git`, dirty submodule) | `blocked` + `candidate mutated by check` | record `blocked`, exit 0 | `accepted: false` | 0 |
 | Observation fault (escaping symlink, empty dir / nested `.git` / dirty submodule **before** start, measurement abort) | no honest fixture | **not invoked** | `accepted: false` | 0 |
 | Hand-authored all-passed JSON | n/a | valid `acceptance record` input | cannot substitute for this verb | n/a |
 | Unknown profile/variant or imported JSON path | n/a | not invoked | no bundle | 2 |
+| Recorder killed by signal (or missing numeric exit) | observation complete | **not a recorder result** — throw `RECORDER_INVOKE_FAILED` | no bundle | 1 |
 
 ### Requirement-to-test mapping
 
@@ -809,13 +818,16 @@ There is **no** `--fixture`, `observed:true`, or imported-JSON authorization rou
 | OF-02 | Disposable repo only; argument-vector spawn; no shell interpolation | same |
 | OF-03 | Trees via temporary-index + isolated object store + `--force` | same |
 | OF-04 | Empty-dir / nested `.git` / escaping symlink / submodule re-verifies | same |
-| OF-05 | Timeout stays `blocked` even if the child later exits | same |
+| OF-05 | Timeout stays `blocked`; later exit 0 does not invent `SIGTERM`; SIGKILL is used when the child ignores SIGTERM | same |
 | OF-06 | Packed/installed `acceptance record` is a subprocess | `observed-fixture.test.ts` + `install-smoke.sh` |
 | OF-07 | Failing baseline, correct candidate, incorrect candidate from real observations | same |
 | OF-08 | Valid negative record is not acceptance | same |
 | OF-09 | Hand-authored all-passed JSON records but cannot authorize this workflow | same |
 | OF-10 | Observation fault does not invent recorder fields | same |
 | OF-11 | Compiler cold path does not load observer; observer does not load `run-command` | isolation tests |
+| OF-12 | Owned descendant pipe lifetime, readiness failure distinct from post-ready `deadlineExceeded`, latched readiness-budget timeout, cancellation, encoded-byte bounds | `observed-fixture.test.ts` + `observed-fixture-child.test.ts` |
+| OF-13 | `implementationRevision` covers recorder/validator/profile policy/trusted checkers plus executed CLI boundary including the entry-script guard; a recorder, checker, or boundary-source change changes identity; install path and Node executable do not; Node/runtime is a separate label | `observed-fixture.test.ts` |
+| OF-14 | Signaled recorder (no numeric exit) is `RECORDER_INVOKE_FAILED`; no bundle; CLI exit 1. Honest numeric recorder exit 1 still emits a negative bundle | `observed-fixture.test.ts` |
 
 ## Failure / blocked cases (documentation and publication)
 

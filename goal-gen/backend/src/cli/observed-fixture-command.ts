@@ -2,8 +2,7 @@
  * `acceptance verify-fixture <profile-id> <variant-id>` — observe a disposable
  * fixture, record through the installed `acceptance record` binary, decide.
  */
-import { spawn } from 'node:child_process';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,6 +13,8 @@ import {
   AcceptanceEvidenceSchemaVersion,
   type AcceptanceEvidenceRecord,
 } from './acceptance-evidence';
+import { implementationRevision, runtimeLabel } from './implementation-revision';
+import { RECORDER_OUTPUT_LIMIT, runBoundedArgv } from './observed-fixture-child';
 import { decideObservedFixture, type RecorderInvocation } from './observed-fixture-decider';
 import { observeFixture, removeObservationRepo, type ObservedCheckOutcome } from './observed-fixture-observer';
 import {
@@ -21,6 +22,7 @@ import {
   getObservedFixtureProfile,
   getObservedFixtureVariant,
   listObservedFixtureProfiles,
+  observedProfileDigest,
   type ObservedFixtureProfile,
 } from './observed-fixture-profiles';
 
@@ -28,6 +30,7 @@ export type ObservedFixtureBundle = {
   schemaVersion: typeof ObservedFixtureSchemaVersion;
   profile: { id: string; version: string };
   implementationRevision: string;
+  runtime: { node: string };
   identities: {
     baseRevision: string;
     candidateIdentity: { kind: 'tree'; value: string };
@@ -40,12 +43,6 @@ export type ObservedFixtureBundle = {
   decision: { accepted: boolean; reasons: string[] };
   reproduction: { argv: string[]; profileId: string; variantId: string };
 };
-
-function packageVersion(): string {
-  const pkgPath = fileURLToPath(new URL('../../../package.json', import.meta.url));
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version: string };
-  return pkg.version;
-}
 
 function goalGenBin(): string {
   return fileURLToPath(new URL('../../../bin/goal-gen.mjs', import.meta.url));
@@ -95,6 +92,21 @@ function buildRecorderFixture(profile: ObservedFixtureProfile, observation: {
   };
 }
 
+function recorderRepresentable(checks: ObservedCheckOutcome[]): boolean {
+  return checks.every((row) => {
+    if (row.deadlineExceeded === true && row.rawExitStatus !== undefined && row.signal === undefined) {
+      return false;
+    }
+    if (row.outputTruncated === true && typeof row.rawExitStatus === 'number' && row.signal === undefined) {
+      return false;
+    }
+    if (row.reason === 'readiness-failed' && row.rawExitStatus !== undefined && row.signal === undefined) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function writeSentinel(dir: string, name: string, marker: string): void {
   writeFileSync(path.join(dir, name), `#!/bin/sh\nprintf invoked > '${marker}'\nexit 97\n`, {
     encoding: 'utf8',
@@ -107,51 +119,70 @@ async function invokeInstalledRecorder(
   fixture: Record<string, unknown>,
 ): Promise<RecorderInvocation> {
   const work = await mkdtemp(path.join(tmpdir(), 'observed-recorder-'));
-  const fixturePath = path.join(work, 'fixture.json');
-  const sentinel = path.join(work, 'sentinel-bin');
-  mkdirSync(sentinel);
-  writeFileSync(fixturePath, `${JSON.stringify(fixture)}\n`, 'utf8');
-  writeSentinel(sentinel, 'git', path.join(work, 'git-invoked'));
-  const required = Array.isArray(fixture.requiredChecks) ? fixture.requiredChecks : [];
-  for (const entry of required) {
-    if (typeof entry !== 'object' || entry === null) continue;
-    const command = (entry as { command?: unknown }).command;
-    if (typeof command === 'string' && command.length > 0 && !command.includes('/')) {
-      writeSentinel(sentinel, command, path.join(work, `cmd-${command}-invoked`));
-    }
-  }
-  const bin = goalGenBin();
-  const env = { ...process.env, PATH: `${sentinel}:${process.env.PATH ?? ''}` };
   try {
-    const result = await new Promise<{ exit: number; stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn(process.execPath, [bin, 'acceptance', 'record', fixturePath, '--json'], {
-        env,
-        cwd: work,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString('utf8');
-      });
-      child.stderr.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString('utf8');
-      });
-      child.on('error', reject);
-      child.on('close', (code) => {
-        resolve({ exit: code ?? 1, stdout, stderr });
-      });
+    const fixturePath = path.join(work, 'fixture.json');
+    const sentinel = path.join(work, 'sentinel-bin');
+    mkdirSync(sentinel);
+    writeFileSync(fixturePath, `${JSON.stringify(fixture)}\n`, 'utf8');
+    const gitMarker = path.join(work, 'git-invoked');
+    writeSentinel(sentinel, 'git', gitMarker);
+    const commandMarkers: string[] = [];
+    const required = Array.isArray(fixture.requiredChecks) ? fixture.requiredChecks : [];
+    for (const entry of required) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const command = (entry as { command?: unknown }).command;
+      if (typeof command === 'string' && command.length > 0 && !command.includes('/')) {
+        const marker = path.join(work, `cmd-${command}-invoked`);
+        commandMarkers.push(marker);
+        writeSentinel(sentinel, command, marker);
+      }
+    }
+    const bin = goalGenBin();
+    const env = {
+      PATH: `${sentinel}${path.delimiter}${path.dirname(process.execPath)}`,
+      HOME: work,
+      TMPDIR: work,
+      LANG: 'C',
+      GOAL_GEN_DISPOSABLE_OBSERVER: '1',
+    };
+    const run = await runBoundedArgv({
+      argv: [process.execPath, bin, 'acceptance', 'record', fixturePath, '--json'],
+      cwd: work,
+      env,
+      timeoutMs: 20_000,
+      outputLimit: RECORDER_OUTPUT_LIMIT,
     });
+    if (run.spawnError !== undefined) {
+      throw new ObservedFixtureError('RECORDER_INVOKE_FAILED', run.spawnError);
+    }
+    if (run.timedOut || run.stdoutTruncated || run.stderrTruncated) {
+      throw new ObservedFixtureError(
+        'RECORDER_INVOKE_FAILED',
+        run.timedOut ? 'recorder subprocess exceeded deadline' : 'recorder subprocess output exceeded bound',
+      );
+    }
+    if (existsSync(gitMarker) || commandMarkers.some((marker) => existsSync(marker))) {
+      throw new ObservedFixtureError('RECORDER_INVOKE_FAILED', 'recorder invoked git or fixture command sentinel');
+    }
+    if (run.signal !== undefined || typeof run.exitStatus !== 'number') {
+      throw new ObservedFixtureError(
+        'RECORDER_INVOKE_FAILED',
+        run.signal !== undefined
+          ? `recorder subprocess killed by ${run.signal}`
+          : 'recorder subprocess exited without a numeric status',
+      );
+    }
     let record: AcceptanceEvidenceRecord | undefined;
-    if (result.exit === 0 && result.stdout.trim() !== '') {
+    if (run.exitStatus === 0 && run.stdout.trim() !== '') {
       try {
-        record = JSON.parse(result.stdout) as AcceptanceEvidenceRecord;
+        record = JSON.parse(run.stdout) as AcceptanceEvidenceRecord;
       } catch {
         record = undefined;
       }
     }
-    return { ...result, record };
+    return { exit: run.exitStatus, stdout: run.stdout, stderr: run.stderr, record };
   } catch (err) {
+    if (err instanceof ObservedFixtureError) throw err;
     throw new ObservedFixtureError(
       'RECORDER_INVOKE_FAILED',
       err instanceof Error ? err.message : String(err),
@@ -193,7 +224,12 @@ export async function runObservedFixtureVerify(argv: string[]): Promise<CommandO
   const observation = await observeFixture(profile, variant);
   try {
     let recorder: RecorderInvocation | undefined;
-    if (observation.faults.length === 0 && observation.candidateTree !== '' && observation.checks.length > 0) {
+    if (
+      observation.faults.length === 0 &&
+      observation.candidateTree !== '' &&
+      observation.checks.length > 0 &&
+      recorderRepresentable(observation.checks)
+    ) {
       recorder = await invokeInstalledRecorder(buildRecorderFixture(profile, observation));
     }
     const decision = decideObservedFixture({ profile, observation, recorder });
@@ -203,7 +239,8 @@ export async function runObservedFixtureVerify(argv: string[]): Promise<CommandO
       output: {
         schemaVersion: ObservedFixtureSchemaVersion,
         profile: { id: profile.id, version: profile.version },
-        implementationRevision: `goal-gen@${packageVersion()}+${profile.id}@${profile.version}`,
+        implementationRevision: implementationRevision(observedProfileDigest(profile)),
+        runtime: runtimeLabel(),
         identities: {
           baseRevision: observation.baseRevision,
           candidateIdentity: { kind: 'tree', value: candidateTree },

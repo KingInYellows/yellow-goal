@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
 
 process.on('SIGTERM', () => {
-  process.exit(0);
+  /* ignore termination so the observer must escalate to SIGKILL */
 });
 setInterval(() => {
   /* keep the event loop alive until killed */
