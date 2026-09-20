@@ -1,0 +1,137 @@
+goal-gen/schemas/app/model-role-binding.schema.json
+  s_6f4eaec029ade7::t_41dfde9ffeae17 1-32
+goal-gen/backend/src/contracts/repository-assessment.ts
+  s_6f4eaec029ade7::t_8cd529f2b16770 1-35
+goal-gen/schemas/vendored/repository-assessment.schema.json
+  s_6f4eaec029ade7::t_77c53aad2a9ee0 1-94
+goal-gen/schemas/app/external-research-record.schema.json
+  s_6f4eaec029ade7::t_d0b8b9c1f47607 1-56
+goal-gen/backend/src/intake/index.ts
+  s_6f4eaec029ade7::t_0834eba4f1fc1b 1-5
+goal-gen/tests/contracts/invariants.test.ts
+  s_6f4eaec029ade7::t_da22c7a0de96b1 1-93
+goal-gen/schemas/app/orchestration-profile.schema.json
+  s_6f4eaec029ade7::t_aba9253f76542f 1-87
+goal-gen/schemas/vendored/request.schema.json
+  s_6f4eaec029ade7::t_f0bfd15341ddff 1-126
+goal-gen/backend/src/contracts/orchestration-profile.ts
+  s_6f4eaec029ade7::t_922f747c988fb7 1-41
+goal-gen/backend/src/contracts/evidence-record.ts
+  s_6f4eaec029ade7::t_6882db20cd71de 1-48
+goal-gen/backend/src/contracts/repo-profile.ts
+  s_6f4eaec029ade7::t_79f86729e006a2 1-54
+goal-gen/schemas/app/validation-result.schema.json
+  s_6f4eaec029ade7::t_76e162a471b545 1-62
+goal-gen/backend/src/contracts/command-record.ts
+  s_6f4eaec029ade7::t_e6d765e384598c 1-39
+goal-gen/backend/src/contracts/milestone.ts
+  s_6f4eaec029ade7::t_5026e7edae893c 1-41
+goal-gen/schemas/vendored/repo-profile.schema.json
+  s_6f4eaec029ade7::t_caeca279a51b6d 1-164
+goal-gen/backend/src/contracts/orchestration.ts
+  s_6f4eaec029ade7::t_da5b618e91941e 1-49
+goal-gen/schemas/vendored/goal-resolution.schema.json
+  s_6f4eaec029ade7::t_85545107f20070 1-60
+goal-gen/schemas/README.md
+  s_6f4eaec029ade7::t_8132dee533f746 1-106
+goal-gen/backend/src/contracts/goal-resolution.ts
+  s_6f4eaec029ade7::t_3f9fd2f7e72c09 1-27
+goal-gen/policies/permission-profiles.json
+  s_6f4eaec029ade7::t_7eed7d481e6c72 1-38
+goal-gen/backend/src/contracts/model-role-binding.ts
+  s_6f4eaec029ade7::t_4e1606023d68fb 1-16
+goal-gen/backend/src/cli/types.ts
+  s_6f4eaec029ade7::t_5d1708fa938688 1-59
+goal-gen/schemas/vendored/finding.schema.json
+  s_6f4eaec029ade7::t_d6c5320ff39174 1-81
+goal-gen/tests/contracts/support/json-schema-checker.ts
+  s_6f4eaec029ade7::t_99e9c7e1aecfb8 1-185
+goal-gen/policies/protected-paths.json
+  s_6f4eaec029ade7::t_8cdf4df1036911 1-27
+goal-gen/schemas/app/final-handoff.schema.json
+  s_6f4eaec029ade7::t_bf4297d9393b95 1-52
+goal-gen/tests/intake/validate-request.test.ts
+  s_6f4eaec029ade7::t_d3b9d4ecb983e2 1-28
+goal-gen/backend/src/cli/index.ts
+  s_6f4eaec029ade7::t_7fa9827a4d7f48 1-115
+goal-gen/tests/intake/normalize-request.test.ts
+  s_6f4eaec029ade7::t_0d0b036c3bd0f7 1-119
+goal-gen/backend/src/intake/normalize-request.ts
+  s_6f4eaec029ade7::t_4be24db3a317a0 1-131
+goal-gen/schemas/vendored/run-event.schema.json
+  s_6f4eaec029ade7::t_cec4bbccaedab7 1-36
+goal-gen/backend/src/contracts/validation-result.ts
+  s_6f4eaec029ade7::t_6867fddc0db185 1-26
+goal-gen/schemas/vendored/evidence-record.schema.json
+  s_6f4eaec029ade7::t_dc326c746832cf 1-80
+goal-gen/backend/src/contracts/packet-manifest.ts
+  s_6f4eaec029ade7::t_70954d14f4bef3 1-55
+goal-gen/tests/intake/policies.test.ts
+  s_6f4eaec029ade7::t_b6cc152a4b0dd4 1-27
+goal-gen/backend/src/cli/errors.ts
+  s_6f4eaec029ade7::t_4be4b5e4bc57a5 1-20
+goal-gen/tests/contracts/support/samples.ts
+  s_6f4eaec029ade7::t_642a9089cfd084 1-253
+goal-gen/backend/src/contracts/final-handoff.ts
+  s_6f4eaec029ade7::t_65c4ff389913d3 1-41
+goal-gen/backend/src/contracts/finding.ts
+  s_6f4eaec029ade7::t_2bbd747ebdc36a 1-39
+goal-gen/backend/src/contracts/external-research-record.ts
+  s_6f4eaec029ade7::t_9d78748328a2b9 1-29
+goal-gen/backend/src/intake/errors.ts
+  s_6f4eaec029ade7::t_666980c49990ff 1-18
+goal-gen/tests/cli/dispatch.test.ts
+  s_6f4eaec029ade7::t_bf100d1bc07c27 24,28
+  s_6f4eaec029ade7::t_0522ed9266bbc2 1-23,25-27,29-120
+goal-gen/backend/src/contracts/index.ts
+  s_6f4eaec029ade7::t_4f5fdeaa25cb4a 1-23
+goal-gen/tests/contracts/json-schema-checker.test.ts
+  s_6f4eaec029ade7::t_05349bc438338d 1-96
+goal-gen/tests/contracts/support/load-schema.ts
+  s_6f4eaec029ade7::t_8657fee95b9669 1-18
+goal-gen/backend/src/intake/orchestration-profiles.ts
+  s_6f4eaec029ade7::t_0f28017acc5fc9 1-13
+goal-gen/backend/src/intake/validate-request.ts
+  s_6f4eaec029ade7::t_ac68162dbe9986 1-30
+goal-gen/backend/src/intake/permission-profiles.ts
+  s_6f4eaec029ade7::t_5452d1d8998145 1-33
+goal-gen/backend/src/contracts/run-event.ts
+  s_6f4eaec029ade7::t_42160ed2a8281a 1-19
+goal-gen/schemas/vendored/milestone.schema.json
+  s_6f4eaec029ade7::t_630312c2c96f99 1-117
+goal-gen/backend/src/cli/commands.ts
+  s_6f4eaec029ade7::t_877438ca9e760f 1-61,63-127,129-157,159-184,186-220,222-258,260-277
+  s_6f4eaec029ade7::t_c1625b029482a7 62,128,158,185,221,259
+goal-gen/tests/contracts/compat.test.ts
+  s_6f4eaec029ade7::t_a9ed10ad4f910b 1-200
+goal-gen/schemas/vendored/orchestration.schema.json
+  s_6f4eaec029ade7::t_7d75139f2cda6d 1-138
+goal-gen/schemas/app/command-record.schema.json
+  s_6f4eaec029ade7::t_07db2f843f6bdf 1-76
+goal-gen/schemas/vendored/packet-manifest.schema.json
+  s_6f4eaec029ade7::t_fd7549271631d7 1-173
+goal-gen/tests/cli/commands.test.ts
+  s_6f4eaec029ade7::t_9c10ddf062a3db 1-140
+goal-gen/backend/src/contracts/resolved-repository-target.ts
+  s_6f4eaec029ade7::t_de188ad1b9bfe8 1-26
+goal-gen/backend/src/contracts/request.ts
+  s_6f4eaec029ade7::t_d96d5cff32d0b0 1-86
+goal-gen/schemas/app/resolved-repository-target.schema.json
+  s_6f4eaec029ade7::t_b31e20fa851950 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2aa06f3db7a3262c11e3c499907e84563d978ecf",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

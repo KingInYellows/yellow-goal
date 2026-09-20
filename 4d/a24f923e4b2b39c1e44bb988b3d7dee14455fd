@@ -1,0 +1,35 @@
+goal-gen/backend/src/runner.ts
+  s_6f4eaec029ade7::t_3afbf258345e70 50-53
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_6f4eaec029ade7::t_504e3c70560723 25-51
+  s_6f4eaec029ade7::t_d810e61d091ab5 366-369,371-386
+  s_6f4eaec029ade7::t_2baee218136ad0 309-313
+  s_6f4eaec029ade7::t_fce3e3589f33c0 322,330-338
+goal-gen/tests/integration/runner.probe.ts
+  s_6f4eaec029ade7::t_637bce89aeb0d1 142
+  s_6f4eaec029ade7::t_1a30209b6df6c8 106-107
+goal-gen/tests/executors/claude-code-executor.permission.test.ts
+  s_6f4eaec029ade7::t_3673424c58820a 1-147
+goal-gen/package.json
+  s_6f4eaec029ade7::t_ccb40f88b41267 3
+  s_6f4eaec029ade7::t_949584b2b12c80 19-21
+  s_6f4eaec029ade7::t_7ed4d9de1caaaa 28-29
+goal-gen/package-lock.json
+  s_6f4eaec029ade7::t_86ab604176f274 3,9,12-14,21-22,1330-1349,1480-1488,2620-2625,3211-3231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "4da24f923e4b2b39c1e44bb988b3d7dee14455fd",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

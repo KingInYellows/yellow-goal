@@ -1,0 +1,45 @@
+goal-gen/tests/fixtures/analysis/python-app/repository-profile.json
+  s_6f4eaec029ade7::t_5791da91e9fb8e 1-29
+goal-gen/tests/fixtures/analysis/python-app/request.json
+  s_6f4eaec029ade7::t_50015a829b101b 1-13
+goal-gen/tests/fixtures/analysis/python-app/assessment.json
+  s_6f4eaec029ade7::t_6d5c5e5cee783f 1-33
+goal-gen/tests/fixtures/analysis/infra-repo/repository-profile.json
+  s_6f4eaec029ade7::t_15358e6bcc19bb 1-29
+goal-gen/tests/fixtures/analysis/infra-repo/goal-resolution.json
+  s_6f4eaec029ade7::t_a1e78ddf6d21b6 1-10
+goal-gen/tests/fixtures/analysis/python-app/evidence/evidence.jsonl
+  s_6f4eaec029ade7::t_fc0bbfda0d1dee 1
+goal-gen/tests/fixtures/analysis/python-app/milestone.json
+  s_6f4eaec029ade7::t_227d01acd82462 1-28
+goal-gen/tests/packets/compiler.test.ts
+  s_6f4eaec029ade7::t_0860c69a0bbfa4 17-18,22-27,30-31,37
+  s_6f4eaec029ade7::t_6ce6a9df305acc 46-78
+  s_6f4eaec029ade7::t_150805bb6122e2 79
+goal-gen/tests/fixtures/analysis/infra-repo/request.json
+  s_6f4eaec029ade7::t_649ff9a5b397e0 1-13
+goal-gen/tests/fixtures/analysis/infra-repo/milestone.json
+  s_6f4eaec029ade7::t_3df1cca7ee8d02 1-28
+goal-gen/tests/fixtures/analysis/infra-repo/assessment.json
+  s_6f4eaec029ade7::t_b444e269aab1b5 1-33
+goal-gen/tests/fixtures/analysis/infra-repo/evidence/evidence.jsonl
+  s_6f4eaec029ade7::t_4b714fab0e54b7 1
+goal-gen/tests/fixtures/analysis/python-app/goal-resolution.json
+  s_6f4eaec029ade7::t_c7de4d911f19c2 1-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "508804481aed51d11c850e21cfab5accb166ca34",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

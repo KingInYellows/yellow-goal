@@ -1,0 +1,41 @@
+goal-gen/backend/src/analysis/claude-cli-provider.ts
+  s_6f4eaec029ade7::t_bb98cb02617915 5-6,11-13,18,30-46,50-57,81-98,104-110,141-142,144-145,151-152,156-157,160-178,180,183,190,197,202,204,212-226
+goal-gen/tests/analysis/analysis.test.ts
+  s_6f4eaec029ade7::t_019e1e91a291fc 11,19-21
+  s_6f4eaec029ade7::t_216247cb4d8c3c 135-277
+  s_6f4eaec029ade7::t_ec1b5962c62972 5
+  s_6f44432272f3fb::t_b20a3d2c6f60ae 278
+goal-gen/tests/analysis/claude-cli-provider.test.ts
+  s_6f4eaec029ade7::t_f9d94370088ea3 1-20,22-28,30,33-35,37-42,45-46,48-54,61-184
+  s_6f4eaec029ade7::t_432cd1f3e5f2ca 21,29,31-32,36,43-44,47,55-60
+goal-gen/backend/src/analysis/index.ts
+  s_6f4eaec029ade7::t_5f2915a7d6ab9a 13,15,20,26-30
+  s_6f4eaec029ade7::t_162154ec8d1df8 67,74-82
+  s_6f4eaec029ade7::t_0cc1c6c5e44ada 83
+goal-gen/backend/src/analysis/output-validation.ts
+  s_6f4eaec029ade7::t_e1c72c41252e99 1-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "3b921e3543b4977b7eb9d1eded15725412eef942",
+  "prompts": {},
+  "sessions": {
+    "s_6f44432272f3fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0cc3c93c-09c0-4006-8c37-39f39900f896",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

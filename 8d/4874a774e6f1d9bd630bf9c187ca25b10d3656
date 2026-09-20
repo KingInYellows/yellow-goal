@@ -1,0 +1,31 @@
+goal-gen/backend/src/analysis/prompt-schema-skeleton.ts
+  s_6f4eaec029ade7::t_c90aea9ec7c644 1-88,90-92,94,96,98-124
+  s_6f4eaec029ade7::t_a6bc0db6824fae 89,93,95,97
+goal-gen/tests/analysis/claude-cli-provider.test.ts
+  s_6f4eaec029ade7::t_4dd54431d64350 203
+  s_6f4eaec029ade7::t_5ff93c06e858bb 174-202,204-205,223-256
+  s_6f4eaec029ade7::t_a81fa54bd0859d 15-21,23
+  s_6f4eaec029ade7::t_515d83c4cd429c 206-222
+goal-gen/backend/src/analysis/claude-cli-provider.ts
+  s_6f4eaec029ade7::t_53c06bacc7245e 16-17,20
+  s_6f4eaec029ade7::t_9980194bdcf287 86-93,103-106,108-110
+  s_6f4eaec029ade7::t_feda10a42147c9 32-58,60,62
+goal-gen/backend/src/analysis/index.ts
+  s_6f4eaec029ade7::t_4ed0b3eeb12e3e 31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "8d4874a774e6f1d9bd630bf9c187ca25b10d3656",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

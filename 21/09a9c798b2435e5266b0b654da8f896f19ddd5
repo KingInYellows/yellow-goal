@@ -1,0 +1,103 @@
+goal-gen/tests/inspection/github-provider.test.ts
+  s_6f4eaec029ade7::t_6fda720673b9cd 1-93,109,117,121-128
+  s_6f4eaec029ade7::t_1eb88785e92283 94-108,110-116,118-120
+goal-gen/backend/src/inspection/index.ts
+  s_6f4eaec029ade7::t_54544716760920 23-27
+  s_6f4eaec029ade7::t_b92dd6deb12a7b 1-22,28-96
+goal-gen/tests/fixtures/analysis/node-plugin/evidence/evidence.jsonl
+  s_6f4eaec029ade7::t_3de3f7c8d43a40 1
+goal-gen/backend/src/inspection/resolver.ts
+  s_6f4eaec029ade7::t_0670026238de44 1-113
+goal-gen/tests/fixtures/analysis/node-plugin/goal-resolution.json
+  s_6f4eaec029ade7::t_31ffaf08f2e5f8 1-10
+goal-gen/backend/src/inspection/detectors/deployment.ts
+  s_6f4eaec029ade7::t_932a1a0eeaa81e 1-27
+goal-gen/backend/src/inspection/detectors/commands.ts
+  s_6f4eaec029ade7::t_80be2f81c734b0 1-186
+goal-gen/backend/src/inspection/detectors/manifests.ts
+  s_6f4eaec029ade7::t_503538140f9cb5 1-83
+goal-gen/backend/src/providers/gh-client.ts
+  s_6f4eaec029ade7::t_c04afcc8f8b4f9 1-251
+goal-gen/tests/inspection/policy.test.ts
+  s_6f4eaec029ade7::t_bc5895378fb5cc 1-53
+goal-gen/tests/inspection/read-only-assertion.test.ts
+  s_6f4eaec029ade7::t_c7868a4c6c9724 1-69
+goal-gen/tests/evidence/store.test.ts
+  s_6f4eaec029ade7::t_9e184a6e1a030f 1-79
+goal-gen/backend/src/inspection/detectors/instruction-files.ts
+  s_6f4eaec029ade7::t_2d3802e8be133b 1-56
+goal-gen/backend/src/inspection/detectors/ci-workflows.ts
+  s_6f4eaec029ade7::t_b358676871352f 1-127
+goal-gen/tests/fixtures/analysis/node-plugin/request.json
+  s_6f4eaec029ade7::t_8f50cfcda614c8 1-13
+goal-gen/backend/src/inspection/detectors/protected-paths.ts
+  s_6f4eaec029ade7::t_9f933118cd0ed3 1-39
+goal-gen/backend/src/research/index.ts
+  s_6f4eaec029ade7::t_a13be364c50316 1-3
+goal-gen/backend/src/inspection/profile-builder.ts
+  s_6f4eaec029ade7::t_3eb78d602a113c 1-125
+goal-gen/backend/src/evidence/index.ts
+  s_6f4eaec029ade7::t_4fea8fd96f11fc 1
+goal-gen/tests/fixtures/analysis/node-plugin/repository-profile.json
+  s_6f4eaec029ade7::t_64d1c71882b0b5 1-29
+goal-gen/backend/src/research/recorded-provider.ts
+  s_6f4eaec029ade7::t_ccc1211524380d 1-48
+goal-gen/tests/fixtures/analysis/node-plugin/milestone.json
+  s_6f4eaec029ade7::t_b15ef10e0ceb87 1-28
+goal-gen/tests/inspection/inspect-repository.test.ts
+  s_6f4eaec029ade7::t_b1ec0f36a0c456 69-70
+  s_6f4eaec029ade7::t_5a21774242005f 94-100
+  s_6f4eaec029ade7::t_ea5cbaa340d5b6 1-9,12-36,39,41-68,71-93,101-174
+  s_6f4eaec029ade7::t_4e365dac31ad75 10-11
+  s_6f4eaec029ade7::t_ad66859922d3d0 37-38,40
+goal-gen/backend/src/inspection/policy.ts
+  s_6f4eaec029ade7::t_580e6280e17e81 1-70
+goal-gen/backend/src/inspection/detectors/github-metadata.ts
+  s_6f4eaec029ade7::t_a8b5b8f2bb0e2f 1-96
+goal-gen/tests/fixtures/analysis/node-plugin/assessment.json
+  s_6f4eaec029ade7::t_2d5851954b8b54 1-33
+goal-gen/backend/src/inspection/detectors/tests-surface.ts
+  s_6f4eaec029ade7::t_8111e7936c877d 1-30
+goal-gen/backend/src/research/claude-cli-provider.ts
+  s_6f4eaec029ade7::t_338f859b6c641e 1-67
+goal-gen/backend/src/evidence/store.ts
+  s_6f4eaec029ade7::t_cd070d766f1f4d 13
+  s_6f4eaec029ade7::t_9ba364ab64ae64 1-12,14-96,101-102,104-113
+  s_6f4eaec029ade7::t_552a5b9f6b022e 97-100,103
+goal-gen/tests/inspection/fixture-classes.test.ts
+  s_6f4eaec029ade7::t_e63b3891b85264 1-102
+goal-gen/tests/inspection/protected-path-spawn-safety.test.ts
+  s_6f4eaec029ade7::t_2eeee9c3f18b92 1-102
+goal-gen/tests/fixtures/github-responses/milestone-list.json
+  s_6f4eaec029ade7::t_f9718b4db84aa5 1-4
+goal-gen/backend/src/inspection/read-only-assertion.ts
+  s_6f4eaec029ade7::t_91f455f00fd0bc 1-74
+goal-gen/tests/research/provider.test.ts
+  s_6f4eaec029ade7::t_b8d9f109a79813 39,41
+  s_6f4eaec029ade7::t_2115634b5a84f3 57-59,62-67,69-70
+  s_6f4eaec029ade7::t_acde6a0812bcfd 1-38,40,42-56,60-61,68,71-72
+goal-gen/tests/inspection/resolver.test.ts
+  s_6f4eaec029ade7::t_7882282beecee0 6-9,11,17-22
+  s_6f4eaec029ade7::t_60838dcef5f5e4 1-5,10,12-16,23-25,33-91
+  s_6f4eaec029ade7::t_27e68fe9307a93 26-32
+goal-gen/backend/src/research/provider.ts
+  s_6f4eaec029ade7::t_41eef03b815e42 1-50
+goal-gen/tests/fixtures/github-responses/commit-sha.json
+  s_6f4eaec029ade7::t_f59ba0aae8f25d 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "2109a9c798b2435e5266b0b654da8f896f19ddd5",
+  "prompts": {},
+  "sessions": {
+    "s_6f4eaec029ade7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dc191d50-ca17-4e99-81d6-b3a6e0abde12",
+        "model": "claude-fable-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
