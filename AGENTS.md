@@ -10,6 +10,9 @@ The product lives in **`goal-gen/`**. Read `goal-gen/AGENTS.md` (Codex mirror of
 An annotated `v*` tag matching `goal-gen/package.json` publishes the tarball
 via `.github/workflows/release.yml` as a GitHub Release asset. The workflow
 packs without credentials, verifies its peeled commit is `HEAD`, and scopes its
-token to GitHub Release publication. `HANDOFF-PROMPT.md` is superseded. Never
+token to GitHub Release publication. `.github/workflows/claude-code-review.yml`
+runs an automated Claude Code review on PRs touching `goal-gen/**` or the
+workflows, gated on the `CLAUDE_CODE_OAUTH_TOKEN` secret (green no-op without
+it); it never invokes the product's executor. `HANDOFF-PROMPT.md` is superseded. Never
 run `npm run runner` (use `npm run cli -- run <request> --executor stub` only in
 tests) or a live executor from an autonomous session.

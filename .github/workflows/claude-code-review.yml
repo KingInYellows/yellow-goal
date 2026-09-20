@@ -1,0 +1,83 @@
+# Automated Claude Code review on pull requests that touch the engine (mirrors the workflow in
+# KingInYellows/yellow-plugins).
+#
+# The review job is gated on the CLAUDE_CODE_OAUTH_TOKEN repository secret. When the secret is
+# absent the review job is skipped and the workflow stays green, so this file is safe to merge
+# before the secret exists; after it is added, the next matching pull request event activates the
+# review (Settings -> Secrets -> Actions).
+# Fork PRs never receive secrets, so they are skipped by the same gate.
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    paths:
+      - 'goal-gen/**'
+      - '.github/workflows/**'
+
+concurrency:
+  group: claude-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: check review token
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has_token: ${{ steps.probe.outputs.has_token }}
+    steps:
+      - id: probe
+        env:
+          TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set for this repository; skipping Claude Code review"
+          fi
+
+  claude-review:
+    name: review
+    needs: preflight
+    if: needs.preflight.outputs.has_token == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # This block is the real ceiling only because github_token is passed to the action below.
+    # Without it the action mints a Claude GitHub App token via OIDC whose default scope is
+    # contents:write, and nothing declared here would constrain it.
+    #   pull-requests: write — inline review comments and the summary comment
+    #   issues: write        — the summary comment endpoint is the issues API
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      # persist-credentials: false — otherwise actions/checkout writes the job's GITHUB_TOKEN
+      # into .git/config, where it stays readable to every later step/process in this job.
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run Claude Code Review
+        # Third-party action with write scopes: pin to a commit, not the mutable v1 tag.
+        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Use the job's GITHUB_TOKEN so the permissions block above governs what the review
+          # can do. Comments post as github-actions[bot] rather than the Claude App.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Cloud agents (cursor[bot]) push PR branches; allow that bot so review runs on
+          # synchronize without a manual re-trigger.
+          allowed_bots: cursor
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          # --comment is required for the plugin to post findings; without it the review runs
+          # but writes only to the Actions log.
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'

@@ -14,6 +14,11 @@ What sits at this root and why:
   `goal-gen-<ver>.tgz` as a GitHub Release asset. Packaging is tokenless;
   publication alone receives the GitHub token. Consumers pin that URL; do not
   use Actions artifacts.
+- `.github/workflows/claude-code-review.yml` — automated Claude Code review of
+  PRs touching `goal-gen/**` or the workflows. Gated on the
+  `CLAUDE_CODE_OAUTH_TOKEN` Actions secret: absent, the workflow is a green
+  no-op. It never invokes the product's executor or runner. Not a required
+  status check.
 - `.graphite.yml`, `.github/pull_request_template.md` — repo-level PR conventions.
 - `docs/01`–`08` — research knowledge base that `goal-gen/docs/prd.md` (the
   product source of truth) and the specs cross-link to.
