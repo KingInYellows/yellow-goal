@@ -395,19 +395,22 @@ describe('committed-source capture', () => {
       const before = objectStoreFingerprint(partial);
       await expect(
         runCommittedSourceCapture(['package-manifest-lockfile', partial, commit, '--json']),
-      ).rejects.toMatchObject({
-        name: 'ObservedFixtureError',
-        code: 'GIT_READ_FAILED',
+      ).rejects.toSatisfy((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        return err instanceof ObservedFixtureError
+          && err.code === 'GIT_READ_FAILED'
+          && !/Failed to connect/i.test(message);
       });
       expect(objectStoreFingerprint(partial)).toBe(before);
       gitIsolated(partial, ['remote', 'set-url', 'origin', 'http://127.0.0.1:1/does-not-exist.git']);
+      // Git 2.43 reports "lazy fetching disabled"; 2.55 reports "could not get object info".
+      // Fail-closed is GIT_READ_FAILED without contacting origin, not one stderr phrase.
       await expect(
         runCommittedSourceCapture(['package-manifest-lockfile', partial, commit, '--json']),
       ).rejects.toSatisfy((err: unknown) => {
         const message = err instanceof Error ? err.message : String(err);
         return err instanceof ObservedFixtureError
           && err.code === 'GIT_READ_FAILED'
-          && /lazy fetching disabled/i.test(message)
           && !/Failed to connect/i.test(message);
       });
       expect(objectStoreFingerprint(partial)).toBe(before);
