@@ -18,3 +18,16 @@ export class NotWiredError extends Error {
     this.name = 'NotWiredError';
   }
 }
+
+/** Fixture/recorder contract failure — no record written (exit 1). */
+export class AcceptanceEvidenceError extends Error {
+  readonly code: string;
+  readonly details?: unknown;
+
+  constructor(code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = 'AcceptanceEvidenceError';
+    this.code = code;
+    if (details !== undefined) this.details = details;
+  }
+}

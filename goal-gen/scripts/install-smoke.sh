@@ -88,7 +88,69 @@ node -e "const o=JSON.parse(process.argv[1]); if(o.error.code!=='USAGE_ERROR') t
 # scenarios; it neither imports source nor selects a real executor.
 node scripts/installed-protocol-smoke.mjs "$bin" "$expected_version" "$workdir/protocol-request.json" "$target"
 
-# 8. Read-only proof: the target repository is untouched.
+# 8. Fixture-only `acceptance record` through the installed bin. No git target
+# is required; the recorder must work from a non-git cwd and must not expand
+# Protocol v1 capabilities.
+nongit="$workdir/nongit-cwd"
+mkdir -p "$nongit"
+node -e '
+const fs = require("fs");
+const tree = "b".repeat(40);
+const fixture = {
+  schemaVersion: "yellow-goal/acceptance-evidence/v1",
+  baseRevision: "a".repeat(40),
+  candidateIdentity: { kind: "tree", value: tree },
+  candidateTree: tree,
+  requiredChecks: [{ id: "typecheck", command: "__ACCEPTANCE_RECORDER_MUST_NOT_EXECUTE__", cwd: "goal-gen" }],
+  checks: [{
+    id: "typecheck",
+    status: "passed",
+    command: "__ACCEPTANCE_RECORDER_MUST_NOT_EXECUTE__",
+    cwd: "goal-gen",
+    candidateIdentity: { kind: "tree", value: tree },
+    preCheckTree: tree,
+    postCheckTree: tree,
+    exitStatus: 0
+  }]
+};
+fs.writeFileSync(process.argv[1], JSON.stringify(fixture) + "\n");
+' "$nongit/fixture.json"
+sentinel="$nongit/sentinel-bin"
+mkdir -p "$sentinel"
+printf '%s\n' '#!/bin/sh' "printf invoked > '$nongit/git-invoked'" 'exit 97' > "$sentinel/git"
+printf '%s\n' '#!/bin/sh' "printf invoked > '$nongit/cmd-invoked'" 'exit 97' > "$sentinel/__ACCEPTANCE_RECORDER_MUST_NOT_EXECUTE__"
+chmod +x "$sentinel/git" "$sentinel/__ACCEPTANCE_RECORDER_MUST_NOT_EXECUTE__"
+out="$(cd "$nongit" && PATH="$sentinel:$PATH" "$bin" acceptance record fixture.json --json)"
+node -e "const o=JSON.parse(process.argv[1]); if(o.schemaVersion!=='yellow-goal/acceptance-evidence/v1') throw new Error('unexpected schemaVersion: '+process.argv[1]); if(o.status!=='passed') throw new Error('expected passed record, got: '+process.argv[1])" "$out"
+if [ -e "$nongit/git-invoked" ] || [ -e "$nongit/cmd-invoked" ]; then
+  echo "installed acceptance record invoked git or fixture command" >&2
+  exit 1
+fi
+
+set +e
+err="$(cd "$nongit" && "$bin" acceptance record 2>&1 >/dev/null)"
+code=$?
+set -e
+if [ "$code" -ne 2 ]; then
+  echo "expected exit 2 for acceptance record usage error, got $code" >&2
+  exit 1
+fi
+node -e "const o=JSON.parse(process.argv[1]); if(o.error.code!=='USAGE_ERROR') throw new Error('expected USAGE_ERROR, got: '+process.argv[1])" "$err"
+
+caps="$("$bin" capabilities --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+const ops = o.operations;
+if (!Array.isArray(ops) || ops.includes("acceptance") || ops.includes("acceptance.record")) {
+  throw new Error("Protocol v1 operations must not advertise acceptance record: " + process.argv[1]);
+}
+const expected = ["capabilities", "request.create", "request.validate", "run", "version"];
+if (ops.length !== expected.length || expected.some((value, index) => ops[index] !== value)) {
+  throw new Error("Protocol v1 operations changed: " + process.argv[1]);
+}
+' "$caps"
+
+# 9. Read-only proof: the target repository is untouched.
 status="$(git -C "$target" status --porcelain)"
 if [ -n "$status" ]; then
   echo "target repository mutated during smoke:" >&2

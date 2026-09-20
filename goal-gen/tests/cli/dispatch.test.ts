@@ -80,6 +80,15 @@ describe('CLI dispatcher', () => {
     expect(code).toBe(2);
   });
 
+  it('unknown acceptance subcommand exits 2 with USAGE_ERROR', async () => {
+    const code = await main(['acceptance', 'bogus']);
+    expect(code).toBe(2);
+    const parsed = JSON.parse(stderrText().trim()) as { error: { code: string; message: string } };
+    expect(parsed.error.code).toBe('USAGE_ERROR');
+    expect(parsed.error.message).toContain('record');
+    expect(stdoutText()).toBe('');
+  });
+
   it('request create with an unknown permission profile exits 1 with structured VALIDATION_FAILED details', async () => {
     const code = await main([
       'request',

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-09-19
 decision-makers: KingInYellow
 ---
@@ -54,15 +54,21 @@ execution. Compiler isolation is unchanged. Worker claims are not world state.
 
 ## Confirmation
 
-Pending acceptance — all must be true before this ADR moves from `proposed` to `accepted`:
+Accepted 2026-09-19 by Brad at `46d2c014e61473c70029332d0a43446c32814867` (#35 merge
+on `main`). This records acceptance provenance only; it does not rewrite the decision
+or authorize live execution, Protocol v1 expansion, or yellow-plugins work. The
+fixture-only recorder increment is a separate explicit grant, not a new ADR.
+
+Criteria met at that commit:
 
 - PRD §7 (FR-14–FR-17) and §12 phasing text exist in `goal-gen/docs/prd.md` and match
   the four-layer model above.
 - This ADR file and
   `goal-gen/plans/specs/verified-single-milestone-execution.md` are merged on `main`.
 - No protocol `capabilities` array change is bundled with the documentation acceptance.
-- Brad explicitly accepts ADR-0018 (documentation-only acceptance does not authorize the
-  first code increment).
+- Brad explicitly accepts ADR-0018 at that commit. Documentation-only acceptance still
+  does not authorize live execution; the fixture-only recorder increment is a separate
+  grant, not an expansion of this decision.
 
 ## Links
 

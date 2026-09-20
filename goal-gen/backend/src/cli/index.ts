@@ -4,7 +4,8 @@
  *
  * Commands: `request create`, `request validate <file>`, `inspect <request>`, `analyze
  * <request>`, `compile <request>`, `packet verify <path>`, `run <request>` (RR11),
- * `version` (RR17, identity probe only). `--json`
+ * `version` (RR17, identity probe only), `acceptance record <fixture.json>` (VS spec
+ * fixture-only recorder). `--json`
  * selects machine-readable stdout for successful command output; failures are always a
  * single-line structured JSON object on stderr with a nonzero exit code, `--json` or not, so
  * scripts can rely on it either way. `run` streams run-event/v1 JSON Lines on stdout instead of
@@ -20,7 +21,7 @@ import {
   runVersion,
   type CommandOutput,
 } from './commands';
-import { CliUsageError, NotWiredError } from './errors';
+import { AcceptanceEvidenceError, CliUsageError, NotWiredError } from './errors';
 import { runCapabilities } from './provider-capabilities';
 import { IntakeValidationFailure } from '../intake';
 import { isDirectInvocation } from './direct-invocation';
@@ -88,6 +89,17 @@ async function dispatch(argv: string[]): Promise<number> {
       const { runRunCommand } = await import('./run-command');
       return runRunCommand(rest);
     }
+    case 'acceptance': {
+      // VS spec fixture-only recorder — dynamically imported so compiler/protocol cold paths
+      // never load acceptance-recording modules. Not advertised in Protocol v1 capabilities.
+      const [sub, ...subRest] = rest;
+      if (sub === 'record') {
+        const { runAcceptanceRecord } = await import('./acceptance-record-command');
+        writeSuccess(await runAcceptanceRecord(subRest));
+        return 0;
+      }
+      throw new CliUsageError(`unknown 'acceptance' subcommand: ${sub ?? '(none)'} (expected record)`);
+    }
     case 'inspect':
       writeSuccess(await runInspect(rest));
       return 0;
@@ -99,7 +111,7 @@ async function dispatch(argv: string[]): Promise<number> {
       return 0;
     default:
       throw new CliUsageError(
-        `unknown command: ${command ?? '(none)'} (expected capabilities|request|inspect|analyze|compile|packet|run|version)`,
+        `unknown command: ${command ?? '(none)'} (expected acceptance|capabilities|request|inspect|analyze|compile|packet|run|version)`,
       );
   }
 }
@@ -111,6 +123,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     if (err instanceof CliUsageError) {
       writeError('USAGE_ERROR', err.message);
       return 2;
+    }
+    if (err instanceof AcceptanceEvidenceError) {
+      writeError(err.code, err.message, err.details);
+      return 1;
     }
     if (err instanceof NotWiredError) {
       writeError('NOT_WIRED', err.message);
