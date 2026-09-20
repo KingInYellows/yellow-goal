@@ -4,7 +4,7 @@ Status: proposed design; documentation slice complete (#34, merged on `36eeeae`)
 Date: 2026-09-19. Owner: Yellow Goal (Yellow Harness coordination).
 Decision: [ADR-0018](../../docs/decisions/0018-verified-single-milestone-execution.md).
 Engine bases: documentation parent `09bcd16cd25ec249e3248d3ce7dcb4536a0d348e` (#34);
-current `main` `5bc87477abdb6adf3108bfb4bf9e02dc2eea2c79` (#39 squash on #38).
+current `main` `5685f5e55d19a4b50fd84e30a1720bcb15293f89` (#24 on #40 squash `62c860e`).
 
 ## Phasing
 
@@ -17,7 +17,8 @@ Four layers — do not conflate them:
 | 3. First code increment | Fixture-only acceptance-evidence recording through an existing engine process seam; disposable git fixture; deterministic local checks only. | **Implemented** (yellow-goal #36). Git-free JSON recorder only. |
 | 3b. Observed fixture verification | Engine-owned fixed profiles, disposable-repo observer, packed `acceptance record` subprocess, separate fixture-scoped decision. | **Implemented** (yellow-goal #37). Not live target-bound execution. |
 | 3c. Candidate-bound offline milestone | Additive FILE-CONTENT candidate path, durable bundle, installed fresh-process replay of trusted checks. | **Implemented** (yellow-goal #39). Not verified single-milestone execution completed. Not live execution. |
-| 3d. Committed-source capture | Additive Git **object-read** capture of a pinned commit plus one engine-owned package-manifest/lockfile coherence profile. CI uses owned git fixtures; real yellow-goal capture is demonstration evidence, not a CI pin of live `main`. | This increment. Not verified single-milestone execution completed. Not live execution. |
+| 3d. Committed-source capture | Additive Git **object-read** capture of a pinned commit plus one engine-owned package-manifest/lockfile coherence profile. CI uses owned git fixtures; real yellow-goal capture is demonstration evidence, not a CI pin of live `main`. | **Implemented** (yellow-goal #40). Not verified single-milestone execution completed. Not live execution. |
+| 3e. Captured-base candidate replay | Persist selected captured bytes; `acceptance reproduce` dispatches by `COMPLETE` schema; FILE-CONTENT overlay onto the captured base in an owned snapshot. | This increment. Not verified single-milestone execution completed. Not live execution. |
 | 4. Still deferred | Live target-bound execution; Protocol v1 real-run capabilities; promoting scratch/`bypassPermissions`; yellow-plugins host/provider integration. Protocol v1 stays stub-only today (ADR-0017). | Deferred |
 
 ## Outcome (layer 1)
@@ -937,7 +938,7 @@ Verb:
 
 - `acceptance capture-source <profile-id> <repo> <commit> [--json] [--bundle-dir <dir>]`
 
-Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`. Existing `acceptance record`, `verify-fixture`, `verify-candidate`, and `reproduce` stay intact.
+Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`. Existing `acceptance record` and `verify-fixture` stay intact. `acceptance reproduce` stays the 3c replay path when `COMPLETE` is `yellow-goal/candidate-offline-milestone/v1`; capture-schema bundles are 3e.
 
 | Property | Contract |
 |---|---|
@@ -981,8 +982,70 @@ Dynamically imported. Not a Protocol v1 capability. Does not load `run-command`.
 | CS-05 | Dirty/untracked canaries survive; HEAD/index bytes unchanged | same |
 | CS-06 | Git helper refuses non-read verbs (`checkout`, `update-index`, …) | same |
 | CS-07 | Blob/document reads are byte-capped before unbounded allocation | same + candidate-offline tests |
-| CS-08 | Additive verb; record / verify-fixture / verify-candidate / reproduce unchanged | same + isolation tests |
+| CS-08 | Additive capture verb; record / verify-fixture / 3c verify-candidate unchanged. `acceptance reproduce` dispatches by `COMPLETE` schema (3e). | same + isolation tests |
 | CS-09 | Compiler cold path does not load capture; Protocol v1 does not advertise it | isolation + `install-smoke.sh` |
+
+## Captured-base candidate replay increment (3e)
+
+Authorized follow-on to layer 3d. This is **committed-repository verification implemented** (captured-base replay slice), not verified single-milestone execution completed, and **not** layer 4. Do not rewrite ADR-0018 decision text. Preserve Protocol v1, the recorder/observer/decider split, and the 3c `config-repair` verify-candidate path.
+
+**Product outcome.** A durable capture bundle stores the **selected** allowlisted bytes (plus mode and identity metadata) that checks ran against. `acceptance reproduce <bundle-dir>` reads `COMPLETE` and dispatches: `yellow-goal/candidate-offline-milestone/v1` keeps the 3c replay; `yellow-goal/committed-source-capture/v1` reconstructs those bytes into a disposable snapshot and **reruns** the installed profile's trusted checks. Parsing stored `accepted: true` is not re-verification. An additive `--from-capture` option on `acceptance verify-candidate` overlays a FILE-CONTENT candidate onto that captured base inside an **owned** snapshot (never the source checkout). Extra files and changed check bindings cannot authorize success.
+
+### Supported envelope
+
+| Field | Contract |
+|---|---|
+| Capture bundle | `COMPLETE` bytes are this schema version plus a trailing newline, `manifest.json`, and `blobs/<allowlisted-path>` exact selected bytes. Missing blob files, wrong `COMPLETE`, or sha256 mismatch is incomplete — no stale success. |
+| Selected bytes | The snapshot checkers ran on. For a plain capture that is the pinned blob bytes. For `--from-capture` that is captured bytes with allowlisted overlay applied. Modes stay the captured blob modes. Identities (`gitSha`) stay the pinned commit's blobs; overlay does not mint a source git identity. |
+| Overlay candidate | `yellow-goal/candidate-file-content/v1`. Same path/size/depth/`maxDocumentBytes` bounds as 3c, applied to the capture profile allowlist. Only `package-manifest-lockfile` may be used with `--from-capture`. |
+| Checks | Installed `package-manifest-lockfile` argv/cwd. Bundle-stored bindings and candidate-supplied checkers are ignored. |
+| Snapshot | Disposable `$TMPDIR` directory of selected bytes. Not a worktree of the source. Source HEAD/index/worktree canaries must survive. |
+
+### Process interface
+
+Additive verbs / options:
+
+- `acceptance reproduce <bundle-dir> [--json]` — dispatch by `COMPLETE` schema (3c or 3e).
+- `acceptance verify-candidate package-manifest-lockfile <candidate.json> --from-capture <bundle-dir> [--json] [--bundle-dir <dir>]`
+
+`acceptance verify-candidate` without `--from-capture` remains the 3c `config-repair` path. `--from-capture` without that capture profile, or `config-repair` with `--from-capture`, is usage. Not a Protocol v1 capability. Does not load `run-command`.
+
+| Property | Contract |
+|---|---|
+| stdout | Capture-schema JSON when the capture/overlay/reproduce-capture workflow finishes (affirmative **or** negative). 3c reproduce still emits `yellow-goal/candidate-offline-milestone/v1`. Empty on usage/I/O failure. |
+| `--bundle-dir` | Still empty-directory / atomic `COMPLETE`. Still refused inside the captured **source** worktree or `.git` for `capture-source`. Overlay/reproduce write a **new** bundle directory, not the source. |
+| Recorder | Still omitted on the capture schema. |
+| Exit 0 | Bundle written. Includes valid negatives. |
+| Exit 1 | Incomplete capture bundle, I/O, source mutation during overlay, or unexpected failure. |
+| Exit 2 | Usage (wrong profile for `--from-capture`, unsafe candidate, missing capture bundle, `--from-capture` on 3c). |
+
+### Trust boundary
+
+- **Engine-owned:** profile, allowlist, argv, timeout, checkers, schema dispatch, blob-path allowlist inside the bundle.
+- **Untrusted:** candidate document, persisted blob bytes, stored `decision.accepted`, stored bindings.
+- Unauthorized extra candidate paths are `accepted: false` (`unauthorized-path`), not a launched overlay. Mutated stored bindings cannot change which checkers run.
+- Overlay and reproduce do not checkout, fetch, or write the original source repository.
+
+### Outcome table
+
+| Case | Snapshot | Checks | Decision | Workflow exit |
+|---|---|---|---|---|
+| Moved capture bundle; temps deleted; fresh installed process | selected bytes restored | both rerun passed | `accepted: true` | 0 |
+| Valid extra-field alternative overlay on captured base | overlay applied | both passed | `accepted: true` | 0 |
+| Intentional lockfile/manifest metadata reject | overlay applied | `manifest-lock-agreement` failed | `accepted: false` | 0 |
+| Extra unauthorized file in candidate | not launched as authorized overlay | omitted | `accepted: false` (`unauthorized-path`) | 0 |
+| Stored bindings mutated; installed profile unchanged | selected bytes restored | installed checkers rerun | decision from rerun, not stored bindings | 0 |
+| Missing `COMPLETE` / missing blob file / sha256 mismatch | n/a | not launched | no stale success | 1 |
+| 3c reproduce of a candidate-offline bundle | 3c path | 3c checkers | 3c contract | 0 |
+| `--from-capture` on `config-repair` / unknown profile | n/a | not launched | no bundle | 2 |
+
+### Requirement-to-test mapping
+
+| ID | Requirement | Test |
+|---|---|---|
+| CS-10 | Capture `--bundle-dir` persists selected bytes/modes/identities; moved bundle `acceptance reproduce` from a fresh process reruns trusted checks | `committed-source.test.ts` + `install-smoke.sh` |
+| CS-11 | FILE-CONTENT overlay onto captured base: valid extra-field alternative and intentional metadata reject | `committed-source.test.ts` |
+| CS-12 | Unauthorized extra files and mutated stored bindings cannot authorize success; source checkout unmodified | same |
 
 ## Failure / blocked cases (documentation and publication)
 
