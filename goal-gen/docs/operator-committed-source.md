@@ -1,0 +1,761 @@
+# Operator runbook — committed-source capture (landed `main`)
+
+Local installable tarball of Graphite-merged `#41`. Not a public release.
+Not a registry publish. Not `npm run runner`. Not live execution. Not
+verified single-milestone execution completed. Do not rewrite ADR-0018.
+
+Landed trunk: `origin/main` `f9974a860fb982f8ce144d0019d3499c6ddca6c8`
+(unrelated `#42` CI allowlist). Dest-mkdir leftover rollback remains
+Graphite-merged `#44` `3d658276cc89801ae6556e99349a43084c02e9dc`
+(same tree as reviewed `051e030`; ancestor of current `main`).
+Recorded pack identity remains Graphite-merged `#41`
+`6ac355f416b5f2ddaf9820b353d61b62b60b953d` (squash of packed origin
+`6c5e7548391a44205a99055575466b683614bf21`; same tree
+`bc9d332fe7cc47aeaeaebfcb22de8f95568a8cbd`).
+
+Profile: `package-manifest-lockfile`. Dest `--bundle-dir` may be missing
+(created) or empty, and must be outside the captured source worktree,
+per-worktree git dir, and common Git directory. Unrelated git used only as
+evidence storage is allowed. Dest inside the live captured source is
+`USAGE_ERROR`. Honest missing-parent dest outside source still persist
+`COMPLETE`. Dest-mkdir leftover rollback of created intermediates landed
+as `#44` `3d658276cc89801ae6556e99349a43084c02e9dc`
+(same tree as reviewed `051e030`; now an ancestor of `origin/main`
+`f9974a86`). The recorded `6ac355f` BIN
+(`28dcde91…`) this runbook installs does not include that rollback;
+leftover parent directories can remain in the source on containment /
+`USAGE_ERROR`. Do not pack `3d65827`, `f9974a86`, or this runbook
+branch as the recorded `28dcde91` artifact. Retarget pack identity
+before advertising leftover-absent on `$BIN`.
+
+The recorded tarball is packed from `6ac355f`, not from this runbook
+revision, landed `#44`, or `f9974a86`. Packing those heads yields a
+different SHA-256. Do not treat that as the recorded artifact.
+
+Expected pack identity:
+
+- `HEAD` `6ac355f416b5f2ddaf9820b353d61b62b60b953d`
+- SHA-256 `28dcde91b5d6505f6c798ae919c93a6991bce7c7c1ad52ddc4f330f8340446dd`
+- npm filename `goal-gen-0.2.0.tgz`
+- publish dest: operator-owned real directory
+  (`mktemp -d /tmp/goal-gen-artifacts.XXXXXX`). Not
+  `/opt/cursor/artifacts` — that path is a symlink ancestor here.
+
+## Choose exactly one capture path
+
+Run **Path A** or **Path B**. They are independent recipes. Do not
+concatenate them. Do not continue from Path B setup into Path A writes.
+A prose warning above a shared write block is not a split.
+
+- **Path A — disposable owned self-test.** This invocation creates a
+  uniquely named private fixture and retains ownership. Canaries, tracked
+  dirt, and wrapper tests that plant dirt live only here. Baseline after
+  that intentional setup. Cleanup only owned resources.
+- **Path B — existing local clone.** Pinned commit. Evidence only to
+  approved external destinations. No canary, append, touch, chmod, git
+  add/commit, stash, reset, checkout, clean, fetch, index refresh, or
+  restore-after-modify. A pre-existing canary name is user content.
+  Dirty, staged, and untracked files stay untouched and are **not
+  assessed** by committed-source capture. Do not run `git status`,
+  `git diff`, `git diff-files`, or `git diff-index` on this clone.
+  Observe HEAD with `GIT_OPTIONAL_LOCKS=0 git rev-parse`. If the
+  on-disk index already exists, sha256 that file from outside git; if
+  it is absent, record `absent` and do not create or refresh it.
+  Missing inputs fail closed. Do not require a canary to exist. Do not
+  hash a missing index.
+
+Non-mutation observations start before any source-affecting setup.
+Inspection output stays external (`$CS_SCRATCH`, durable BIN, consumer).
+Pack worktree registration is not a read-only operation on a Path B
+captured source. Do not `git worktree add` against that clone.
+
+Acceptance commands exit 0 for both `decision.accepted=true` and
+`accepted=false`. `set -euo pipefail` continues after a domain reject.
+Capture each JSON response under `$CS_SCRATCH` and assert
+`.decision.accepted` plus the expected reason with `jq -e` before
+proceeding. `jq -e '.decision.accepted == true'` after unauthorized
+overlay exits 1. `jq -e` on the JSON does not prove the source was
+left alone.
+
+## Pack (from recorded `6ac355f`, not this revision, not Path B `$REPO`)
+
+Work from a clean worktree of the recorded commit. `npm pack` packages
+the current worktree; this runbook branch is dest-mkdir + docs. Create
+the pack worktree from a yellow-goal checkout that already has
+`6ac355f` — do not fetch. That checkout must not be the Path B captured
+`$REPO`. If the durable tarball already matches `28dcde91…`, skip this
+block and go to Install.
+
+Do not `PACK_DEST=/tmp/goal-gen-pack-6ac355f` then `mkdir -p`. That
+follows a pre-existing dest symlink, and `npm pack` follows a
+pre-existing `goal-gen-0.2.0.tgz` symlink before any checksum. Allocate
+a private dest with `mktemp -d`, or fail unless the dest and packed
+name are absent (`test ! -e` / `test ! -L`).
+
+Do not `PACK_SRC=/tmp/goal-gen-pack-src-6ac355f`. A second
+`git worktree add` of that path exits 128 `fatal: already exists`.
+Allocate a unique missing worktree path under a private `mktemp -d`,
+or fail unless the path is absent, and `git worktree remove` it on
+cleanup. After `git worktree add`, install an `EXIT` trap so a later
+`set -e` failure (SHA-gate, durable publish, or provenance) still
+unregisters `$PACK_SRC`. Cleanup only at the end of the block leaves
+a registered worktree on those paths.
+
+Run the pack block in an isolated subshell so its `EXIT` trap cannot
+prune, reset, or clean a later Path A/B shell, and so a later Path
+failure does not fire pack cleanup. The trap preserves the primary
+`set -e` status and surfaces a cleanup failure if the primary
+succeeded. It does not `git worktree prune`, `git reset`, or
+`git clean`. `EXIT` does not run on `SIGKILL`; a leftover owned
+`$PACK_SRC` then needs a later `git worktree remove` of that path
+only.
+
+Do not `mkdir -p /opt/cursor/artifacts`. That follows a symlink
+ancestor; leaf `test ! -L "$DURABLE"` still passes and `mv -T`
+publishes through the link. Fail closed before publish if the
+destination directory or any existing ancestor is a symlink. Publish
+into an operator-owned real directory from `mktemp -d`. The live
+`/opt/cursor/artifacts` symlink is not a safe publish dest.
+
+Do not `cp -f "$PACKED" "$DURABLE"`. That follows a pre-existing
+durable symlink and the following checksum reads the overwritten
+target. Fail if `$DURABLE` is a symlink or exists as the wrong type.
+Publish through a regular temp file and `mv -T` into place.
+
+Do not `open(..., "w")` of `$PROVENANCE`. That follows a pre-existing
+provenance symlink and the following `json.load` reads the overwritten
+target. Fail if `$PROVENANCE` is a symlink or exists as the wrong type.
+Publish through a regular temp file and `mv -T` into place.
+
+```bash
+(
+set -euo pipefail
+export PATH="$HOME/.nvm/versions/node/v22.22.2/bin:$PATH"
+EXPECTED_NODE=v22.22.2
+EXPECTED_NPM=10.9.7
+OBSERVED_NODE="$(node -v)"
+OBSERVED_NPM="$(npm -v)"
+test "$OBSERVED_NODE" = "$EXPECTED_NODE"
+test "$OBSERVED_NPM" = "$EXPECTED_NPM"
+
+RECORDED=6ac355f416b5f2ddaf9820b353d61b62b60b953d
+EXPECTED_SHA=28dcde91b5d6505f6c798ae919c93a6991bce7c7c1ad52ddc4f330f8340446dd
+PACK_REPO="$(git rev-parse --show-toplevel)"
+PACK_SRC_ROOT="$(mktemp -d /tmp/goal-gen-pack-src.XXXXXX)"
+PACK_SRC="$PACK_SRC_ROOT/src"
+PACK_DEST="$(mktemp -d /tmp/goal-gen-pack.XXXXXX)"
+PACKED="$PACK_DEST/goal-gen-0.2.0.tgz"
+ARTIFACT_ROOT="$(mktemp -d /tmp/goal-gen-artifacts.XXXXXX)"
+DURABLE="$ARTIFACT_ROOT/goal-gen-0.2.0-6ac355f.tgz"
+PROVENANCE="$ARTIFACT_ROOT/goal-gen-0.2.0-6ac355f.provenance.json"
+
+fail_if_symlink_dir_or_ancestor() {
+  cur="$1"
+  while [ -n "$cur" ] && [ "$cur" != "/" ]; do
+    if [ -L "$cur" ]; then
+      echo "symlink dest or ancestor: $cur" >&2
+      return 1
+    fi
+    next="$(dirname "$cur")"
+    [ "$next" = "$cur" ] && break
+    cur="$next"
+  done
+}
+
+test -d "$PACK_DEST"
+test ! -L "$PACK_DEST"
+test ! -e "$PACKED"
+test ! -L "$PACKED"
+test ! -e "$PACK_SRC"
+test ! -L "$PACK_SRC"
+test -d "$ARTIFACT_ROOT"
+test ! -L "$ARTIFACT_ROOT"
+fail_if_symlink_dir_or_ancestor "$ARTIFACT_ROOT"
+fail_if_symlink_dir_or_ancestor "$DURABLE"
+fail_if_symlink_dir_or_ancestor "$PROVENANCE"
+
+git -C "$PACK_REPO" worktree add "$PACK_SRC" "$RECORDED"
+pack_src_cleanup() {
+  rc=$?
+  cleanup_rc=0
+  git -C "$PACK_REPO" worktree remove --force "$PACK_SRC" || cleanup_rc=$?
+  rmdir "$PACK_SRC_ROOT" || true
+  if [ "$cleanup_rc" -ne 0 ]; then
+    echo "pack worktree cleanup failed: $PACK_SRC" >&2
+    if [ "$rc" -eq 0 ]; then
+      return "$cleanup_rc"
+    fi
+  fi
+  return "$rc"
+}
+trap pack_src_cleanup EXIT
+cd "$PACK_SRC"
+test "$(git rev-parse HEAD)" = "$RECORDED"
+test -z "$(git status --porcelain)"
+
+cd "$PACK_SRC/goal-gen"
+npm pack --pack-destination "$PACK_DEST"
+
+test -f "$PACKED"
+test "$(sha256sum "$PACKED" | awk '{print $1}')" = "$EXPECTED_SHA"
+fail_if_symlink_dir_or_ancestor "$DURABLE"
+test ! -L "$DURABLE"
+if [ -e "$DURABLE" ]; then
+  test -f "$DURABLE"
+fi
+DURABLE_TMP="$(mktemp "${DURABLE}.XXXXXX")"
+test -f "$DURABLE_TMP"
+test ! -L "$DURABLE_TMP"
+cp "$PACKED" "$DURABLE_TMP"
+test "$(sha256sum "$DURABLE_TMP" | awk '{print $1}')" = "$EXPECTED_SHA"
+mv -T "$DURABLE_TMP" "$DURABLE"
+test -f "$DURABLE"
+test ! -L "$DURABLE"
+test "$(sha256sum "$DURABLE" | awk '{print $1}')" = "$EXPECTED_SHA"
+fail_if_symlink_dir_or_ancestor "$PROVENANCE"
+test ! -L "$PROVENANCE"
+if [ -e "$PROVENANCE" ]; then
+  test -f "$PROVENANCE"
+fi
+PROVENANCE_TMP="$(mktemp "${PROVENANCE}.XXXXXX")"
+test -f "$PROVENANCE_TMP"
+test ! -L "$PROVENANCE_TMP"
+python3 - "$DURABLE" "$EXPECTED_SHA" "$PROVENANCE_TMP" "$RECORDED" \
+  "$PACK_SRC/goal-gen" "$PACK_DEST" "$OBSERVED_NODE" "$OBSERVED_NPM" <<'PY'
+import json
+import os
+import sys
+
+durable, sha, provenance, recorded, pack_cwd, pack_dest, node, npm = sys.argv[1:9]
+doc = {
+    "artifact": durable,
+    "npm_pack_filename": "goal-gen-0.2.0.tgz",
+    "sha256": sha,
+    "bytes": os.path.getsize(durable),
+    "origin_main": recorded,
+    "pack_cwd": pack_cwd,
+    "pack_command": ["npm", "pack", "--pack-destination", pack_dest],
+    "node": node,
+    "npm": npm,
+    "public_release": False,
+}
+with open(provenance, "w", encoding="utf-8") as fh:
+    json.dump(doc, fh, indent=2)
+    fh.write("\n")
+PY
+mv -T "$PROVENANCE_TMP" "$PROVENANCE"
+test -f "$PROVENANCE"
+test ! -L "$PROVENANCE"
+python3 - "$PROVENANCE" "$EXPECTED_SHA" "$EXPECTED_NODE" "$EXPECTED_NPM" <<'PY'
+import json
+import sys
+
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+assert doc["sha256"] == sys.argv[2]
+assert doc["node"] == sys.argv[3]
+assert doc["npm"] == sys.argv[4]
+PY
+printf '%s\n' "DURABLE=$DURABLE" "PROVENANCE=$PROVENANCE"
+cd "$PACK_REPO"
+git worktree remove --force "$PACK_SRC"
+rmdir "$PACK_SRC_ROOT"
+trap - EXIT
+)
+```
+
+`set -euo pipefail` makes a failed `HEAD`, cleanliness, SHA-256, or
+runtime-version `test` stop the block before `cp`, install, or provenance
+write. Observed `node -v` / `npm -v` must equal `v22.22.2` / `10.9.7`
+before writing `$PROVENANCE`; do not record a different runtime as those
+values. After the verified copy, write `$PROVENANCE` for that same
+SHA-256 so the documented provenance path exists and cannot lag an older
+record. Copy or install only after those checks pass. A unique
+`mktemp -d` pack dest does not follow `/tmp/goal-gen-pack-6ac355f`.
+`test ! -e "$PACKED"` / `test ! -L "$PACKED"` stop before `npm pack`
+replaces a pre-seeded packed-name symlink. A unique missing `$PACK_SRC`
+under `mktemp -d` does not collide with
+`/tmp/goal-gen-pack-src-6ac355f`; `git worktree remove` drops it after
+provenance. An isolated `EXIT` trap after `git worktree add` unregisters
+`$PACK_SRC` when a later `set -e` test fails, keeps the primary status,
+and reports cleanup failure without blanket prune/reset/clean.
+`test ! -L "$DURABLE"` plus `mv -T` of a regular temp file does not
+follow a durable symlink. `test ! -L "$PROVENANCE"` plus `mv -T` of a
+regular temp file does not follow a provenance symlink. A
+`fail_if_symlink_dir_or_ancestor` walk plus an operator-owned
+`mktemp -d` artifact root refuse a symlink dest or ancestor before
+publish. Do not `mkdir -p` through `/opt/cursor/artifacts`.
+
+## Install (scratch consumer; not this checkout)
+
+Do not `mkdir -p /tmp/cs-consumer`. That reuses a pre-existing project:
+`npm init -y` keeps stale scripts/deps, and a symlink redirects the
+install. Create a new directory with `mktemp -d`, or fail unless the
+path is absent (`test ! -e` / `test ! -L` / `mkdir`, not `mkdir -p`).
+
+```bash
+set -euo pipefail
+export PATH="$HOME/.nvm/versions/node/v22.22.2/bin:$PATH"
+EXPECTED_SHA=28dcde91b5d6505f6c798ae919c93a6991bce7c7c1ad52ddc4f330f8340446dd
+# After pack, use the owned $DURABLE that block printed. When skipping
+# pack, point DURABLE at a regular file whose digest is EXPECTED_SHA.
+# Do not mkdir -p. Do not publish through /opt/cursor/artifacts.
+test -n "${DURABLE:-}"
+test -f "$DURABLE"
+test "$(sha256sum "$DURABLE" | awk '{print $1}')" = "$EXPECTED_SHA"
+CONSUMER="$(mktemp -d /tmp/cs-consumer.XXXXXX)"
+test -d "$CONSUMER"
+test ! -L "$CONSUMER"
+cd "$CONSUMER"
+npm init -y
+npm install --no-audit --no-fund "$DURABLE"
+BIN="$CONSUMER/node_modules/.bin/goal-gen"
+"$BIN" version --json
+```
+
+Checksum immediately before `npm install`. `set -euo pipefail` stops
+the block on a digest mismatch, so `npm install` does not run. Do not
+install a tarball whose digest does not match. Drive the installed
+`goal-gen` bin. Do not `npm run cli` from the product checkout for
+these steps.
+
+---
+
+## Path A — disposable owned self-test
+
+This invocation creates a uniquely named private fixture with
+`mktemp -d /tmp/cs-owned-fixture.XXXXXX` and retains ownership. Do not
+reuse `/tmp/cs-owned-fixture`. Canaries, tracked dirt, and wrapper tests
+that plant dirt run only in this path. Take the capture baseline after
+that intentional setup. Cleanup removes only this fixture and this
+`$CS_SCRATCH`. Do not `rm -rf` an existing clone. Do not point `$REPO`
+at a Path B checkout.
+
+Never fetch. Never live `main` as a CI pin. `COMMIT` is this fixture's
+full 40-hex HEAD. Dest paths below are missing (`new` does not exist);
+persist creates parents and still writes `COMPLETE`. Allocate a unique
+scratch root per run (`mktemp -d /tmp/cs-scratch.XXXXXX`). Reusing
+`/tmp/cs-scratch` leaves `$MOVED` as an existing directory; GNU `mv`
+then nests the new capture and `reproduce "$MOVED"` can read the old
+`COMPLETE`. Write overlay candidates under `$CS_SCRATCH`, not
+`/tmp/cs-extra.json` or `/tmp/cs-unauth.json`. Those predictable paths
+can already exist as files or symlinks; `cat >` follows them. Capture
+acceptance JSON under `$CS_SCRATCH` too; exit 0 does not mean
+`accepted: true`.
+
+Generation (`printf` into `goal-gen/package.json`, `package-lock.json`,
+and `bin/goal-gen.mjs`, then `git add goal-gen` / `commit -qm fixture`)
+is only for this newly created disposable repository. Pack-block
+porcelain does not guard this block. `test ! -e "$REPO"` and
+`mkdir "$REPO"` fail closed if the path already exists.
+
+Do not set dest inside `$REPO`, `$REPO/.git`, or the common Git
+directory. Those stay `USAGE_ERROR`.
+
+### A.1 Create owned fixture and scratch
+
+```bash
+set -euo pipefail
+export REPO="$(mktemp -d /tmp/cs-owned-fixture.XXXXXX)"
+export CS_SCRATCH="$(mktemp -d /tmp/cs-scratch.XXXXXX)"
+export CAPTURE="$CS_SCRATCH/capture/new/evidence"
+export MOVED="$CS_SCRATCH/capture-moved"
+export OVERLAY="$CS_SCRATCH/overlay/new/evidence"
+export UNAUTH="$CS_SCRATCH/unauth/new/evidence"
+export EXTRA_CANDIDATE="$CS_SCRATCH/cs-extra.json"
+export UNAUTH_CANDIDATE="$CS_SCRATCH/cs-unauth.json"
+
+test -d "$REPO"
+test ! -L "$REPO"
+test -z "$(ls -A "$REPO")"
+git -C "$REPO" init -q
+mkdir -p "$REPO/goal-gen/bin"
+printf '%s\n' '{' \
+  '  "name": "goal-gen",' \
+  '  "version": "0.2.0",' \
+  '  "bin": {' \
+  '    "goal-gen": "bin/goal-gen.mjs"' \
+  '  }' \
+  '}' > "$REPO/goal-gen/package.json"
+printf '%s\n' '{' \
+  '  "name": "goal-gen",' \
+  '  "version": "0.2.0",' \
+  '  "lockfileVersion": 3,' \
+  '  "packages": {' \
+  '    "": {' \
+  '      "name": "goal-gen",' \
+  '      "version": "0.2.0"' \
+  '    }' \
+  '  }' \
+  '}' > "$REPO/goal-gen/package-lock.json"
+printf '%s\n' '#!/usr/bin/env node' 'export {};' \
+  > "$REPO/goal-gen/bin/goal-gen.mjs"
+git -C "$REPO" add goal-gen
+git -C "$REPO" -c user.email=op@example.test -c user.name=op \
+  commit -qm fixture
+export COMMIT="$(git -C "$REPO" rev-parse HEAD)"
+test "${#COMMIT}" -eq 40
+```
+
+### A.2 Plant canaries, then capture
+
+HEAD/index snapshots and dirty/untracked canaries belong only here. The
+dirty selected-file canary must change the worktree digest versus the
+committed blob; trailing JSON whitespace is not enough.
+
+```bash
+set -euo pipefail
+BEFORE_HEAD="$(git -C "$REPO" rev-parse HEAD)"
+INDEX_FILE="$(git -C "$REPO" rev-parse --absolute-git-dir)/index"
+test -f "$INDEX_FILE"
+BEFORE_INDEX="$(sha256sum "$INDEX_FILE" | awk '{print $1}')"
+DIRTY_CANARY="$REPO/goal-gen/package.json"
+UNTRACKED_CANARY="$REPO/CANARY_UNTRACKED.txt"
+test -f "$DIRTY_CANARY"
+test ! -e "$UNTRACKED_CANARY"
+COMMITTED_DIGEST="$(git -C "$REPO" show "$COMMIT:goal-gen/package.json" | sha256sum | awk '{print $1}')"
+COMMITTED_GITSHA="$(git -C "$REPO" rev-parse "$COMMIT:goal-gen/package.json")"
+printf '%s\n' '{' \
+  '  "name": "goal-gen",' \
+  '  "version": "9.9.9",' \
+  '  "bin": {' \
+  '    "goal-gen": "bin/goal-gen.mjs"' \
+  '  }' \
+  '}' > "$DIRTY_CANARY"
+printf 'untracked-canary\n' > "$UNTRACKED_CANARY"
+BEFORE_DIRTY="$(sha256sum "$DIRTY_CANARY" | awk '{print $1}')"
+BEFORE_UNTRACKED="$(sha256sum "$UNTRACKED_CANARY" | awk '{print $1}')"
+test "$BEFORE_DIRTY" != "$COMMITTED_DIGEST"
+"$BIN" acceptance capture-source package-manifest-lockfile \
+  "$REPO" "$COMMIT" --json --bundle-dir "$CAPTURE" \
+  > "$CS_SCRATCH/capture.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/capture.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/capture.json" >/dev/null
+jq -e '.schemaVersion == "yellow-goal/committed-source-capture/v1"' \
+  "$CS_SCRATCH/capture.json" >/dev/null
+jq -e --arg sha "$COMMITTED_DIGEST" \
+  '.source.captured[] | select(.path == "goal-gen/package.json") | .sha256 == $sha' \
+  "$CS_SCRATCH/capture.json" >/dev/null
+jq -e --arg gitsha "$COMMITTED_GITSHA" \
+  '.source.captured[] | select(.path == "goal-gen/package.json") | .gitSha == $gitsha' \
+  "$CS_SCRATCH/capture.json" >/dev/null
+test "$(sha256sum "$CAPTURE/blobs/goal-gen/package.json" | awk '{print $1}')" = "$COMMITTED_DIGEST"
+test "$(sha256sum "$CAPTURE/blobs/goal-gen/package.json" | awk '{print $1}')" != "$BEFORE_DIRTY"
+cmp -s <(git -C "$REPO" show "$COMMIT:goal-gen/package.json") \
+  "$CAPTURE/blobs/goal-gen/package.json"
+test "$(git -C "$REPO" rev-parse HEAD)" = "$BEFORE_HEAD"
+test "$(sha256sum "$INDEX_FILE" | awk '{print $1}')" = "$BEFORE_INDEX"
+test "$(sha256sum "$DIRTY_CANARY" | awk '{print $1}')" = "$BEFORE_DIRTY"
+test "$(sha256sum "$UNTRACKED_CANARY" | awk '{print $1}')" = "$BEFORE_UNTRACKED"
+test -f "$UNTRACKED_CANARY"
+```
+
+Expect `accepted: true` with that captured-source reason, schema
+`yellow-goal/committed-source-capture/v1`, and `COMPLETE` at
+`$CAPTURE/COMPLETE` even though `$CAPTURE` and parent `new` were missing.
+The dirty canary is a version bump to `9.9.9`, so a live-worktree read
+would capture a different digest than the committed `0.2.0` blob. The
+bundle blob and `.source.captured` sha256/gitSha must match
+`git show "$COMMIT:goal-gen/package.json"`, not the dirty bytes. Source
+HEAD, index, dirty canary, and untracked canary must match the before
+hashes. Exit 0 alone does not establish acceptance.
+
+### A.3 Reproduce (moved bundle)
+
+Require `$MOVED` not to exist. GNU `mv SOURCE DIRECTORY` nests when
+the destination already exists, and `reproduce "$MOVED"` then reads the
+old top-level `COMPLETE`. `mv -T` refuses that directory form.
+
+```bash
+set -euo pipefail
+test ! -e "$MOVED"
+test ! -L "$MOVED"
+mv -T "$CAPTURE" "$MOVED"
+"$BIN" acceptance reproduce "$MOVED" --json \
+  > "$CS_SCRATCH/moved-reproduce.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/moved-reproduce.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/moved-reproduce.json" >/dev/null
+```
+
+Expect `accepted: true` with that captured-source reason for an honest
+capture. Dispatch is by `COMPLETE` schema. Exit 0 alone does not
+establish acceptance.
+
+### A.4 Overlay (`--from-capture`)
+
+Candidate is `yellow-goal/candidate-file-content/v1`. Overlay dest may be
+missing (created) or empty, not the source. Dest inside the live captured
+source stays `USAGE_ERROR`. Honest missing-parent dest outside source
+still persist `COMPLETE`. Dest-mkdir leftover rollback of created
+intermediates landed as `#44` on `main` `3d65827`. The recorded
+`6ac355f` BIN (`28dcde91…`) this runbook installs as `$BIN` does not
+include that rollback. Do not pack `3d65827` as `28dcde91`.
+
+Authorized extra-field alternative (allowlisted `goal-gen/package.json`).
+Write under `$CS_SCRATCH`. Do not `cat > /tmp/cs-extra.json`: that
+follows a pre-seeded symlink and can be replaced before
+`verify-candidate`.
+
+```bash
+set -euo pipefail
+test ! -e "$EXTRA_CANDIDATE"
+test ! -L "$EXTRA_CANDIDATE"
+cat > "$EXTRA_CANDIDATE" <<'EOF'
+{"schemaVersion":"yellow-goal/candidate-file-content/v1","files":{"goal-gen/package.json":"{\n  \"name\": \"goal-gen\",\n  \"version\": \"0.2.0\",\n  \"bin\": {\n    \"goal-gen\": \"bin/goal-gen.mjs\"\n  },\n  \"description\": \"captured-base extra-field alternative\"\n}\n"}}
+EOF
+
+"$BIN" acceptance verify-candidate package-manifest-lockfile \
+  "$EXTRA_CANDIDATE" --from-capture "$MOVED" --json --bundle-dir "$OVERLAY" \
+  > "$CS_SCRATCH/extra-overlay.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/extra-overlay.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/extra-overlay.json" >/dev/null
+"$BIN" acceptance reproduce "$OVERLAY" --json \
+  > "$CS_SCRATCH/extra-reproduce.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/extra-reproduce.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/extra-reproduce.json" >/dev/null
+```
+
+Unauthorized extra.txt stays `unauthorized-path` (CS-13 is not weakened).
+That reject still exits 0. Assert `accepted: false` and the reason;
+`jq -e '.decision.accepted == true'` here exits 1.
+
+```bash
+set -euo pipefail
+test ! -e "$UNAUTH_CANDIDATE"
+test ! -L "$UNAUTH_CANDIDATE"
+cat > "$UNAUTH_CANDIDATE" <<'EOF'
+{"schemaVersion":"yellow-goal/candidate-file-content/v1","files":{"goal-gen/extra.txt":"unauthorized\n"}}
+EOF
+
+"$BIN" acceptance verify-candidate package-manifest-lockfile \
+  "$UNAUTH_CANDIDATE" --from-capture "$MOVED" --json --bundle-dir "$UNAUTH" \
+  > "$CS_SCRATCH/unauth-overlay.json"
+jq -e '.decision.accepted == false' "$CS_SCRATCH/unauth-overlay.json" >/dev/null
+jq -e '.decision.reasons == ["unauthorized-path:goal-gen/extra.txt"]' \
+  "$CS_SCRATCH/unauth-overlay.json" >/dev/null
+"$BIN" acceptance reproduce "$UNAUTH" --json \
+  > "$CS_SCRATCH/unauth-reproduce.json"
+jq -e '.decision.accepted == false' "$CS_SCRATCH/unauth-reproduce.json" >/dev/null
+jq -e '.decision.reasons == ["unauthorized-path:goal-gen/extra.txt"]' \
+  "$CS_SCRATCH/unauth-reproduce.json" >/dev/null
+```
+
+### A.5 Cleanup owned resources only
+
+Remove only the fixture and scratch this invocation created. Do not
+`git worktree prune`, `git reset --hard`, `git clean`, or `rm -rf` a
+Path B clone.
+
+```bash
+rm -rf -- "$REPO"
+rm -rf -- "$CS_SCRATCH"
+```
+
+---
+
+## Path B — existing local clone (read-only)
+
+Use an already-present clone at a pinned commit. Do not generate a
+fixture. Do not `printf` into it, `git add`, or `commit`. Capture reads
+the pinned object; uncommitted work stays in the worktree and is not
+assessed.
+
+Do not plant `CANARY_UNTRACKED.txt`. Do not rewrite
+`goal-gen/package.json`. Do not append, touch, chmod, stash, reset,
+checkout, clean, fetch, refresh the index, or restore-after-modify. If
+`CANARY_UNTRACKED.txt` or a dirty `package.json` already exists, that
+is user content — leave it.
+
+Do not require a canary file to exist. Dirty, staged, and untracked
+content is not assessed. Do not hash dirty, staged, or untracked bytes
+as a capture contract.
+
+Do not run `git status`, `git diff`, `git diff-files`, or
+`git diff-index` on this clone. Those commands invoke
+repository-configured programs (`filter.*.clean`, `core.fsmonitor`)
+and are not a read-only observation. `GIT_OPTIONAL_LOCKS=0` does not
+make `git status` safe. Observe HEAD with
+`GIT_OPTIONAL_LOCKS=0 git rev-parse`. If the on-disk index file
+already exists, sha256 that file from outside git (do not use git
+plumbing to hash it). If the index is absent, record `absent` and do
+not create or refresh it. A symlink or non-regular index fails closed.
+Do not refresh or rewrite the index.
+
+Allocate `$CS_SCRATCH` first (external). Record HEAD and the index-file
+record there **before** any later dest mkdir that could be mistaken
+for source setup. Those observations are not source writes. Pack
+worktree registration against this `$REPO` is not allowed.
+
+Never fetch. `COMMIT` is this clone's full 40-hex HEAD, not landed
+`6ac355f` unless that object is already `HEAD` here. Dest paths below
+are missing (`new` does not exist) and live only under `$CS_SCRATCH`.
+Missing `$REPO`, a non-worktree `$REPO`, or a short `COMMIT` fail
+closed. Write overlay candidates under `$CS_SCRATCH`, not
+`/tmp/cs-extra.json`. Capture JSON under `$CS_SCRATCH`. Exit 0 does
+not mean `accepted: true`.
+
+Do not set dest inside `$REPO`, `$REPO/.git`, or the common Git
+directory. Those stay `USAGE_ERROR`.
+
+### B.1 Observe, then pin (no source writes)
+
+```bash
+set -euo pipefail
+export REPO=/tmp/cs-existing-clone
+export CS_SCRATCH="$(mktemp -d /tmp/cs-scratch.XXXXXX)"
+export CAPTURE="$CS_SCRATCH/capture/new/evidence"
+export MOVED="$CS_SCRATCH/capture-moved"
+export OVERLAY="$CS_SCRATCH/overlay/new/evidence"
+export UNAUTH="$CS_SCRATCH/unauth/new/evidence"
+export EXTRA_CANDIDATE="$CS_SCRATCH/cs-extra.json"
+export UNAUTH_CANDIDATE="$CS_SCRATCH/cs-unauth.json"
+
+path_b_index_record() {
+  gitdir="$(GIT_OPTIONAL_LOCKS=0 git -C "$REPO" rev-parse --absolute-git-dir)"
+  index_file="$gitdir/index"
+  if [ -L "$index_file" ]; then
+    echo "symlink index: $index_file" >&2
+    return 1
+  fi
+  if [ -e "$index_file" ]; then
+    if [ ! -f "$index_file" ]; then
+      echo "non-regular index: $index_file" >&2
+      return 1
+    fi
+    sha256sum "$index_file" | awk '{print $1}'
+  else
+    printf 'absent\n'
+  fi
+}
+
+test -d "$REPO"
+test ! -L "$REPO"
+GIT_OPTIONAL_LOCKS=0 git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null
+export COMMIT="$(GIT_OPTIONAL_LOCKS=0 git -C "$REPO" rev-parse HEAD)"
+test "${#COMMIT}" -eq 40
+printf '%s\n' "$COMMIT" > "$CS_SCRATCH/before-head.txt"
+path_b_index_record > "$CS_SCRATCH/before-index.txt"
+```
+
+`$REPO=/tmp/cs-existing-clone` is an example path. Export the real
+clone. `test -d` / `test ! -L` / `rev-parse` fail closed when the
+input is missing or not a worktree. This block does not create
+`$REPO` and does not require `CANARY_UNTRACKED.txt`. Keep
+`path_b_index_record` in this shell for B.2–B.4. HEAD is
+`GIT_OPTIONAL_LOCKS=0 git rev-parse`. The index record is a
+sha256 of the already-present on-disk file, or `absent`; this
+block does not create or refresh that file.
+
+### B.2 Capture to an external dest
+
+```bash
+set -euo pipefail
+BEFORE_HEAD="$(cat "$CS_SCRATCH/before-head.txt")"
+BEFORE_INDEX="$(cat "$CS_SCRATCH/before-index.txt")"
+test "$BEFORE_HEAD" = "$COMMIT"
+"$BIN" acceptance capture-source package-manifest-lockfile \
+  "$REPO" "$COMMIT" --json --bundle-dir "$CAPTURE" \
+  > "$CS_SCRATCH/capture.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/capture.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/capture.json" >/dev/null
+jq -e '.schemaVersion == "yellow-goal/committed-source-capture/v1"' \
+  "$CS_SCRATCH/capture.json" >/dev/null
+test "$(GIT_OPTIONAL_LOCKS=0 git -C "$REPO" rev-parse HEAD)" = "$BEFORE_HEAD"
+test "$(path_b_index_record)" = "$BEFORE_INDEX"
+```
+
+Expect the same accepted JSON and `COMPLETE`. Capture assesses the
+pinned commit, not dirty/staged/untracked worktree bytes. Those
+bytes are not assessed. HEAD and the index-file record must match
+the observations recorded in B.1. This block does not create
+`CANARY_UNTRACKED.txt` or rewrite `goal-gen/package.json`.
+
+### B.3 Reproduce (moved bundle)
+
+Require `$MOVED` not to exist. `mv -T` refuses the directory form that
+would nest into a pre-existing dest. `$MOVED` is under `$CS_SCRATCH`,
+not under `$REPO`.
+
+```bash
+set -euo pipefail
+test ! -e "$MOVED"
+test ! -L "$MOVED"
+mv -T "$CAPTURE" "$MOVED"
+"$BIN" acceptance reproduce "$MOVED" --json \
+  > "$CS_SCRATCH/moved-reproduce.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/moved-reproduce.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/moved-reproduce.json" >/dev/null
+test "$(GIT_OPTIONAL_LOCKS=0 git -C "$REPO" rev-parse HEAD)" = "$(cat "$CS_SCRATCH/before-head.txt")"
+test "$(path_b_index_record)" = "$(cat "$CS_SCRATCH/before-index.txt")"
+```
+
+### B.4 Overlay (`--from-capture`)
+
+Overlay dests and candidates stay under `$CS_SCRATCH`. Do not write
+candidates into `$REPO`. Dest-mkdir leftover rollback of created
+intermediates landed as `#44` `3d65827` (ancestor of `origin/main`
+`f9974a86`). The recorded `6ac355f` BIN (`28dcde91…`) does not
+include that rollback. Do not pack `3d65827` or `f9974a86` as
+`28dcde91`.
+
+```bash
+set -euo pipefail
+test ! -e "$EXTRA_CANDIDATE"
+test ! -L "$EXTRA_CANDIDATE"
+cat > "$EXTRA_CANDIDATE" <<'EOF'
+{"schemaVersion":"yellow-goal/candidate-file-content/v1","files":{"goal-gen/package.json":"{\n  \"name\": \"goal-gen\",\n  \"version\": \"0.2.0\",\n  \"bin\": {\n    \"goal-gen\": \"bin/goal-gen.mjs\"\n  },\n  \"description\": \"captured-base extra-field alternative\"\n}\n"}}
+EOF
+
+"$BIN" acceptance verify-candidate package-manifest-lockfile \
+  "$EXTRA_CANDIDATE" --from-capture "$MOVED" --json --bundle-dir "$OVERLAY" \
+  > "$CS_SCRATCH/extra-overlay.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/extra-overlay.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/extra-overlay.json" >/dev/null
+"$BIN" acceptance reproduce "$OVERLAY" --json \
+  > "$CS_SCRATCH/extra-reproduce.json"
+jq -e '.decision.accepted == true' "$CS_SCRATCH/extra-reproduce.json" >/dev/null
+jq -e '.decision.reasons == ["all required checks observed passed for captured source"]' \
+  "$CS_SCRATCH/extra-reproduce.json" >/dev/null
+test "$(GIT_OPTIONAL_LOCKS=0 git -C "$REPO" rev-parse HEAD)" = "$(cat "$CS_SCRATCH/before-head.txt")"
+test "$(path_b_index_record)" = "$(cat "$CS_SCRATCH/before-index.txt")"
+```
+
+Unauthorized extra.txt stays `unauthorized-path` (CS-13 is not weakened).
+That reject still exits 0. Assert `accepted: false` and the reason;
+`jq -e '.decision.accepted == true'` here exits 1.
+
+```bash
+set -euo pipefail
+test ! -e "$UNAUTH_CANDIDATE"
+test ! -L "$UNAUTH_CANDIDATE"
+cat > "$UNAUTH_CANDIDATE" <<'EOF'
+{"schemaVersion":"yellow-goal/candidate-file-content/v1","files":{"goal-gen/extra.txt":"unauthorized\n"}}
+EOF
+
+"$BIN" acceptance verify-candidate package-manifest-lockfile \
+  "$UNAUTH_CANDIDATE" --from-capture "$MOVED" --json --bundle-dir "$UNAUTH" \
+  > "$CS_SCRATCH/unauth-overlay.json"
+jq -e '.decision.accepted == false' "$CS_SCRATCH/unauth-overlay.json" >/dev/null
+jq -e '.decision.reasons == ["unauthorized-path:goal-gen/extra.txt"]' \
+  "$CS_SCRATCH/unauth-overlay.json" >/dev/null
+"$BIN" acceptance reproduce "$UNAUTH" --json \
+  > "$CS_SCRATCH/unauth-reproduce.json"
+jq -e '.decision.accepted == false' "$CS_SCRATCH/unauth-reproduce.json" >/dev/null
+jq -e '.decision.reasons == ["unauthorized-path:goal-gen/extra.txt"]' \
+  "$CS_SCRATCH/unauth-reproduce.json" >/dev/null
+test "$(GIT_OPTIONAL_LOCKS=0 git -C "$REPO" rev-parse HEAD)" = "$(cat "$CS_SCRATCH/before-head.txt")"
+test "$(path_b_index_record)" = "$(cat "$CS_SCRATCH/before-index.txt")"
+```
+
+Path B cleanup removes only this invocation's `$CS_SCRATCH`. Do not
+delete, reset, clean, or restore `$REPO`.
+
+```bash
+rm -rf -- "$CS_SCRATCH"
+```
