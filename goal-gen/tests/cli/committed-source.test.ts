@@ -9,12 +9,17 @@
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  closeSync,
+  constants as fsConstants,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   symlinkSync,
   unlinkSync,
   watch,
@@ -27,7 +32,16 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main } from '../../backend/src/cli/index';
 import { runCommittedSourceCapture } from '../../backend/src/cli/committed-source-command';
-import { CAPTURE_MANIFEST_MAX_BYTES, persistCommittedSourceBundle, readPersistedCommittedSourceBundle } from '../../backend/src/cli/committed-source-bundle';
+import {
+  CAPTURE_MANIFEST_MAX_BYTES,
+  libcPathFromProcMaps,
+  openOrMkdirHeldPersistChild,
+  persistCommittedSourceBundle,
+  persistRenameNoReplaceChild,
+  readPersistedCommittedSourceBundle,
+  resolveProcessLibcPath,
+  rollbackCreatedPersistDirectories,
+} from '../../backend/src/cli/committed-source-bundle';
 import {
   assertGitReadArgv,
   snapshotFiles,
@@ -402,6 +416,66 @@ function startHeldDestChildrenStealWorker(
     }
     `,
     { eval: true, workerData: { dest, stolenManifest, stolenBlobs } },
+  );
+  let resolveReady!: () => void;
+  const readyWait = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
+  worker.on('message', (msg: string) => {
+    if (msg === 'ready') {
+      resolveReady();
+      return;
+    }
+    if (msg === 'flipped') {
+      flipped = true;
+      return;
+    }
+    workerErr = msg;
+    resolveReady();
+  });
+  worker.once('error', (err) => {
+    workerErr = err;
+    resolveReady();
+  });
+  return {
+    worker,
+    readyWait,
+    flipped: () => flipped,
+    err: () => workerErr,
+  };
+}
+
+function startStashMidMoveIntoSourceWorker(
+  stash: string,
+  stolen: string,
+): { worker: Worker; readyWait: Promise<void>; flipped: () => boolean; err: () => unknown } {
+  let flipped = false;
+  let workerErr: unknown;
+  const worker = new Worker(
+    `
+    import { existsSync, renameSync } from 'node:fs';
+    import { parentPort, workerData } from 'node:worker_threads';
+    const { stash, stolen } = workerData;
+    const deadline = Date.now() + 5000;
+    parentPort.postMessage('ready');
+    const mid = stash + '/mid';
+    let stole = false;
+    while (Date.now() < deadline) {
+      if (!existsSync(mid)) continue;
+      try {
+        renameSync(stash, stolen);
+        stole = true;
+        parentPort.postMessage('flipped');
+      } catch (err) {
+        parentPort.postMessage(String(err));
+      }
+      break;
+    }
+    if (!stole) {
+      parentPort.postMessage('timeout waiting for stash/mid');
+    }
+    `,
+    { eval: true, workerData: { stash, stolen } },
   );
   let resolveReady!: () => void;
   const readyWait = new Promise<void>((resolve) => {
@@ -4175,6 +4249,311 @@ describe('committed-source capture', () => {
       await rm(captureWork, { recursive: true, force: true });
       await rm(overlayWork, { recursive: true, force: true });
       await rm(honest, { recursive: true, force: true });
+    }
+  });
+
+  it('rolls back created dest intermediates when stash is moved into source after mid appears', async () => {
+    const { dir, commit } = await fixtureRepo(coherentFiles);
+    const destWork = await mkdtemp(path.join(tmpdir(), 'cs-mkdir-inter-dest-'));
+    const overlayWork = await mkdtemp(path.join(tmpdir(), 'cs-mkdir-inter-ovl-'));
+    const honestCaptureWork = await mkdtemp(path.join(tmpdir(), 'cs-mkdir-inter-honest-cap-'));
+    const honestOverlayWork = await mkdtemp(path.join(tmpdir(), 'cs-mkdir-inter-honest-ovl-'));
+    const work = await mkdtemp(path.join(tmpdir(), 'cs-mkdir-inter-work-'));
+    const stash = path.join(destWork, 'stash');
+    const dest = path.join(stash, 'mid', 'a', 'b', 'leaf');
+    const stolen = path.join(dir, 'stolen-stash');
+    const overlayStash = path.join(overlayWork, 'stash');
+    const overlayDest = path.join(overlayStash, 'mid', 'a', 'b', 'leaf');
+    const overlayStolen = path.join(dir, 'stolen-overlay-stash');
+    const leftoverUnder = (root: string): string[] =>
+      [
+        path.join(root, 'mid'),
+        path.join(root, 'mid', 'a'),
+        path.join(root, 'mid', 'a', 'b'),
+        path.join(root, 'mid', 'a', 'b', 'leaf'),
+      ].filter((p) => existsSync(p));
+    mkdirSync(stash);
+    mkdirSync(overlayStash);
+    let captureWorker: Worker | undefined;
+    let overlayWorker: Worker | undefined;
+    try {
+      const captureSwap = startStashMidMoveIntoSourceWorker(stash, stolen);
+      captureWorker = captureSwap.worker;
+      await captureSwap.readyWait;
+      expect(captureSwap.err()).toBeUndefined();
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      const captureCode = await main([
+        'acceptance',
+        'capture-source',
+        'package-manifest-lockfile',
+        dir,
+        commit,
+        '--json',
+        '--bundle-dir',
+        dest,
+      ]);
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      expect(captureSwap.err()).toBeUndefined();
+      expect(captureSwap.flipped()).toBe(true);
+      expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
+      expect(captureCode).toBe(2);
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(existsSync(path.join(dest, 'COMPLETE'))).toBe(false);
+      expect(existsSync(path.join(stolen, 'COMPLETE'))).toBe(false);
+      expect(existsSync(path.join(stolen, 'manifest.json'))).toBe(false);
+      expect(existsSync(path.join(stolen, 'blobs'))).toBe(false);
+      expect(leftoverUnder(stolen)).toEqual([]);
+      expect(leftoverUnder(dir)).toEqual([]);
+
+      const honestCapture = path.join(honestCaptureWork, 'new', 'evidence');
+      expect(existsSync(path.join(honestCaptureWork, 'new'))).toBe(false);
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'capture-source',
+          'package-manifest-lockfile',
+          dir,
+          commit,
+          '--json',
+          '--bundle-dir',
+          honestCapture,
+        ]),
+      ).toBe(0);
+      expect(JSON.parse(stdoutText()).decision.accepted).toBe(true);
+      expect(existsSync(path.join(honestCapture, 'COMPLETE'))).toBe(true);
+
+      const extraPath = path.join(work, 'extra.json');
+      await writeFile(extraPath, fileContentCandidate({ 'goal-gen/package.json': extraFieldManifest() }), 'utf8');
+      const overlaySwap = startStashMidMoveIntoSourceWorker(overlayStash, overlayStolen);
+      overlayWorker = overlaySwap.worker;
+      await overlaySwap.readyWait;
+      expect(overlaySwap.err()).toBeUndefined();
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      const overlayCode = await main([
+        'acceptance',
+        'verify-candidate',
+        'package-manifest-lockfile',
+        extraPath,
+        '--from-capture',
+        honestCapture,
+        '--json',
+        '--bundle-dir',
+        overlayDest,
+      ]);
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      expect(overlaySwap.err()).toBeUndefined();
+      expect(overlaySwap.flipped()).toBe(true);
+      expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
+      expect(overlayCode).toBe(2);
+      expect(JSON.parse(stderrText()).error.code).toBe('USAGE_ERROR');
+      expect(existsSync(path.join(overlayDest, 'COMPLETE'))).toBe(false);
+      expect(existsSync(path.join(overlayStolen, 'COMPLETE'))).toBe(false);
+      expect(existsSync(path.join(overlayStolen, 'manifest.json'))).toBe(false);
+      expect(existsSync(path.join(overlayStolen, 'blobs'))).toBe(false);
+      expect(leftoverUnder(overlayStolen)).toEqual([]);
+
+      const honestOverlay = path.join(honestOverlayWork, 'new', 'evidence');
+      expect(existsSync(path.join(honestOverlayWork, 'new'))).toBe(false);
+      stdoutSpy.mockClear();
+      stderrSpy.mockClear();
+      expect(
+        await main([
+          'acceptance',
+          'verify-candidate',
+          'package-manifest-lockfile',
+          extraPath,
+          '--from-capture',
+          honestCapture,
+          '--json',
+          '--bundle-dir',
+          honestOverlay,
+        ]),
+      ).toBe(0);
+      expect(JSON.parse(stdoutText()).decision.accepted).toBe(true);
+      expect(existsSync(path.join(honestOverlay, 'COMPLETE'))).toBe(true);
+    } finally {
+      captureWorker?.terminate();
+      overlayWorker?.terminate();
+      await rm(dir, { recursive: true, force: true });
+      await rm(destWork, { recursive: true, force: true });
+      await rm(overlayWork, { recursive: true, force: true });
+      await rm(honestCaptureWork, { recursive: true, force: true });
+      await rm(honestOverlayWork, { recursive: true, force: true });
+      await rm(work, { recursive: true, force: true });
+      await rm(stolen, { recursive: true, force: true });
+      await rm(overlayStolen, { recursive: true, force: true });
+    }
+  });
+
+  it('holds the created dest child inode before the final name is visible', async () => {
+    const work = await mkdtemp(path.join(tmpdir(), 'cs-mkdir-open-hold-'));
+    const parent = path.join(work, 'parent');
+    const stolen = path.join(work, 'stolen');
+    mkdirSync(parent);
+    const flags =
+      fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | (fsConstants.O_NOFOLLOW ?? 0);
+    const parentFd = openSync(parent, flags);
+    try {
+      const opened = openOrMkdirHeldPersistChild(parentFd, 'mid', parent);
+      expect(opened.created).toBe(true);
+      const held = fstatSync(opened.fd);
+      const child = path.join(parent, 'mid');
+      expect(lstatSync(child).ino).toBe(held.ino);
+      expect(lstatSync(child).dev).toBe(held.dev);
+      expect(readdirSync(parent).filter((name) => name.startsWith('persist-mkdir-'))).toEqual([]);
+      renameSync(child, stolen);
+      mkdirSync(child);
+      const replacement = lstatSync(child);
+      expect(replacement.ino).not.toBe(held.ino);
+      rollbackCreatedPersistDirectories([opened.fd]);
+      expect(existsSync(stolen)).toBe(false);
+      expect(existsSync(child)).toBe(true);
+      expect(lstatSync(child).ino).toBe(replacement.ino);
+      expect(lstatSync(child).dev).toBe(replacement.dev);
+      try {
+        closeSync(opened.fd);
+      } catch {
+        // already closed
+      }
+
+      mkdirSync(path.join(parent, 'stash'));
+      const existing = openOrMkdirHeldPersistChild(parentFd, 'stash', parent);
+      expect(existing.created).toBe(false);
+      const stashStat = lstatSync(path.join(parent, 'stash'));
+      expect(fstatSync(existing.fd).ino).toBe(stashStat.ino);
+      rollbackCreatedPersistDirectories([]);
+      expect(existsSync(path.join(parent, 'stash'))).toBe(true);
+      expect(lstatSync(path.join(parent, 'stash')).ino).toBe(stashStat.ino);
+      try {
+        closeSync(existing.fd);
+      } catch {
+        // already closed
+      }
+    } finally {
+      try {
+        closeSync(parentFd);
+      } catch {
+        // already closed
+      }
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('does not replace a concurrent empty dest child at the final name', async () => {
+    const work = await mkdtemp(path.join(tmpdir(), 'cs-rename-noreplace-'));
+    const parent = path.join(work, 'parent');
+    mkdirSync(parent);
+    const flags =
+      fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | (fsConstants.O_NOFOLLOW ?? 0);
+    const parentFd = openSync(parent, flags);
+    let tmpFd: number | undefined;
+    let concurrentFd: number | undefined;
+    let openedFd: number | undefined;
+    try {
+      const tmpName = 'persist-mkdir-noreplace-tmp';
+      const tmpPath = path.join(parent, tmpName);
+      const childPath = path.join(parent, 'mid');
+      mkdirSync(tmpPath);
+      tmpFd = openSync(tmpPath, flags);
+      const tmpHeld = fstatSync(tmpFd);
+      mkdirSync(childPath);
+      concurrentFd = openSync(childPath, flags);
+      const concurrent = fstatSync(concurrentFd);
+      expect(concurrent.ino).not.toBe(tmpHeld.ino);
+      let thrown: NodeJS.ErrnoException | undefined;
+      try {
+        persistRenameNoReplaceChild(parentFd, tmpName, 'mid', parent);
+      } catch (err) {
+        thrown = err as NodeJS.ErrnoException;
+      }
+      expect(thrown?.code).toBe('EEXIST');
+      expect(fstatSync(concurrentFd).nlink).toBe(concurrent.nlink);
+      expect(fstatSync(concurrentFd).ino).toBe(concurrent.ino);
+      expect(lstatSync(childPath).ino).toBe(concurrent.ino);
+      expect(lstatSync(childPath).dev).toBe(concurrent.dev);
+      expect(existsSync(tmpPath)).toBe(true);
+      expect(fstatSync(tmpFd).ino).toBe(tmpHeld.ino);
+      expect(fstatSync(tmpFd).nlink).toBe(tmpHeld.nlink);
+      rmdirSync(tmpPath);
+      const opened = openOrMkdirHeldPersistChild(parentFd, 'mid', parent);
+      openedFd = opened.fd;
+      expect(opened.created).toBe(false);
+      expect(fstatSync(opened.fd).ino).toBe(concurrent.ino);
+      rollbackCreatedPersistDirectories([]);
+      expect(existsSync(childPath)).toBe(true);
+      expect(lstatSync(childPath).ino).toBe(concurrent.ino);
+    } finally {
+      for (const fd of [openedFd, concurrentFd, tmpFd, parentFd]) {
+        if (fd === undefined) continue;
+        try {
+          closeSync(fd);
+        } catch {
+          // already closed
+        }
+      }
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves process libc from /proc/self/maps without glibc sonames', () => {
+    const alpine = [
+      '7f0000000000-7f0000001000 r--p 00000000 00:00 0 [vvar]',
+      '7f8a2c3b0000-7f8a2c3d8000 r-xp 00000000 00:13 1 /lib/libc.musl-x86_64.so.1',
+      '7f8a2c3d8000-7f8a2c3dc000 r--p 00028000 00:13 1 /lib/libc.musl-x86_64.so.1',
+    ].join('\n');
+    expect(libcPathFromProcMaps(alpine)).toBe('/lib/libc.musl-x86_64.so.1');
+    expect(libcPathFromProcMaps('7f00-7f01 r-xp 00000000 00:00 0 /lib/ld-musl-x86_64.so.1')).toBe(
+      '/lib/ld-musl-x86_64.so.1',
+    );
+    expect(libcPathFromProcMaps('7f00-7f01 r-xp 00000000 00:00 0 /usr/lib/libcap.so.2')).toBeUndefined();
+    const glibc = '7ffff7c2a000-7ffff7ddf000 r-xp 00025000 08:01 1234 /usr/lib/x86_64-linux-gnu/libc.so.6';
+    expect(libcPathFromProcMaps(glibc)).toBe('/usr/lib/x86_64-linux-gnu/libc.so.6');
+    const live = resolveProcessLibcPath();
+    expect(live).toBeDefined();
+    expect(existsSync(live!)).toBe(true);
+    expect(path.basename(live!).startsWith('libc')).toBe(true);
+  });
+
+  it('rolls back the held created dest inode when its pathname is replaced', async () => {
+    const work = await mkdtemp(path.join(tmpdir(), 'cs-pathname-rollback-'));
+    const created = path.join(work, 'created');
+    const stolen = path.join(work, 'stolen');
+    mkdirSync(created);
+    const flags =
+      fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | (fsConstants.O_NOFOLLOW ?? 0);
+    const fd = openSync(created, flags);
+    try {
+      const held = fstatSync(fd);
+      renameSync(created, stolen);
+      mkdirSync(created);
+      const replacement = lstatSync(created);
+      expect(replacement.ino).not.toBe(held.ino);
+      rollbackCreatedPersistDirectories([fd]);
+      expect(existsSync(stolen)).toBe(false);
+      expect(existsSync(created)).toBe(true);
+      expect(lstatSync(created).ino).toBe(replacement.ino);
+      expect(lstatSync(created).dev).toBe(replacement.dev);
+    } finally {
+      try {
+        closeSync(fd);
+      } catch {
+        // already closed
+      }
+      await rm(work, { recursive: true, force: true });
     }
   });
 

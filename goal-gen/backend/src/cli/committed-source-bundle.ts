@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   closeSync,
   constants as fsConstants,
@@ -7,6 +8,8 @@ import {
   mkdirSync,
   openSync,
   readdirSync,
+  readFileSync,
+  readlinkSync,
   readSync,
   realpathSync,
   renameSync,
@@ -14,6 +17,8 @@ import {
   rmdirSync,
   writeSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
+import { constants as osConstants } from 'node:os';
 import path from 'node:path';
 import { CliUsageError, ObservedFixtureError } from './errors';
 import { gitBlobSha1, sha256Hex, runtimeLabel, type RuntimeLabel } from './implementation-revision';
@@ -396,7 +401,17 @@ export function persistCommittedSourceBundle(
   // rolled back when destFd still is the caller path. Failed persist rolls
   // back COMPLETE, blobs, and manifest through the dest fd so a dest inode
   // moved into the captured source after dest open cannot leave those
-  // artifacts there.
+  // artifacts there. Every mkdir'd dest component is created under a unique
+  // temporary name, opened, then renamed onto the final child name so the
+  // created inode is held before that name is visible. createdFds tracks
+  // that held inode, not a replacement that can occupy the final pathname
+  // between mkdir and open. Containment/USAGE_ERROR removes those created
+  // directories in reverse order through the held fd's current parent so
+  // leftover intermediates are not left in the source after a dest ancestor
+  // is moved. Rollback does not rmdir a realpath pathname: a replacement
+  // empty directory at that path is left alone, and the inode still held by
+  // the created fd is removed. Pre-existing empty dest and pre-existing
+  // ancestors are not removed.
   const opened = openEmptyPersistDirectory(dir);
   try {
     try {
@@ -461,13 +476,7 @@ export function persistCommittedSourceBundle(
           );
         }
         rollbackPersistWrites(opened.fd, dir);
-        if (opened.created) {
-          try {
-            rmdirSync(opened.root);
-          } catch {
-            // dest may already be gone
-          }
-        }
+        rollbackCreatedPersistDirectories(opened.createdFds);
         throw err;
       } finally {
         closeHeldPersistChildren({
@@ -478,16 +487,11 @@ export function persistCommittedSourceBundle(
       }
     } catch (err) {
       rollbackPersistWrites(opened.fd, dir);
-      if (opened.created) {
-        try {
-          rmdirSync(opened.root);
-        } catch {
-          // dest may already be gone
-        }
-      }
+      rollbackCreatedPersistDirectories(opened.createdFds);
       throw err;
     }
   } finally {
+    closeCreatedPersistFds(opened.createdFds, opened.fd);
     closeSync(opened.fd);
   }
 }
@@ -561,31 +565,221 @@ function persistWriteAll(fd: number, buf: Buffer): void {
   }
 }
 
-function persistOpenDirChild(parentFd: number, name: string, dir: string): number {
+function persistMkdirTmpName(): string {
+  return `persist-mkdir-${process.pid}-${randomBytes(8).toString('hex')}`;
+}
+
+const RENAME_NOREPLACE = 1;
+
+type Renameat2Fn = (
+  olddirfd: number,
+  oldpath: string,
+  newdirfd: number,
+  newpath: string,
+  flags: number,
+) => number;
+
+let loadedRenameat2: Renameat2Fn | undefined;
+let loadedErrno: (() => number) | undefined;
+
+function posixErrnoCode(errno: number): string {
+  for (const [name, value] of Object.entries(osConstants.errno)) {
+    if (value === errno) {
+      return name;
+    }
+  }
+  return 'EUNKNOWN';
+}
+
+function posixErrnoException(syscall: string, errno: number): NodeJS.ErrnoException {
+  const code = posixErrnoCode(errno);
+  const err = new Error(`${syscall} ${code}`) as NodeJS.ErrnoException;
+  err.code = code;
+  err.errno = errno;
+  err.syscall = syscall;
+  return err;
+}
+
+function mappedPathFromProcMapsLine(line: string): string | undefined {
+  if (!line.includes(' r-xp ') && !line.includes(' r-xs ')) {
+    return undefined;
+  }
+  const pathStart = line.indexOf('/');
+  if (pathStart < 0) {
+    return undefined;
+  }
+  return line.slice(pathStart).trim().replace(/ \(deleted\)$/, '');
+}
+
+function isProcessLibcBase(base: string): boolean {
+  return /^libc\.so(?:\.|$)/.test(base) || /^libc-\d/.test(base) || /^libc\.musl-/.test(base);
+}
+
+function isMuslLinkerBase(base: string): boolean {
+  return /^ld-musl-/.test(base);
+}
+
+export function libcPathFromProcMaps(maps: string): string | undefined {
+  let muslLinker: string | undefined;
+  for (const line of maps.split('\n')) {
+    const mapped = mappedPathFromProcMapsLine(line);
+    if (mapped === undefined || mapped === '') {
+      continue;
+    }
+    const base = path.basename(mapped);
+    if (isProcessLibcBase(base)) {
+      return mapped;
+    }
+    if (muslLinker === undefined && isMuslLinkerBase(base)) {
+      muslLinker = mapped;
+    }
+  }
+  return muslLinker;
+}
+
+export function resolveProcessLibcPath(): string | undefined {
+  let maps: string;
+  try {
+    maps = readFileSync('/proc/self/maps', 'utf8');
+  } catch {
+    return undefined;
+  }
+  const mapped = libcPathFromProcMaps(maps);
+  if (mapped === undefined || !existsSync(mapped)) {
+    return undefined;
+  }
+  return mapped;
+}
+
+function loadRenameat2(): Renameat2Fn {
+  if (loadedRenameat2 !== undefined) {
+    return loadedRenameat2;
+  }
+  const libcPath = resolveProcessLibcPath();
+  if (libcPath === undefined) {
+    throw posixErrnoException('renameat2', osConstants.errno.ENOSYS ?? 38);
+  }
+  try {
+    const require = createRequire(import.meta.url);
+    const koffi = require('koffi') as {
+      load: (name: string) => { func: (sig: string) => Renameat2Fn };
+      errno: () => number;
+    };
+    const lib = koffi.load(libcPath);
+    loadedRenameat2 = lib.func(
+      'int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags)',
+    );
+    loadedErrno = () => koffi.errno();
+    return loadedRenameat2;
+  } catch {
+    throw posixErrnoException('renameat2', osConstants.errno.ENOSYS ?? 38);
+  }
+}
+
+export function persistRenameNoReplaceChild(
+  parentFd: number,
+  fromName: string,
+  toName: string,
+  dir: string,
+): void {
+  assertPersistChildName(fromName, dir);
+  assertPersistChildName(toName, dir);
+  const renameat2 = loadRenameat2();
+  const rc = renameat2(parentFd, fromName, parentFd, toName, RENAME_NOREPLACE);
+  if (rc === 0) {
+    return;
+  }
+  const errno = loadedErrno !== undefined ? loadedErrno() : (osConstants.errno.ENOSYS ?? 38);
+  throw posixErrnoException('renameat2', errno);
+}
+
+function closePersistFd(fd: number | undefined): void {
+  if (fd === undefined) return;
+  try {
+    closeSync(fd);
+  } catch {
+    // already closed
+  }
+}
+
+export function openOrMkdirHeldPersistChild(
+  parentFd: number,
+  name: string,
+  dir: string,
+): { fd: number; created: boolean } {
   const flags = persistDirectoryFlags();
   const child = persistChildPath(parentFd, name, dir);
   try {
-    return openSync(child, flags);
+    return { fd: openSync(child, flags), created: false };
   } catch (err) {
     if (fsErrorCode(err) !== 'ENOENT') {
       throw emptyPersistUsage(dir);
     }
   }
+  let tmpFd: number | undefined;
   try {
-    mkdirSync(child);
-  } catch {
-    throw emptyPersistUsage(dir);
-  }
-  try {
-    return openSync(child, flags);
-  } catch {
-    try {
-      rmdirSync(child);
-    } catch {
-      // dest child may already be gone
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const tmpName = persistMkdirTmpName();
+      const tmp = persistChildPath(parentFd, tmpName, dir);
+      try {
+        mkdirSync(tmp);
+      } catch (mkdirErr) {
+        if (fsErrorCode(mkdirErr) === 'EEXIST') {
+          continue;
+        }
+        throw emptyPersistUsage(dir);
+      }
+      let createdFd: number;
+      try {
+        createdFd = openSync(tmp, flags);
+      } catch {
+        try {
+          rmdirSync(tmp);
+        } catch {
+          // tmp may already be gone
+        }
+        throw emptyPersistUsage(dir);
+      }
+      tmpFd = createdFd;
+      try {
+        persistRenameNoReplaceChild(parentFd, tmpName, name, dir);
+      } catch {
+        try {
+          rmdirHeldPersistDirectory(createdFd);
+        } catch {
+          try {
+            rmdirSync(tmp);
+          } catch {
+            // tmp may already be gone
+          }
+        }
+        closePersistFd(createdFd);
+        tmpFd = undefined;
+        try {
+          return { fd: openSync(child, flags), created: false };
+        } catch {
+          throw emptyPersistUsage(dir);
+        }
+      }
+      tmpFd = undefined;
+      return { fd: createdFd, created: true };
     }
     throw emptyPersistUsage(dir);
+  } catch (err) {
+    if (tmpFd !== undefined) {
+      try {
+        rmdirHeldPersistDirectory(tmpFd);
+      } catch {
+        // tmp may already be gone
+      }
+      closePersistFd(tmpFd);
+    }
+    throw err;
   }
+}
+
+function persistOpenDirChild(parentFd: number, name: string, dir: string): number {
+  return openOrMkdirHeldPersistChild(parentFd, name, dir).fd;
 }
 
 function persistWriteLeaf(parentFd: number, name: string, contents: Buffer | string, dir: string): void {
@@ -763,11 +957,86 @@ function assertPersistDestStillCallerPath(
   }
 }
 
+type OpenedPersistDirectory = {
+  fd: number;
+  root: string;
+  created: boolean;
+  createdFds: number[];
+};
+
+function rmdirHeldPersistDirectory(fd: number): void {
+  const held = fstatSync(fd);
+  if (!held.isDirectory()) {
+    return;
+  }
+  const proc = `/proc/self/fd/${fd}`;
+  if (!existsSync(proc)) {
+    return;
+  }
+  const parentFd = openSync(`${proc}/..`, persistDirectoryFlags());
+  try {
+    const name = path.basename(readlinkSync(proc));
+    if (
+      name === '' ||
+      name === '.' ||
+      name === '..' ||
+      name.includes('/') ||
+      name.includes('\\') ||
+      name.includes('\0')
+    ) {
+      return;
+    }
+    const child = path.join(`/proc/self/fd/${parentFd}`, name);
+    let childFd: number | undefined;
+    try {
+      childFd = openSync(child, persistDirectoryFlags());
+      const childStat = fstatSync(childFd);
+      if (childStat.dev !== held.dev || childStat.ino !== held.ino) {
+        return;
+      }
+    } finally {
+      if (childFd !== undefined) {
+        try {
+          closeSync(childFd);
+        } catch {
+          // already closed
+        }
+      }
+    }
+    rmdirSync(child);
+  } finally {
+    closeSync(parentFd);
+  }
+}
+
+export function rollbackCreatedPersistDirectories(createdFds: number[]): void {
+  for (let i = createdFds.length - 1; i >= 0; i--) {
+    const fd = createdFds[i];
+    if (fd === undefined) continue;
+    try {
+      rmdirHeldPersistDirectory(fd);
+    } catch {
+      // dest may already be gone or not empty
+    }
+  }
+}
+
+function closeCreatedPersistFds(createdFds: number[], keepFd?: number): void {
+  for (const fd of createdFds) {
+    if (fd === keepFd) continue;
+    try {
+      closeSync(fd);
+    } catch {
+      // already closed
+    }
+  }
+}
+
 function finishEmptyPersistDirectory(
   fd: number,
   dir: string,
-  created: boolean,
-): { fd: number; root: string; created: boolean } {
+  createdFds: number[],
+): OpenedPersistDirectory {
   try {
     const stat = fstatSync(fd);
     if (!stat.isDirectory()) {
@@ -777,26 +1046,21 @@ function finishEmptyPersistDirectory(
     if (readdirSync(root).length > 0) {
       throw new CliUsageError(`acceptance capture-source refuses to overwrite a non-empty path: ${dir}`);
     }
-    return { fd, root, created };
+    return { fd, root, created: createdFds.length > 0, createdFds };
   } catch (err) {
-    if (created) {
-      try {
-        rmdirSync(persistRootForFd(fd, dir));
-      } catch {
-        // dest may already be gone
-      }
+    if (!createdFds.includes(fd)) {
+      closeSync(fd);
     }
-    closeSync(fd);
     throw err;
   }
 }
 
-function openEmptyPersistDirectory(dir: string): { fd: number; root: string; created: boolean } {
+function openEmptyPersistDirectory(dir: string): OpenedPersistDirectory {
   const flags = persistDirectoryFlags();
   const resolved = path.resolve(dir);
   try {
     const fd = openSync(resolved, flags);
-    return finishEmptyPersistDirectory(fd, resolved, false);
+    return finishEmptyPersistDirectory(fd, resolved, []);
   } catch (err) {
     if (fsErrorCode(err) !== 'ENOENT') {
       throw emptyPersistUsage(dir);
@@ -822,7 +1086,7 @@ function openEmptyPersistDirectory(dir: string): { fd: number; root: string; cre
       continue;
     }
     let childFd: number | undefined;
-    let created = false;
+    const createdFds: number[] = [];
     let fallback = parentPath;
     try {
       for (let i = missing.length - 1; i >= 0; i--) {
@@ -830,51 +1094,39 @@ function openEmptyPersistDirectory(dir: string): { fd: number; root: string; cre
         if (childName === undefined) {
           throw emptyPersistUsage(dir);
         }
-        const child = persistChildPath(parentFd, childName, dir);
-        try {
-          childFd = openSync(child, flags);
-        } catch (openErr) {
-          if (fsErrorCode(openErr) !== 'ENOENT') {
-            throw emptyPersistUsage(dir);
-          }
-          try {
-            mkdirSync(child);
-          } catch {
-            throw emptyPersistUsage(dir);
-          }
-          if (i === 0) created = true;
-          try {
-            childFd = openSync(child, flags);
-          } catch {
-            try {
-              rmdirSync(child);
-            } catch {
-              // dest may already be gone
-            }
-            throw emptyPersistUsage(dir);
-          }
+        const openedChild = openOrMkdirHeldPersistChild(parentFd, childName, dir);
+        childFd = openedChild.fd;
+        if (openedChild.created) {
+          createdFds.push(childFd);
         }
         if (childFd === undefined) {
           throw emptyPersistUsage(dir);
         }
-        closeSync(parentFd);
+        const previousParent = parentFd;
+        fallback = persistChildPath(previousParent, childName, dir);
         parentFd = childFd;
-        fallback = child;
         childFd = undefined;
+        if (!createdFds.includes(previousParent)) {
+          closeSync(previousParent);
+        }
       }
-      return finishEmptyPersistDirectory(parentFd, fallback, created);
+      return finishEmptyPersistDirectory(parentFd, fallback, createdFds);
     } catch (err) {
-      if (childFd !== undefined) {
+      rollbackCreatedPersistDirectories(createdFds);
+      if (childFd !== undefined && !createdFds.includes(childFd)) {
         try {
           closeSync(childFd);
         } catch {
           // already closed
         }
       }
-      try {
-        closeSync(parentFd);
-      } catch {
-        // already closed
+      closeCreatedPersistFds(createdFds);
+      if (!createdFds.includes(parentFd)) {
+        try {
+          closeSync(parentFd);
+        } catch {
+          // already closed
+        }
       }
       throw err;
     }
