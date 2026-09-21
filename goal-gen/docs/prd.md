@@ -181,12 +181,16 @@ Phasing (see [ADR-0018](decisions/0018-verified-single-milestone-execution.md) a
 3. **Candidate-bound offline milestone (landed in #39):** FILE-CONTENT candidate path,
    durable bundle, installed fresh-process replay of trusted checks. Not verified
    single-milestone execution completed.
-4. **Committed-source capture (this increment):** `acceptance capture-source
+4. **Committed-source capture (landed in #40):** `acceptance capture-source
    <profile-id> <repo> <commit> [--json] [--bundle-dir <dir>]` reads pinned Git
    objects only (no source checkout/index/object writes) and runs one engine-owned
    package-manifest/lockfile coherence profile against captured bytes. Not live
    execution. Not verified single-milestone execution completed.
-5. **Still deferred:** live target-bound execution, Protocol v1 real-run capabilities,
+5. **Captured-base candidate replay (this increment):** persist selected captured
+   bytes; `acceptance reproduce` dispatches by `COMPLETE` schema; FILE-CONTENT
+   overlay onto the captured base via `verify-candidate --from-capture`. Not live
+   execution. Not verified single-milestone execution completed.
+6. **Still deferred:** live target-bound execution, Protocol v1 real-run capabilities,
    promoting scratch/`bypassPermissions` as an approved executor, and host/provider
    integration semantics (yellow-plugins). Provider Protocol v1 remains stub-only today
    (ADR-0017).

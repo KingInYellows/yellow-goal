@@ -303,6 +303,48 @@ else
   exit 1
 fi
 
+# 11b. Persist selected bytes, move the capture bundle, installed reproduce reruns checks.
+csbundle="$workdir/capture-bundle"
+out="$("$bin" acceptance capture-source package-manifest-lockfile "$csrepo" "$csrev" --json --bundle-dir "$csbundle")"
+node -e '
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const o = JSON.parse(process.argv[1]);
+if (o.decision.accepted !== true) throw new Error("persisted capture must be accepted: " + process.argv[1]);
+if (!Array.isArray(o.source.selected) || o.source.selected.length !== 3) {
+  throw new Error("selected bytes missing: " + process.argv[1]);
+}
+for (const row of o.source.selected) {
+  const bytes = fs.readFileSync(path.join(process.argv[2], "blobs", row.path));
+  const sha = crypto.createHash("sha256").update(bytes).digest("hex");
+  if (bytes.length !== row.byteLength || sha !== row.sha256) {
+    throw new Error("persisted blob mismatch: " + row.path);
+  }
+}
+' "$out" "$csbundle"
+test -f "$csbundle/COMPLETE"
+movedcs="$workdir/moved-capture-bundle"
+mv "$csbundle" "$movedcs"
+out="$("$bin" acceptance reproduce "$movedcs" --json)"
+node -e '
+const o = JSON.parse(process.argv[1]);
+if (o.schemaVersion !== "yellow-goal/committed-source-capture/v1") {
+  throw new Error("reproduce must dispatch capture schema: " + process.argv[1]);
+}
+if (o.decision.accepted !== true) throw new Error("moved capture reproduce must accept: " + process.argv[1]);
+if (!o.outcomes || o.outcomes.some((row) => row.status !== "passed")) {
+  throw new Error("capture reproduce must rerun trusted checks: " + process.argv[1]);
+}
+' "$out"
+if git -C "$csrepo" diff --quiet && [ "$(git -C "$csrepo" rev-parse HEAD)" = "$csrev" ]; then
+  :
+else
+  echo "capture reproduce mutated fixture HEAD or tracked files" >&2
+  git -C "$csrepo" status >&2
+  exit 1
+fi
+
 # 12. Read-only proof: the target repository is untouched.
 status="$(git -C "$target" status --porcelain)"
 if [ -n "$status" ]; then

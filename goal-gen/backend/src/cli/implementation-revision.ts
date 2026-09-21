@@ -4,8 +4,12 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-export function sha256Hex(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+export function sha256Hex(data: string | Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+export function gitBlobSha1(data: Buffer): string {
+  return createHash('sha1').update(`blob ${data.length}\0`).update(data).digest('hex');
 }
 
 export function sha256File(filePath: string): string {

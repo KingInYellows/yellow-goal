@@ -7,13 +7,15 @@
  * `version` (RR17, identity probe only), `acceptance record <fixture.json>` (VS spec
  * fixture-only recorder), `acceptance verify-fixture <profile-id> <variant-id>` (VS spec
  * observed fixture verification), `acceptance verify-candidate <profile-id> <candidate.json>`
- * and `acceptance reproduce <bundle-dir>` (candidate-bound offline milestone),
- * `acceptance capture-source <profile-id> <repo> <commit>` (committed-source capture). `--json`
+ * `acceptance reproduce <bundle-dir>` (dispatches by COMPLETE schema: 3c or capture),
+ * `acceptance capture-source <profile-id> <repo> <commit>` (committed-source capture),
+ * `acceptance verify-candidate … --from-capture` (captured-base FILE-CONTENT overlay). `--json`
  * selects machine-readable stdout for successful command output; failures are always a
  * single-line structured JSON object on stderr with a nonzero exit code, `--json` or not, so
  * scripts can rely on it either way. `run` streams run-event/v1 JSON Lines on stdout instead of
  * one object (RR12) and exits 0 only when the run succeeded.
  */
+import path from 'node:path';
 import {
   runAnalyze,
   runCompile,
@@ -107,11 +109,29 @@ async function dispatch(argv: string[]): Promise<number> {
         return 0;
       }
       if (sub === 'verify-candidate') {
+        const fromCapture = subRest.some(
+          (arg) => arg === '--from-capture' || arg.startsWith('--from-capture='),
+        );
+        if (fromCapture) {
+          const { runCommittedSourceOverlay } = await import('./committed-source-command');
+          writeSuccess(await runCommittedSourceOverlay(subRest));
+          return 0;
+        }
         const { runCandidateOfflineVerify } = await import('./candidate-offline-command');
         writeSuccess(await runCandidateOfflineVerify(subRest));
         return 0;
       }
       if (sub === 'reproduce') {
+        const { peekCompleteMarker } = await import('./committed-source-bundle');
+        const { CommittedSourceSchemaVersion } = await import('./committed-source-profiles');
+        const positional = subRest.filter((value) => value !== '--json');
+        const schema =
+          positional.length === 1 ? peekCompleteMarker(path.resolve(positional[0]!)) : undefined;
+        if (schema === CommittedSourceSchemaVersion) {
+          const { runCommittedSourceReproduce } = await import('./committed-source-command');
+          writeSuccess(await runCommittedSourceReproduce(subRest));
+          return 0;
+        }
         const { runCandidateOfflineReproduce } = await import('./candidate-offline-command');
         writeSuccess(await runCandidateOfflineReproduce(subRest));
         return 0;
