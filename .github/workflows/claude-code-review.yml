@@ -75,7 +75,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Cloud agents (cursor[bot]) push PR branches; allow that bot so review runs on
           # synchronize without a manual re-trigger.
-          allowed_bots: cursor
+          allowed_bots: "cursor,graphite-app"
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           # --comment is required for the plugin to post findings; without it the review runs
