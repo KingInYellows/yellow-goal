@@ -12,7 +12,7 @@ on:
   pull_request:
 
 # Least-privilege token: without this block, same-repo PRs inherit the repository's default
-# GITHUB_TOKEN permissions (write, in this repo) for both jobs below. Jobs here only read the
+# GITHUB_TOKEN permissions (write, in this repo) for the jobs below. Jobs here only read the
 # repo and run tests/typecheck/eval, so read-only is sufficient and limits the blast radius if
 # a dependency or script were to misuse the token.
 permissions:
@@ -70,3 +70,22 @@ jobs:
       # drives the installed `goal-gen` bin as an external process (JSON stdout, structured
       # stderr, documented exit codes) — the install story a process consumer depends on.
       - run: bash scripts/install-smoke.sh
+
+  operator-recipe:
+    name: operator Path A/B recipe
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22.22.x
+          cache: npm
+          cache-dependency-path: goal-gen/package-lock.json
+      - run: npm ci
+      # Executes the documented Path A / Path B fences and the Pack→Install
+      # state analog via the helper the runbook itself invokes. Temporary
+      # fixtures only. Does not npm run runner.
+      - run: bash scripts/operator-committed-source-paths.sh

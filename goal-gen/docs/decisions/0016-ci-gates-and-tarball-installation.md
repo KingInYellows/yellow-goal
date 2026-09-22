@@ -1,6 +1,6 @@
 # 0016 — CI gates in GitHub Actions; installation via npm tarball with a tsx bin shim
 
-- Status: accepted
+- Status: superseded by ADR-0019
 - Date: 2026-08-26
 
 ## Context

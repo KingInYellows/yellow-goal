@@ -19,6 +19,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:operator-recipe": "bash scripts/operator-committed-source-paths.sh",
     "test:watch": "vitest",
     "eval": "vitest run tests/evals",
     "eval:planner": "vitest run tests/evals/planner",
