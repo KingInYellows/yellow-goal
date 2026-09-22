@@ -109,10 +109,12 @@ Do not `PACK_SRC=/tmp/goal-gen-pack-src-6ac355f`. A second
 `git worktree add` of that path exits 128 `fatal: already exists`.
 Allocate a unique missing worktree path under a private `mktemp -d`,
 or fail unless the path is absent, and `git worktree remove` it on
-cleanup. After `git worktree add`, install an `EXIT` trap so a later
-`set -e` failure (SHA-gate, durable publish, or provenance) still
-unregisters `$PACK_SRC`. Cleanup only at the end of the block leaves
-a registered worktree on those paths.
+cleanup. After `git worktree add` succeeds, install an `EXIT` trap
+before a later `test -d "$PACK_SRC"` so a failing existence check or
+a later `set -e` failure (SHA-gate, durable publish, or provenance)
+still unregisters `$PACK_SRC`. Cleanup only at the end of the block,
+or a trap after that `test -d`, leaves a registered worktree on those
+paths.
 
 Run the pack block in an isolated subshell so its `EXIT` trap cannot
 prune, reset, or clean a later Path A/B shell, and so a later Path
@@ -395,9 +397,13 @@ these steps.
 ## Pack → Install state analog (CI; not recorded `6ac355f`)
 
 The helper `scripts/operator-committed-source-paths.sh` executes these
-fences. They use the same parent-created state file, isolated `EXIT`
-trap, and fail-closed Install read as Pack/Install above. They do not
-`npm pack` recorded `6ac355f`, do not `npm run runner`, and do not
+fences. It clears inherited `$PACK_SRC`, `$PACK_REPO`, and
+`$PACK_SRC_ROOT` before its `EXIT` trap, so a caller-exported checkout
+is not `git worktree remove --force`d. Cleanup may unregister a
+worktree only after this process creates one. They use the same
+parent-created state file, isolated `EXIT` trap, and fail-closed
+Install read as Pack/Install above. They do not `npm pack` recorded
+`6ac355f`, do not `npm run runner`, and do not
 `mkdir -p /opt/cursor/artifacts`.
 
 <!-- recipe:pack-state-handshake -->
@@ -591,8 +597,6 @@ PACK_DEST="$(mktemp -d /tmp/goal-gen-pack.XXXXXX)"
 ARTIFACT_ROOT="$(mktemp -d /tmp/goal-gen-artifacts.XXXXXX)"
 REAL_GIT="$(command -v git)"
 test -x "$REAL_GIT"
-"$REAL_GIT" -C "$PACK_REPO" worktree add "$PACK_SRC" HEAD
-test -d "$PACK_SRC"
 WRAP="$(mktemp -d /tmp/cs-git-wrap.XXXXXX)"
 cat > "$WRAP/git" <<EOF
 #!/bin/bash
@@ -647,7 +651,9 @@ set +e
     fi
     return "$rc"
   }
+  "$REAL_GIT" -C "$PACK_REPO" worktree add "$PACK_SRC" HEAD
   trap pack_src_cleanup EXIT
+  test -d "$PACK_SRC"
   export PATH="$WRAP:$PATH"
   false
 )
@@ -662,6 +668,71 @@ test ! -e "$ARTIFACT_ROOT"
 "$REAL_GIT" -C "$PACK_REPO" worktree remove --force "$PACK_SRC"
 rmdir "$PACK_SRC_ROOT"
 rm -rf -- "$WRAP"
+```
+
+<!-- recipe:pack-state-unregister-after-add -->
+```bash
+set -euo pipefail
+PACK_REPO="$(git rev-parse --show-toplevel)"
+PACK_SRC_ROOT="$(mktemp -d /tmp/goal-gen-pack-src.XXXXXX)"
+PACK_SRC="$PACK_SRC_ROOT/src"
+CS_PACK_STATE="$(mktemp /tmp/cs-pack-state.XXXXXX)"
+PACK_DEST="$(mktemp -d /tmp/goal-gen-pack.XXXXXX)"
+ARTIFACT_ROOT="$(mktemp -d /tmp/goal-gen-artifacts.XXXXXX)"
+REAL_GIT="$(command -v git)"
+test -x "$REAL_GIT"
+set +e
+(
+  set -euo pipefail
+  pack_src_cleanup() {
+    rc=$?
+    cleanup_rc=0
+    unregistered=0
+    if [ -n "${PACK_REPO:-}" ] && [ -n "${PACK_SRC:-}" ] && [ -d "$PACK_SRC" ]; then
+      if git -C "$PACK_REPO" worktree remove --force "$PACK_SRC"; then
+        unregistered=1
+      else
+        cleanup_rc=$?
+      fi
+    else
+      unregistered=1
+    fi
+    if [ "$unregistered" -eq 1 ] && [ -n "${PACK_SRC_ROOT:-}" ]; then
+      rm -rf -- "$PACK_SRC_ROOT" || true
+    fi
+    if [ "$rc" -ne 0 ]; then
+      if [ -n "${PACK_DEST:-}" ]; then
+        rm -rf -- "$PACK_DEST" || true
+      fi
+      if [ -n "${ARTIFACT_ROOT:-}" ]; then
+        rm -rf -- "$ARTIFACT_ROOT" || true
+      fi
+      if [ -n "${CS_PACK_STATE:-}" ]; then
+        rm -f -- "$CS_PACK_STATE" || true
+      fi
+    fi
+    if [ "$cleanup_rc" -ne 0 ]; then
+      echo "pack worktree cleanup failed: $PACK_SRC" >&2
+    fi
+    return "$rc"
+  }
+  "$REAL_GIT" -C "$PACK_REPO" worktree add "$PACK_SRC" HEAD
+  trap pack_src_cleanup EXIT
+  test -d "$PACK_SRC"
+  test -d "$PACK_SRC/missing-child"
+)
+after_add_rc=$?
+set -e
+test "$after_add_rc" -ne 0
+test ! -e "$PACK_SRC"
+test ! -e "$PACK_SRC_ROOT"
+test ! -e "$CS_PACK_STATE"
+test ! -e "$PACK_DEST"
+test ! -e "$ARTIFACT_ROOT"
+if "$REAL_GIT" -C "$PACK_REPO" worktree list --porcelain | grep -Fqx "worktree $PACK_SRC"; then
+  echo "leftover registered worktree: $PACK_SRC" >&2
+  exit 1
+fi
 ```
 
 ---

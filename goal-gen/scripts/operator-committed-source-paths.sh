@@ -32,9 +32,43 @@ run_recipe() {
   eval "$body"
 }
 
+assert_trap_immediately_after_add() {
+  local name="$1"
+  local body next
+  body="$(extract_recipe "$name")"
+  next="$(printf '%s\n' "$body" | awk '
+    /worktree add "\$PACK_SRC" HEAD/ { getline; print; exit }
+  ')"
+  if [ "$next" != '  trap pack_src_cleanup EXIT' ]; then
+    echo "trap not immediately after worktree add in recipe $name: ${next:-<missing>}" >&2
+    return 1
+  fi
+}
+
 WORKDIR="$(mktemp -d /tmp/cs-recipe.XXXXXX)"
 PATH_B_REPO=""
+# Ignore caller-exported pack paths. cleanup_helper may worktree-remove
+# only a checkout this process created (recipes assign these later).
+unset PACK_SRC PACK_REPO PACK_SRC_ROOT || true
+PACK_SRC=""
+PACK_REPO=""
+PACK_SRC_ROOT=""
 cleanup_helper() {
+  if [ -n "${PACK_SRC:-}" ] && [ -d "$PACK_SRC" ]; then
+    pack_repo="${PACK_REPO:-}"
+    if [ -z "$pack_repo" ]; then
+      pack_repo="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    fi
+    unregistered=0
+    if [ -n "$pack_repo" ]; then
+      if git -C "$pack_repo" worktree remove --force "$PACK_SRC"; then
+        unregistered=1
+      fi
+    fi
+    if [ "$unregistered" -eq 1 ] && [ -n "${PACK_SRC_ROOT:-}" ]; then
+      rm -rf -- "$PACK_SRC_ROOT" || true
+    fi
+  fi
   if [ -n "${PATH_B_REPO:-}" ] && [ -d "$PATH_B_REPO" ]; then
     rm -rf -- "$PATH_B_REPO"
   fi
@@ -66,7 +100,10 @@ run_recipe pack-state-missing
 run_recipe pack-state-trap
 run_recipe pack-state-pretrap-node
 run_recipe pack-state-pretrap-alloc
+assert_trap_immediately_after_add pack-state-unregister-fail
+assert_trap_immediately_after_add pack-state-unregister-after-add
 run_recipe pack-state-unregister-fail
+run_recipe pack-state-unregister-after-add
 run_recipe path-b-bytes-fail
 run_recipe path-b-symlink-mode-fail
 run_recipe path-b-dir-mtime-fail
