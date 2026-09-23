@@ -7,8 +7,8 @@ and run every `npm` command from `goal-gen/`.
 
 What sits at this root and why:
 
-- `.github/workflows/ci.yml` — CI gates (typecheck / test / eval + tarball
-  install smoke). Every step runs with `working-directory: goal-gen`.
+- `.github/workflows/ci.yml` — CI gates (typecheck / test / eval, tarball
+  install smoke, operator recipe). Every step runs with `working-directory: goal-gen`.
 - `.github/workflows/release.yml` — on an annotated `v*` tag matching
   `goal-gen` `package.json`, re-runs the gates and attaches
   `goal-gen-<ver>.tgz` as a GitHub Release asset. Packaging is tokenless;

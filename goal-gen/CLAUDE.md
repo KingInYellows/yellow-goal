@@ -69,13 +69,14 @@ tests/                # unit + contract + fixture + adversarial + integration + 
 - Typecheck: `npm run typecheck` (`tsc --noEmit`, strict)
 - Compiler CLI: `npm run cli -- <request create|request validate|inspect|analyze|compile|packet verify|acceptance record|acceptance verify-fixture|acceptance verify-candidate|acceptance reproduce|acceptance capture-source> ... [--json]`
 - Identity probe: `npm run cli -- version --json` (RR17; installed bin: `goal-gen version --json`)
+- Acceptance verbs below implement the **VS spec** (`plans/specs/verified-single-milestone-execution.md`, ADR-0018); read it before changing them.
 - Acceptance evidence recorder: `npm run cli -- acceptance record <fixture.json> [--json]` (VS spec fixture-only JSON recorder; exit 0 emits a record including failed/blocked/not-run checks; never executes fixture commands or git; not a Protocol v1 capability)
 - Observed fixture verification: `npm run cli -- acceptance verify-fixture <profile-id> <variant-id> [--json]` (VS spec layer 3b; disposable-repo observer + packed `acceptance record` subprocess + fixture-scoped decision; not a Protocol v1 capability; not live execution)
 - Candidate-bound offline milestone: `npm run cli -- acceptance verify-candidate <profile-id> <candidate.json> [--json] [--bundle-dir <dir>]` and `npm run cli -- acceptance reproduce <bundle-dir> [--json]` (VS spec layer 3c; FILE-CONTENT overlay onto an engine-owned profile; durable bundle; `reproduce` dispatches by `COMPLETE` schema; not live execution; not verified single-milestone execution completed)
 - Committed-source capture: `npm run cli -- acceptance capture-source <profile-id> <repo> <commit> [--json] [--bundle-dir <dir>]` and `npm run cli -- acceptance verify-candidate package-manifest-lockfile <candidate.json> --from-capture <bundle-dir> [--json] [--bundle-dir <dir>]` (VS spec layers 3d/3e; Git object reads of a pinned commit; persist selected bytes; captured-base FILE-CONTENT overlay; not live execution; not verified single-milestone execution completed)
 - Run: `npm run cli -- run <request.json> --executor stub|claude-code` (RR11–RR20). `stub` is zero-spend and the only executor tests/CI may use. `claude-code` is real spend — never from CI or an autonomous session.
 - Install gate: `bash scripts/install-smoke.sh` (packs the tarball, installs it in a scratch dir, drives the `goal-gen` bin as a process — safe locally)
-- Operator recipe: `bash scripts/operator-committed-source-paths.sh` (documented Path A / Path B fences plus Pack→Install state analog; temporary fixtures only)
+- Operator recipe: `npm run test:operator-recipe` (= `bash scripts/operator-committed-source-paths.sh`; ADR-0019 CI gate; documented Path A / Path B fences plus Pack→Install state analog; temporary fixtures only)
 - Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (writes the SQL + journal + snapshot that `tests/db/migrations.test.ts` replays) · `npm run db:migrate`
 - Test-only zero-spend run: `npm run cli -- run <request.json> --executor stub`. The M1 runner (`npm run runner -- [--yes] "<goal>"` or `npm run runner -- [--yes] --request <file>`) is human-only: it can invoke real `claude -p`; never copy it into CI or an autonomous session.
 - Lint/format: `TBD` (not configured yet)
@@ -87,12 +88,6 @@ tests/                # unit + contract + fixture + adversarial + integration + 
 - Releases (`../.github/workflows/release.yml`): an annotated `v*` tag (`git tag -a vX.Y.Z -m vX.Y.Z`) that matches `package.json` version and peels to `HEAD` re-runs those gates and attaches `goal-gen-<ver>.tgz` as a GitHub Release asset (unmetered; never `actions/upload-artifact`). Packing runs with `GH_TOKEN` absent; the token is scoped only to idempotent Release publication, which verifies asset SHA-256 before publishing a draft. To recover an existing tag after a partial publish, dispatch Release from `main` with `-f tag=vX.Y.Z -f commit=<expected-40-character-commit>`; the workflow checks out that immutable tag, verifies the expected peeled commit, and never retags it. Consumers pin that URL. Do not cut a tag from an autonomous session.
 - Gates that fail on drift: `tests/contracts/compat.test.ts` (zod ↔ vendored JSON Schema — change both together) and `tests/db/migrations.test.ts` (journal SQL vs `schema.ts` on embedded PGlite — run `npm run db:generate`). PGlite boots slowly in parallel workers, hence the 30s vitest timeouts; they bound hangs, not pace the suite.
 - The verb surface is specified in `plans/specs/request-to-run-pipeline.md` (RR-ids). `run` and `version` are dispatched in `backend/src/cli/index.ts`. `run --executor claude-code` is a real-spend entry point; `stub` is the zero-spend deterministic engine for tests.
-
-## Host
-Runs on a dedicated **Proxmox LXC or VM** with Claude Code logged in once (v1); per-run worktrees (collision-avoidance, not a sandbox); **single-admin login**, reachable only on your own network/Tailscale — no LAN-wide or public exposure. A VM is cleaner if you'll run per-run containers at M2 (nesting in an unprivileged LXC needs extra config). See `docs/prd.md` §11.
-
-## Docs to bookmark
-Claude Agent SDK: https://platform.claude.com/docs/en/agent-sdk/overview · Claude Code headless: https://code.claude.com/docs/en/headless · Hooks: https://code.claude.com/docs/en/hooks · MCP: https://code.claude.com/docs/en/mcp
 
 ## Provider Protocol commands
 
@@ -116,3 +111,9 @@ Preserve the canonical request and run-event/v1; advertise v1 only after all
 acceptance gates pass. This milestone admits stub execution only. HTTP, remote
 gates, persistence, live providers and target-repository execution remain
 separate work. Read the owning specification before changing protocol code.
+
+## Host
+Runs on a dedicated **Proxmox LXC or VM** with Claude Code logged in once (v1); per-run worktrees (collision-avoidance, not a sandbox); **single-admin login**, reachable only on your own network/Tailscale — no LAN-wide or public exposure. A VM is cleaner if you'll run per-run containers at M2 (nesting in an unprivileged LXC needs extra config). See `docs/prd.md` §11.
+
+## Docs to bookmark
+Claude Agent SDK: https://platform.claude.com/docs/en/agent-sdk/overview · Claude Code headless: https://code.claude.com/docs/en/headless · Hooks: https://code.claude.com/docs/en/hooks · MCP: https://code.claude.com/docs/en/mcp
