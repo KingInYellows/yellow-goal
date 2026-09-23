@@ -1,0 +1,19 @@
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_7f8866f2609431::t_dcc1a408d5d2b2 3-6,59-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "398b08e7b26c8ef4223b77fb64293eb0417d4870",
+  "prompts": {},
+  "sessions": {
+    "s_7f8866f2609431": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "df0b9119-fb83-4a7a-ad63-a4a0e9e2a70c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
