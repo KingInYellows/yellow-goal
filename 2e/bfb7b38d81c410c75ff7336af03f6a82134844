@@ -1,0 +1,14 @@
+goal-gen/README.md
+  h_6000354274ce50 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2ebfb7b38d81c410c75ff7336af03f6a82134844",
+  "prompts": {},
+  "humans": {
+    "h_6000354274ce50": {
+      "author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
