@@ -1,0 +1,23 @@
+goal-gen/plans/m1-backend-api-persistence-controls-01-persistence-foundation.md
+  s_7f8866f2609431::t_56b5a0588bac35 3-6
+goal-gen/plans/m1-backend-api-persistence-controls-02-gate-control-mechanics.md
+  s_7f8866f2609431::t_3d289100a595c5 3-6
+goal-gen/plans/m1-walking-skeleton-cli-loop.md
+  s_7f8866f2609431::t_c934fe788a09dc 3-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8e78f2a77748e8e007274947dc39efd8a108387a",
+  "prompts": {},
+  "sessions": {
+    "s_7f8866f2609431": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "df0b9119-fb83-4a7a-ad63-a4a0e9e2a70c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
