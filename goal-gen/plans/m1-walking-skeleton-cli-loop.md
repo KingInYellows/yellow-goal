@@ -1,5 +1,10 @@
 # Feature: M1 Walking-Skeleton CLI Loop
 
+> **Status: SHIPPED except stack item 5**: stack items 1–4 landed in PRs #5–#8 (probe: #9).
+> The task checkboxes below were never retro-ticked, so their counts are not progress; see
+> `## Stack Progress` for per-item status, including why item 5 (the operator-gated real-`claude`
+> run) is still open. Banner added 2026-09-23.
+
 ## Overview
 
 Build the first end-to-end slice of M1: a single CLI runner that wires the full
@@ -51,7 +56,8 @@ view will build on. De-risks the wiring before any UI investment.
   decision.
 - **Specs already define the interfaces** (do not reinvent):
   `.claude/specs/{goal-extractor,executor-router,orchestrator,planner}.md`.
-- **Greenfield:** `backend/src/` contains only `planner/`. The extractor,
+- **Greenfield** *(pre-implementation baseline, 2026-06; these modules now exist, see Status)*:
+  `backend/src/` contains only `planner/`. The extractor,
   executor, and orchestrator modules do not exist yet.
 - **Tooling gap:** `package.json` has no `tsx` and no run script; `zod ^3.24.0`
   and `js-yaml` are present (devDeps). tsconfig is strict

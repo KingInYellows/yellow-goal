@@ -1,17 +1,21 @@
 # Feature: Gate & Control Mechanics
 
+> **Status: SHIPPED** — PR #12 (`2d827a3`, 2026-07-13). All 8 task boxes are ticked, and
+> `plans/specs/m1-backend-api-persistence-controls.md` records shell 02 as shipped. This banner
+> (added 2026-09-23) is the plan's completion record; the repo has no `plans/complete/` convention.
+
 ## Overview
 
-The orchestrator's `confirm()` callback fires at four distinct points today
-(initial DoD confirm, a **synchronous** sign-off gate, and two automatic
-mid-run re-confirms), all routed through one undiscriminated `DodConfirmer`
-signature — and pause/resume has no equivalent at all. This shell builds the
-gate/control primitives the future HTTP layer will trigger (cancel is already
-free per the existing `AbortSignal`), keeping them testable in isolation via
-the existing `Harness` pattern before any real HTTP server exists (that's
-shell 04). The single-slot pending-gate object explicitly lives OUTSIDE
-`Orchestrator` (R23) in a new per-run wrapper, since the orchestrator instance
-itself has no concept of "API caller resolves this later."
+*(Pre-implementation baseline, 2026-07; see Status.)* At plan time the orchestrator's
+`confirm()` callback fired at four distinct points (initial DoD confirm, a **synchronous**
+sign-off gate, and two automatic mid-run re-confirms), all routed through one
+undiscriminated `DodConfirmer` signature — and pause/resume had no equivalent at all.
+This shell built the gate/control primitives the future HTTP layer will trigger (cancel
+was already free per the existing `AbortSignal`), keeping them testable in isolation via
+the existing `Harness` pattern before any real HTTP server exists (that's shell 04). The
+single-slot pending-gate object explicitly lives OUTSIDE `Orchestrator` (R23) in a new
+per-run wrapper (`RunSession`), since the orchestrator instance itself has no concept of
+"API caller resolves this later."
 
 ## Origin
 

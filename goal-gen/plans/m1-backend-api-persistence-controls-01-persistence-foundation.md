@@ -1,17 +1,21 @@
 # Feature: Persistence Foundation
 
+> **Status: SHIPPED** — PR #11 (`2f37f3f`, 2026-07-13). All 11 task boxes are ticked, and
+> `plans/specs/m1-backend-api-persistence-controls.md` records shell 01 as shipped. This banner
+> (added 2026-09-23) is the plan's completion record; the repo has no `plans/complete/` convention.
+
 ## Overview
 
-The backend has zero `dependencies` today (only devDependencies) and no `api/`,
-`db/`, or `mcp/` directories — this is greenfield persistence work. Everything
-downstream (event streaming, gate mechanics, the HTTP API) needs a stable
-identity model first: `actionId` is proven non-unique within a plan (existing
-tests dispatch the same `actionId` 2-3 times in one plan), so `stepId` must be
-newly minted; `GET /plans/:id` returns multiple `runs` per plan, so a durable
-`runId` must be minted and stamped everywhere; and the walking-skeleton's
-`RunState.runId = run-${n}` per-instance counter collides if an `Orchestrator`
-is ever reused within one process. This shell establishes that identity model
-and the Postgres schema everything else builds on.
+*(Pre-implementation baseline, 2026-07; see Status.)* At plan time the backend had zero
+`dependencies` (only devDependencies) and no `api/`, `db/`, or `mcp/` directories —
+greenfield persistence work. Everything downstream (event streaming, gate mechanics, the
+HTTP API) needed a stable identity model first: `actionId` was proven non-unique within a
+plan (existing tests dispatch the same `actionId` 2-3 times in one plan), so `stepId` had
+to be newly minted; `GET /plans/:id` returns multiple `runs` per plan, so a durable
+`runId` had to be minted and stamped everywhere; and the walking-skeleton's
+`RunState.runId = run-${n}` per-instance counter collided if an `Orchestrator` was ever
+reused within one process. This shell established that identity model and the Postgres
+schema everything else builds on.
 
 ## Origin
 
