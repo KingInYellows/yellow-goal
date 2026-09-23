@@ -53,4 +53,4 @@ All tests pass; nothing is skipped. The real-cost integration probe (`tests/inte
 This repo is structured for spec-driven, eval-driven development. Read the relevant `.claude/specs/*.md` before implementing a component. (`docs/claude-code-handoff.md` is the historical M0 bootstrap document.)
 
 ## License
-Private; license TBD. Third-party attributions in [`NOTICE`](NOTICE).
+MIT License; see [`LICENSE`](LICENSE) in this package, which matches the repository-root license. Third-party attributions in [`NOTICE`](NOTICE).
