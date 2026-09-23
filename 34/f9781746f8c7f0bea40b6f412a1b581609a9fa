@@ -1,0 +1,19 @@
+goal-gen/AGENTS.md
+  s_1c6fc0fcc3d347::t_2f74a00ab10197 13-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "34f9781746f8c7f0bea40b6f412a1b581609a9fa",
+  "prompts": {},
+  "sessions": {
+    "s_1c6fc0fcc3d347": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8ba5b03-ba39-4da1-8496-d96367c13312",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
