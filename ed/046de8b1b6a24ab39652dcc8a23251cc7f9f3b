@@ -1,0 +1,22 @@
+goal-gen/plans/specs/approval-gated-real-execution.md
+  s_cac09518912dbe::t_bae0e24bf0cfab 1-280
+  s_cac09518912dbe::t_f1e1d79395dd45 281-283
+goal-gen/docs/brainstorms/2026-09-28-approval-gated-real-claude-execution-brainstorm.md
+  s_cac09518912dbe::t_e5fbb3cf675e6b 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ed046de8b1b6a24ab39652dcc8a23251cc7f9f3b",
+  "prompts": {},
+  "sessions": {
+    "s_cac09518912dbe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b06e6c31-62c3-42fa-9f4c-8219355ad697",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
