@@ -1,0 +1,41 @@
+goal-gen/plans/approval-gated-real-execution-01-approval-foundation.md
+  s_0ea015bd887b9a::t_a3e14a95c34a24 1-271
+goal-gen/docs/solutions/code-quality/adding-a-non-protocol-cli-verb-to-goal-gen.md
+  s_0ea015bd887b9a::t_acd6e91ce57eb5 1-79
+goal-gen/docs/solutions/workflow/decompose-shell-spec-r-ids-and-untracked-shells.md
+  s_0ea015bd887b9a::t_53eb680d283326 1-31
+goal-gen/plans/shells/approval-gated-real-execution-02-executor-hardening.md
+  s_cac09518912dbe::t_330f3b4dcc2ee1 1-49
+goal-gen/plans/shells/approval-gated-real-execution-03-real-run-orchestration.md
+  s_cac09518912dbe::t_4e99b8f1e4699f 1-53
+goal-gen/plans/shells/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_cac09518912dbe::t_dc48062f4526ca 1-50
+goal-gen/plans/shells/approval-gated-real-execution-05-consumer-v2.md
+  s_cac09518912dbe::t_b1e3e78b3c31bd 1-44
+goal-gen/plans/shells/approval-gated-real-execution-06-live-acceptance.md
+  s_cac09518912dbe::t_145cfb5c309d8b 1-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7fe421d4704fa866f14d152d1c998ad0d8c64004",
+  "prompts": {},
+  "sessions": {
+    "s_0ea015bd887b9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6bee699a-204f-45e1-a12f-1c5682501e7d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_cac09518912dbe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b06e6c31-62c3-42fa-9f4c-8219355ad697",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
