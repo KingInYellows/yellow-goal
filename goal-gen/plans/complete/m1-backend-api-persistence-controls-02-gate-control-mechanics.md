@@ -2,7 +2,7 @@
 
 > **Status: SHIPPED** — PR #12 (`2d827a3`, 2026-07-13). All 8 task boxes are ticked, and
 > `plans/specs/m1-backend-api-persistence-controls.md` records shell 02 as shipped. This banner
-> (added 2026-09-23) is the plan's completion record; the repo has no `plans/complete/` convention.
+> (added 2026-09-23) is the plan's completion record; archived to `plans/complete/` on 2026-09-28.
 
 ## Overview
 

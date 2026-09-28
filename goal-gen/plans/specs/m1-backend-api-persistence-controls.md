@@ -5,8 +5,8 @@
 > `plans/specs/m1-backend-api-persistence-controls.md` exists anywhere in git history
 > (verified via `git log --all -- 'goal-gen/plans/specs/*'`). This file is a best-effort
 > reconstruction from the artifacts that survive: the two committed shells
-> (`plans/m1-backend-api-persistence-controls-01-persistence-foundation.md`,
-> `plans/m1-backend-api-persistence-controls-02-gate-control-mechanics.md`), R-id references
+> (`plans/complete/m1-backend-api-persistence-controls-01-persistence-foundation.md`,
+> `plans/complete/m1-backend-api-persistence-controls-02-gate-control-mechanics.md`), R-id references
 > in shipped code comments, `.claude/specs/api.md`, and `docs/prd.md` §6/§12.
 > Recovered requirements cite their evidence. R-ids whose content could not be recovered are
 > listed explicitly under "Unrecovered scope" — they must be re-derived, not guessed.
