@@ -1,0 +1,25 @@
+goal-gen/AGENTS.md
+  s_0ea015bd887b9a::t_3ecfa904a72e11 20
+goal-gen/CLAUDE.md
+  s_0ea015bd887b9a::t_265973edbc9621 78
+goal-gen/docs/operator-real-run.md
+  s_0ea015bd887b9a::t_94e283b07cdfed 27
+goal-gen/plans/approval-gated-real-execution-01-approval-foundation.md
+  s_0ea015bd887b9a::t_40bfc133c30df5 115,138,150,161,169,181,188,197,206,214,223,229,233,243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a4f0af790b670307d5220ce83d4d60a31b0c6969",
+  "prompts": {},
+  "sessions": {
+    "s_0ea015bd887b9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6bee699a-204f-45e1-a12f-1c5682501e7d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

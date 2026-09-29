@@ -1,0 +1,25 @@
+goal-gen/backend/src/cli/run-approval-command.ts
+  s_e3ae526d137cfd::t_d77bb45f0347ce 12,14,21-25,28,31-45,56,99-101,109-114,116-141
+goal-gen/docs/operator-real-run.md
+  s_e3ae526d137cfd::t_93d70ecfa66f4e 41
+goal-gen/tests/cli/run-approval-isolation.test.ts
+  s_e3ae526d137cfd::t_6fb9601d401137 92
+goal-gen/tests/cli/run-approval.test.ts
+  s_e3ae526d137cfd::t_217de51150e3f7 55,57,59,66,131-138,152-153,157,174,251-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c669b2fac55f298befdb532431c159e425254545",
+  "prompts": {},
+  "sessions": {
+    "s_e3ae526d137cfd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c9a3151-c782-4681-a8fa-8f3faec1c7ed",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
