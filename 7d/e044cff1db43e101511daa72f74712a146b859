@@ -1,0 +1,53 @@
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_94daf85b5914ee::t_521051ab5635b0 13-19,22,30,33,36,38,394-398,418,423-427,429-444,473-475,483-494,498-499,501-517,519,521,574-590,592,594,606-612,620-623,647-650
+goal-gen/backend/src/executors/real-run-guards.ts
+  s_94daf85b5914ee::t_df7d26170ed68f 62-72,105,134,146-156
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_94daf85b5914ee::t_3796a71c06c449 582
+goal-gen/backend/src/types.ts
+  s_94daf85b5914ee::t_4e92575740f7c5 27-32,67-69,84-86
+goal-gen/docs/operator-permission-probe.md
+  s_94daf85b5914ee::t_cb453c9500cf00 44-46,63-69
+goal-gen/docs/operator-real-run.md
+  s_94daf85b5914ee::t_4e1864a31f982a 29-30,54-55,92
+goal-gen/docs/solutions/code-quality/adding-a-non-protocol-cli-verb-to-goal-gen.md
+  s_94daf85b5914ee::t_0b158593c9a639 94,100-101
+goal-gen/docs/solutions/security-issues/approval-gated-execution-marker-and-manifest-design.md
+  s_94daf85b5914ee::t_3220b62696de0f 51,65-79
+goal-gen/docs/solutions/workflow/decompose-shell-spec-r-ids-and-untracked-shells.md
+  s_94daf85b5914ee::t_dd87fe54391d41 42-43
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_426bda39855c14 32-36,211,219-223,225,231,240,273-276,295-298,302-331,343-346,349-350,363-364,383
+goal-gen/plans/specs/approval-gated-real-execution.md
+  s_94daf85b5914ee::t_04cde6a7e8681b 332-341,383-385
+goal-gen/tests/executors/fake-worker.test.ts
+  s_94daf85b5914ee::t_583b89c441a162 6,13,139-145,157-158,162-178
+goal-gen/tests/executors/real-run-executor.test.ts
+  s_94daf85b5914ee::t_20ebf3b3c81676 158,161-171,234-263,341-404
+goal-gen/tests/executors/real-run-guards.test.ts
+  s_94daf85b5914ee::t_21a4a82a765887 8,124-126,160-165
+goal-gen/tests/fixtures/claude-worker/fake-claude.mjs
+  s_94daf85b5914ee::t_cb90cdcb26571b 8-11
+goal-gen/tests/harness/real-run-harness.test.ts
+  s_94daf85b5914ee::t_41ad194b7a5fe3 54,56-58
+goal-gen/tests/spikes/permission-probe-findings.md
+  s_94daf85b5914ee::t_3b0b42a181b2ad 17-18,35,37
+goal-gen/tests/spikes/permission-probe.ts
+  s_94daf85b5914ee::t_f4da6ff6c4b5c4 39,54,98-105,109,125-127,129,145,153,160-161,163-164,175,179-180,184-196,198,202-205,207,234-236,252,254-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7de044cff1db43e101511daa72f74712a146b859",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
