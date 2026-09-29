@@ -1,0 +1,37 @@
+goal-gen/tests/executors/diff-capture.test.ts
+  s_94daf85b5914ee::t_8c8f6d0852e917 1-51
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_94daf85b5914ee::t_28cedd7201742e 420-423
+goal-gen/backend/src/executors/diff-capture.ts
+  s_94daf85b5914ee::t_96befe7a5d3be3 16-19,21,28-29,34
+goal-gen/backend/src/executors/worktree.ts
+  s_94daf85b5914ee::t_a58779cc25dcc7 16,48-51,53,57,100-104,157-158
+goal-gen/backend/src/orchestrator/orchestrator.ts
+  s_94daf85b5914ee::t_01a4685eb28a55 627
+goal-gen/docs/operator-permission-probe.md
+  s_94daf85b5914ee::t_55d9109e7ee8df 62-64
+goal-gen/plans/specs/approval-gated-real-execution.md
+  s_94daf85b5914ee::t_468513c71a414f 336-340
+goal-gen/tests/executors/real-run-executor.test.ts
+  s_94daf85b5914ee::t_5304ec7ea785c9 159-161
+goal-gen/tests/spikes/permission-probe-findings.md
+  s_94daf85b5914ee::t_d0ee663bda3879 34
+goal-gen/tests/spikes/permission-probe.ts
+  s_94daf85b5914ee::t_0a849ff7a3616b 101-102,169-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9bf1ab23ceebfe6dac9afac04f787b09a7ad86de",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
