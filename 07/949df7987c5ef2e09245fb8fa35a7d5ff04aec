@@ -1,0 +1,21 @@
+goal-gen/docs/solutions/security-issues/approval-gated-execution-marker-and-manifest-design.md
+  s_e67a66722f60de::t_f01966826762f8 80-116
+goal-gen/plans/approval-gated-real-execution-03-real-run-orchestration.md
+  s_e67a66722f60de::t_7db2bd74002425 1,3,11-344
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "07949df7987c5ef2e09245fb8fa35a7d5ff04aec",
+  "prompts": {},
+  "sessions": {
+    "s_e67a66722f60de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7c97b7c-9d7e-4c69-bf15-40f711e9b42c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
