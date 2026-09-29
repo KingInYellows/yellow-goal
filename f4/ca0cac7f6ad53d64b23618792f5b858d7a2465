@@ -1,0 +1,21 @@
+goal-gen/backend/src/cli/candidate-offline-profiles.ts
+  s_94daf85b5914ee::t_8b08dff951f62e 30-34,78-94,183-184
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_59ee867c07858c 144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f4ca0cac7f6ad53d64b23618792f5b858d7a2465",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
