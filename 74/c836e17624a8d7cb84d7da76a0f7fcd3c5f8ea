@@ -1,0 +1,23 @@
+goal-gen/tests/executors/real-run-guards.test.ts
+  s_94daf85b5914ee::t_04454faa04458f 1-113
+goal-gen/backend/src/executors/real-run-guards.ts
+  s_94daf85b5914ee::t_969e3619d480ac 1-102
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_47386533917ea8 179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "74c836e17624a8d7cb84d7da76a0f7fcd3c5f8ea",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
