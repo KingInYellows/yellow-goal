@@ -1,0 +1,44 @@
+goal-gen/backend/src/cli/run-approval-verifier.ts
+  s_0ea015bd887b9a::t_42cca2746f5bd7 84
+  s_0ea015bd887b9a::t_f2786c6aa198b6 8-10,12-14,19-21,32-35,43-52,82,85-88,104,108,121-125
+  s_0ea015bd887b9a::t_322b85f39da4e6 126,128,130
+goal-gen/backend/src/cli/run-approval.ts
+  s_0ea015bd887b9a::t_d7ac9a6d91a37e 88-91,93-94,96,99-102,104
+  s_0ea015bd887b9a::t_c5a4baf5900447 7
+goal-gen/backend/src/cli/run-approval-command.ts
+  s_0ea015bd887b9a::t_5072fc290f54ce 32,35-36,38,43-48,58,69-72
+goal-gen/backend/src/cli/run-manifest-command.ts
+  s_0ea015bd887b9a::t_940a832bdbbde6 8,55-57,64-68,76-82,87,107,112-113
+goal-gen/backend/src/cli/run-manifest.ts
+  s_0ea015bd887b9a::t_a2da620a6e16dd 15,27-33,35,55,117,119,121,123-126
+goal-gen/docs/decisions/0020-approval-gated-real-execution.md
+  s_0ea015bd887b9a::t_7354308ebbdfe0 37-41,65-72
+goal-gen/docs/operator-real-run.md
+  s_0ea015bd887b9a::t_9a818f9b656f96 43-50,56-58,75,79
+goal-gen/plans/approval-gated-real-execution-01-approval-foundation.md
+  s_0ea015bd887b9a::t_c27b3152017a8c 24-36
+goal-gen/tests/cli/run-approval-spawn.test.ts
+  s_0ea015bd887b9a::t_4b7b9fa50e801f 44-45,60,69-70
+goal-gen/tests/cli/run-approval-verifier.test.ts
+  s_0ea015bd887b9a::t_9fec9c442a26d0 5,45,51,67,72-73,134-141,157,163,165-167,169,173,176-183,190
+goal-gen/tests/cli/run-approval.test.ts
+  s_0ea015bd887b9a::t_ab68ee661da2b5 30,89,134-135,138
+goal-gen/tests/cli/run-manifest.test.ts
+  s_0ea015bd887b9a::t_aca8c5cf8ccd3f 111-115,120-124,227-232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "199c11d9c6e0f250c50db486415c0d5d9d9b54bd",
+  "prompts": {},
+  "sessions": {
+    "s_0ea015bd887b9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6bee699a-204f-45e1-a12f-1c5682501e7d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
