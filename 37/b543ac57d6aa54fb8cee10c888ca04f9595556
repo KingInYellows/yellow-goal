@@ -1,0 +1,21 @@
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_94daf85b5914ee::t_21a7a1e18bcd7a 20,76-79,264-276,543-545,551,555,559,565,569,571-580,591-592
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_e61dcc343835b6 222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "37b543ac57d6aa54fb8cee10c888ca04f9595556",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
