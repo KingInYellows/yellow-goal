@@ -1,0 +1,51 @@
+goal-gen/backend/src/cli/errors.ts
+  s_e5a33c10d2e474::t_3ee05829bb732b 48-64,67,70
+goal-gen/backend/src/cli/index.ts
+  s_e5a33c10d2e474::t_ccf294b7391319 16-18
+goal-gen/backend/src/cli/run-approval-command.ts
+  s_e5a33c10d2e474::t_0096964ba07321 17,29-33,37-38,41-43,46,102-103,106-110
+goal-gen/backend/src/cli/run-approval-verifier.ts
+  s_e5a33c10d2e474::t_5301a75378e8ee 15-16,58-68,70,72-74,78-79,91,116,118,130-134,139-140,142-147,154
+goal-gen/backend/src/cli/run-approval.ts
+  s_e5a33c10d2e474::t_6f01c54c429eb4 88-92,100,103-109,114-120
+goal-gen/backend/src/cli/run-manifest-command.ts
+  s_e5a33c10d2e474::t_51b59ce634f860 36-37,41-42,44,74-75,77,88-92
+goal-gen/backend/src/cli/run-manifest.ts
+  s_e5a33c10d2e474::t_307c4339112f10 12,92-97,100-112,148,151,154-155,158
+goal-gen/docs/decisions/0020-approval-gated-real-execution.md
+  s_e5a33c10d2e474::t_e4cdf4c08d7158 74-79
+goal-gen/docs/operator-real-run.md
+  s_e5a33c10d2e474::t_b1ac4bb7163da5 32-33,74-75,81,83
+goal-gen/docs/solutions/code-quality/adding-a-non-protocol-cli-verb-to-goal-gen.md
+  s_e5a33c10d2e474::t_87d87b2df2a580 80-92
+goal-gen/docs/solutions/security-issues/approval-gated-execution-marker-and-manifest-design.md
+  s_e5a33c10d2e474::t_223a125b86670e 1-47
+goal-gen/plans/approval-gated-real-execution-01-approval-foundation.md
+  s_e5a33c10d2e474::t_f44e83a74db7ae 28-29,36-49
+goal-gen/plans/specs/approval-gated-real-execution.md
+  s_e5a33c10d2e474::t_69c2d9ab0cd4dc 3-5,93-97,237-240
+goal-gen/tests/cli/run-approval-isolation.test.ts
+  s_e5a33c10d2e474::t_c771501c704017 49
+goal-gen/tests/cli/run-approval-verifier.test.ts
+  s_e5a33c10d2e474::t_0afac086e91489 10,62,215-292
+goal-gen/tests/cli/run-approval.test.ts
+  s_e5a33c10d2e474::t_e1e4851c146fb6 5,194-250
+goal-gen/tests/cli/run-manifest.test.ts
+  s_e5a33c10d2e474::t_1631b45c4c7c39 13,117-121,128-142,250-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fe5a219b096dc0799219a2621f77ef5465d5b818",
+  "prompts": {},
+  "sessions": {
+    "s_e5a33c10d2e474": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0e5c4f22-8ac9-4849-8926-017843e6b062",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
