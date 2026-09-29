@@ -1,0 +1,21 @@
+goal-gen/tests/spikes/permission-probe.ts
+  s_23ddbbe7f1c92f::t_16c9870ab3f550 205-207
+goal-gen/docs/operator-permission-probe.md
+  s_23ddbbe7f1c92f::t_f4bd9a865af11f 66-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f8b7926cad44d8edb5515a027bf6d94aa8e9b697",
+  "prompts": {},
+  "sessions": {
+    "s_23ddbbe7f1c92f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fbec8e97-80ce-479d-9240-2c417953dd5d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
