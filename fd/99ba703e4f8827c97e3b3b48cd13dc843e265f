@@ -1,0 +1,56 @@
+goal-gen/tests/fixtures/claude-worker/fake-claude.mjs
+  s_94daf85b5914ee::t_25951dbd7caa37 38,57-64
+  s_f3bd259bcf695c::t_839a0817ed53a9 12,26-28,31-37,39-41,45-50,53-54,56,65-76
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_94daf85b5914ee::t_a9475d867cc275 27,75-76,333-337,339-340,388-395,427,431-442,461-466,492-506,509-516,579
+goal-gen/backend/src/executors/real-run-executor.ts
+  s_94daf85b5914ee::t_0a7829db024d35 8,15,31-32
+goal-gen/backend/src/executors/real-run-guards.ts
+  s_94daf85b5914ee::t_9feb12e5e87032 17-25,42-57,60-66,81,93-95,97-100,131,135-139
+goal-gen/backend/src/executors/worktree.ts
+  s_94daf85b5914ee::t_d10d76cc4d1f1e 43-60,65
+goal-gen/docs/operator-permission-probe.md
+  s_94daf85b5914ee::t_8e99c2db154afb 24-28,34-35,61-64,71-73
+goal-gen/docs/operator-real-run.md
+  s_94daf85b5914ee::t_a7d0ac6846c205 89-90
+goal-gen/plans/specs/approval-gated-real-execution.md
+  s_94daf85b5914ee::t_a79e23738b268e 332-336
+goal-gen/tests/executors/fake-worker.test.ts
+  s_94daf85b5914ee::t_3d3e2f27527fec 6,34-35,104,123-130
+goal-gen/tests/executors/real-run-executor.test.ts
+  s_94daf85b5914ee::t_18015e4a29e68a 142-143,145-163,190-199
+goal-gen/tests/executors/real-run-guards.test.ts
+  s_94daf85b5914ee::t_b7463553653c82 42,46-71,107-113,123,127,129-131
+goal-gen/tests/harness/harness-isolation.test.ts
+  s_94daf85b5914ee::t_3923ce8100dcd2 15-19,71-81
+goal-gen/tests/harness/real-run-harness.test.ts
+  s_94daf85b5914ee::t_5002cdc3a207fd 41-42,60,89
+goal-gen/tests/spikes/permission-probe-findings.md
+  s_94daf85b5914ee::t_ac0fb3f6a5bce8 17-19,36,49,62-63
+goal-gen/tests/spikes/permission-probe.ts
+  s_94daf85b5914ee::t_58148714891c2f 54-55,59-62,101,164-169,190-195,205-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "fd99ba703e4f8827c97e3b3b48cd13dc843e265f",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_f3bd259bcf695c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2492081a-c47f-4e46-8d8f-19dcf262b7ea",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
