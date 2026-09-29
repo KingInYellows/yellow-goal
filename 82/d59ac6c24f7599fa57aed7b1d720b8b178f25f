@@ -1,0 +1,25 @@
+goal-gen/docs/solutions/code-quality/adding-a-non-protocol-cli-verb-to-goal-gen.md
+  s_94daf85b5914ee::t_54d9b2fa15bf21 93-103
+goal-gen/docs/solutions/security-issues/approval-gated-execution-marker-and-manifest-design.md
+  s_94daf85b5914ee::t_87dc6d1b6f77c4 48-68
+goal-gen/docs/solutions/workflow/decompose-shell-spec-r-ids-and-untracked-shells.md
+  s_94daf85b5914ee::t_cfff43a735a3f2 32-43
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_52b4ce715331d0 1,3,7,10-377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "82d59ac6c24f7599fa57aed7b1d720b8b178f25f",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
