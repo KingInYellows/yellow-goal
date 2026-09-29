@@ -1,0 +1,25 @@
+goal-gen/tests/cli/candidate-offline-profile-versions.test.ts
+  s_94daf85b5914ee::t_b701ef6504ea47 41-49
+goal-gen/backend/src/cli/candidate-offline-command.ts
+  s_94daf85b5914ee::t_a4f7384b9b45ad 40
+goal-gen/backend/src/cli/candidate-offline-profiles.ts
+  s_94daf85b5914ee::t_3a109fcc72702e 95,97,100-111,114-117
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_e76f976484051d 152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a438cf46970fe598deb6c6b6004573067a9dfb03",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
