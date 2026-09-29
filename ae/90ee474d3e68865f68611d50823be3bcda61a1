@@ -1,0 +1,21 @@
+goal-gen/backend/src/cli/run-approval-command.ts
+  s_0ea015bd887b9a::t_3236f15bd417f8 51-53
+goal-gen/tests/cli/run-approval.test.ts
+  s_0ea015bd887b9a::t_8b8385873c0064 103,111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ae90ee474d3e68865f68611d50823be3bcda61a1",
+  "prompts": {},
+  "sessions": {
+    "s_0ea015bd887b9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6bee699a-204f-45e1-a12f-1c5682501e7d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
