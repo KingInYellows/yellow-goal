@@ -1,0 +1,46 @@
+goal-gen/tests/cli/run-approval-verifier.test.ts
+  s_0ea015bd887b9a::t_50f3cccb658d1a 1-177
+  s_0ea015bd887b9a::t_4d6fe5201e8f43 178-180
+goal-gen/tests/cli/run-approval.test.ts
+  s_0ea015bd887b9a::t_c14c264549dd30 1-67,70-199
+  s_0ea015bd887b9a::t_a15a3e1258d0bc 68-69
+goal-gen/tests/cli/run-approval-spawn.test.ts
+  s_0ea015bd887b9a::t_d0519da07a16e8 1-72
+goal-gen/backend/src/cli/run-approval-verifier.ts
+  s_0ea015bd887b9a::t_6b6657f7ea30ea 1-109
+goal-gen/backend/src/cli/run-manifest.ts
+  s_0ea015bd887b9a::t_41db681b708491 1-148
+goal-gen/tests/cli/run-manifest.test.ts
+  s_0ea015bd887b9a::t_f72865fcdb5fd4 1-224
+  s_0ea015bd887b9a::t_bd6dbe09dc5eb5 225-229
+goal-gen/backend/src/cli/run-manifest-command.ts
+  s_0ea015bd887b9a::t_a4a47be1521692 1-7,9-102
+  s_0ea015bd887b9a::t_66c06e32680651 8
+goal-gen/backend/src/cli/run-approval-command.ts
+  s_0ea015bd887b9a::t_b346d64a755078 1-81
+goal-gen/backend/src/cli/run-approval.ts
+  s_0ea015bd887b9a::t_38a008ce422c9b 1-105
+goal-gen/tests/cli/run-approval-isolation.test.ts
+  s_0ea015bd887b9a::t_3fc80ea86d3781 1-95
+  s_0ea015bd887b9a::t_dbaf85945ec0b9 96-100
+goal-gen/backend/src/cli/errors.ts
+  s_0ea015bd887b9a::t_1574ffcb25bea3 47-59
+goal-gen/backend/src/cli/index.ts
+  s_0ea015bd887b9a::t_6e04273a1fc05d 7,30,92-105,195-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "10fffbc56b93bae7d78ccf7da55608c9a93ec34e",
+  "prompts": {},
+  "sessions": {
+    "s_0ea015bd887b9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6bee699a-204f-45e1-a12f-1c5682501e7d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}

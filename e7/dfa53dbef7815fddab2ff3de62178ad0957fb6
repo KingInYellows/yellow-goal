@@ -1,0 +1,31 @@
+goal-gen/backend/src/cli/run-approval-command.ts
+  s_0ea015bd887b9a::t_ddb23a5194dc1e 43-49,51-53,75,77-79
+goal-gen/backend/src/cli/run-approval-verifier.ts
+  s_0ea015bd887b9a::t_5cb800c88addfc 43-44,46-47,52-53,55
+goal-gen/backend/src/cli/run-manifest.ts
+  s_0ea015bd887b9a::t_b1dc5bdf50fad1 29-30,34
+goal-gen/plans/approval-gated-real-execution-01-approval-foundation.md
+  s_0ea015bd887b9a::t_9555f5cba82a9f 36-40
+goal-gen/tests/cli/run-approval-verifier.test.ts
+  s_0ea015bd887b9a::t_4c5d086aa6902e 6,14,180-189
+goal-gen/tests/cli/run-approval.test.ts
+  s_0ea015bd887b9a::t_dade55b4f6fc69 89,102-115
+goal-gen/tests/cli/run-manifest.test.ts
+  s_0ea015bd887b9a::t_ff92b818f89ef3 114-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e7dfa53dbef7815fddab2ff3de62178ad0957fb6",
+  "prompts": {},
+  "sessions": {
+    "s_0ea015bd887b9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6bee699a-204f-45e1-a12f-1c5682501e7d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
