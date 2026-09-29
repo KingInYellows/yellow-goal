@@ -27,3 +27,4 @@ Template: [`_template.md`](_template.md).
 | [0017](0017-provider-protocol-v1-stdio.md) | Provider Protocol v1 over installed stdio | accepted |
 | [0018](0018-verified-single-milestone-execution.md) | Verified single-milestone execution is a harness outcome, not a protocol expansion | accepted |
 | [0019](0019-operator-recipe-ci-gate.md) | Operator Path A/B recipe is a third CI gate | accepted |
+| [0020](0020-approval-gated-real-execution.md) | Approval-gated real execution (VS layer 4a): single-use, TTY-minted, hash-bound approvals | accepted |

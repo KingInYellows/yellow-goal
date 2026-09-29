@@ -44,3 +44,33 @@ export class ObservedFixtureError extends Error {
     if (details !== undefined) this.details = details;
   }
 }
+
+/** Every refusal code a run manifest / approval can produce (ADR-0020, runbook refusal table). */
+export const RUN_APPROVAL_ERROR_CODES = [
+  'MANIFEST_INVALID',
+  'APPROVAL_TTY_REQUIRED',
+  'APPROVAL_DECLINED',
+  'APPROVAL_OUT_EXISTS',
+  'APPROVAL_OUT_UNWRITABLE',
+  'APPROVAL_MISSING',
+  'APPROVAL_INVALID',
+  'APPROVAL_ENGINE_MISMATCH',
+  'APPROVAL_HASH_MISMATCH',
+  'APPROVAL_EXPIRED',
+  'APPROVAL_CONSUMED',
+  'APPROVAL_STATE_UNAVAILABLE',
+] as const;
+export type RunApprovalErrorCode = (typeof RUN_APPROVAL_ERROR_CODES)[number];
+
+/** Run-manifest / run-approval refusal (ADR-0020) — nothing minted, consumed, or spawned (exit 1). */
+export class RunApprovalError extends Error {
+  readonly code: RunApprovalErrorCode;
+  readonly details?: unknown;
+
+  constructor(code: RunApprovalErrorCode, message: string, details?: unknown) {
+    super(message);
+    this.name = 'RunApprovalError';
+    this.code = code;
+    if (details !== undefined) this.details = details;
+  }
+}

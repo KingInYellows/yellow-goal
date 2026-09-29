@@ -21,6 +21,40 @@ operations; `scripts/install-smoke.sh:144` asserts non-protocol verbs stay out o
   `approvalId`; emission in `run.start` / ledger / outcome lands in shells 02–04)
 - Shell: approval-gated-real-execution-01-approval-foundation
 
+## Implementation Notes (review outcomes)
+- Consumption marker is keyed by `approvalId` under an engine state dir
+  (`defaultApprovalStateDir()`: `$XDG_STATE_HOME/yellow-goal`, else `~/.local/state/yellow-goal`;
+  `consumed/<approvalId>`), not `${approvalPath}.consumed` as step 12 and AGX-R5 originally said —
+  a path-keyed marker allowed copy-replay (operator decision 2026-09-28; recorded in ADR-0020;
+  step 12 and AGX-R5 since amended).
+  Verifier/consumer take an injectable `stateDir`; when omitted, `defaultApprovalStateDir()`
+  applies. Shell 03 only decides the state-dir permission and `--state-dir` policy.
+- Security review: approval records are consent evidence, not credentials (forgeable by any
+  process running as the operator; pty-drivable). Documented in ADR-0020 Consequences; the
+  harness-level PreToolUse deny is follow-up work in the workspace, not this repo.
+- Also added from review: future-dated `createdAt` → `APPROVAL_INVALID`; strict ASCII tool-rule
+  charset (no leading `-`, no bidi/zero-width); safe-integer flags; ceremony shows sanitized
+  request id/mode/goal; partial approval files removed on write failure.
+- PR #55 review (`/review:pr`, 16 reviewers) fixes: consume re-checks expiry (`APPROVAL_EXPIRED`);
+  state-dir/marker I/O errors → `APPROVAL_STATE_UNAVAILABLE`, `--out` errors →
+  `APPROVAL_OUT_UNWRITABLE` (symlink → `APPROVAL_OUT_EXISTS`); `RunApprovalError` codes typed as a
+  const union; `writeFileExclusive` closes inside the try and reports failed cleanup; manifest
+  defaults live only in `buildRunManifest` (`RUN_MANIFEST_DEFAULTS`) so the real run cannot drift;
+  flag-values type derived from `RUN_MANIFEST_OPTIONS`; spec AGX-R5/Decisions/header amended.
+- API names differ from the step text above: step 6's `parseRunManifestArgs` is
+  `RUN_MANIFEST_OPTIONS` + `manifestFromFlags(values, positionals, verb)` (also returns the
+  request); step 7's `writeFileExclusive` takes no `mode` (always 0600); step 11 also refuses a
+  future-dated `createdAt` (`APPROVAL_INVALID`).
+- Deferred to shells 02/03 (PR #55 review residuals): `--profile id@version` once config-repair v2
+  exists (shell 02); how the real run sources approval-only `expiresInMinutes` when recomputing
+  the manifest, and the `--state-dir` policy (shell 03); dropping `challenge` from `run manifest`
+  output; branding `VerifiedApproval`; re-validating the manifest inside `mintRunApprovalRecord`.
+- Review pass 2: goal shown JSON-escaped, length-capped and above the manifest (display-spoofing);
+  no nested parentheses in tool specifiers; relative `XDG_STATE_HOME` ignored; marker names
+  lower-cased. Deferred P3: an already-existing state dir with loose permissions is not
+  tightened or refused (another local user could pre-create markers to block runs) — shell 03
+  should decide when it wires the default state dir.
+
 ## Pattern Survey
 
 **CLI dispatch** — `backend/src/cli/index.ts` `dispatch(argv)` (lines ~52–160) is a `switch`
@@ -92,7 +126,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
 ## Implementation
 
 ### A. Decision record and docs (zero code)
-- [ ] Step 1: Write `docs/decisions/0020-approval-gated-real-execution.md` from `_template.md`
+- [x] Step 1: Write `docs/decisions/0020-approval-gated-real-execution.md` from `_template.md`
   (`status: accepted`, `date: 2026-09-28`): context (steps 1–5 + VS 3–3e are stub/offline; a
   real worker needs prior human consent), decision (single-use, TTY-minted, hash-bound approval
   of a deterministic manifest; filesystem marker for single use; `acceptEdits` + allowlist, never
@@ -100,19 +134,19 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   (signed approvals, daemon/DB state, env/flag approvals, reusing `--yes`), consequences,
   confirmation (the tests in steps 13–17 + later AGX acceptance rows), links (spec, brainstorm,
   ADR-0010/0011/0015/0017/0018/0019). Cite requirements as `AGX-R<n>`.
-- [ ] Step 2: Append the row `| [0020](0020-approval-gated-real-execution.md) | Approval-gated real execution (VS layer 4a) | accepted |` to `docs/decisions/README.md`.
-- [ ] Step 3: In `plans/specs/verified-single-milestone-execution.md`, insert a layer-table row
+- [x] Step 2: Append the row `| [0020](0020-approval-gated-real-execution.md) | Approval-gated real execution (VS layer 4a) | accepted |` to `docs/decisions/README.md`.
+- [x] Step 3: In `plans/specs/verified-single-milestone-execution.md`, insert a layer-table row
   `| 4a. Approval-gated real execution | … ADR-0020, spec plans/specs/approval-gated-real-execution.md … | In progress (approval foundation) |`
   between the 3e and 4 rows, and narrow row 4's text so it no longer claims all real-run
   capability is deferred (keep target-bound + captured-base real runs deferred).
-- [ ] Step 4: Create runbook skeleton `docs/operator-real-run.md`: headings for Prerequisites,
+- [x] Step 4: Create runbook skeleton `docs/operator-real-run.md`: headings for Prerequisites,
   1. Render manifest (`run manifest`), 2. Approve at a terminal (`run approve --out`), 3. Run
   (placeholder — shell 03), 4. Reproduce + accept (placeholder — AGX-R20), Refusal codes table
   (the `APPROVAL_*` codes from step 8), and an explicit "never from CI / an agent session; never
   `bypassPermissions`" banner. Paths are operator-supplied (workspace puts them under `runtime/`).
 
 ### B. Manifest (AGX-R1)
-- [ ] Step 5: Create `backend/src/cli/run-manifest.ts` exporting:
+- [x] Step 5: Create `backend/src/cli/run-manifest.ts` exporting:
   - `RunManifestSchemaVersion = 'yellow-goal/run-manifest/v1' as const`
   - `RealRunProtocolId = 'yellow-goal/provider-protocol/v2' as const` (the protocol the real run
     will use; **not** advertised in `capabilities` — shell 04 re-exports/moves it)
@@ -135,7 +169,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   - `approvalChallenge(manifestHash): string` — first 8 hex chars as `xxxx-xxxx`.
   Imports limited to zod, `packs/canonical-json`, `packets/checksums`, `orchestrator/guardrails`,
   `cli/candidate-offline-profiles`, `contracts/request` (type), `cli/errors`.
-- [ ] Step 6: Create `backend/src/cli/run-manifest-command.ts` exporting
+- [x] Step 6: Create `backend/src/cli/run-manifest-command.ts` exporting
   `parseRunManifestArgs(argv): Promise<{ inputs: RunManifestInputs, … }>` (shared with approve)
   and `runRunManifest(argv): Promise<CommandOutput<{ manifest, manifestHash, challenge }>>`.
   Flags via `parseArgs`: positional `<request.json>` (loaded with `loadRunRequest`),
@@ -147,7 +181,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   comment: dynamically imported; never loads `run-command`, executors, or spawns.
 
 ### C. Record (AGX-R3)
-- [ ] Step 7: Create `backend/src/cli/run-approval.ts` exporting
+- [x] Step 7: Create `backend/src/cli/run-approval.ts` exporting
   `RunApprovalSchemaVersion = 'yellow-goal/run-approval/v1' as const`, strict zod
   `RunApprovalRecordSchema` + `type RunApprovalRecord` (`schemaVersion`, `approvalId` (uuid),
   `manifestHash` (64-hex), `manifest: RunManifest`, `createdAt`, `expiresAt` (ISO),
@@ -158,7 +192,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   not exactly `createdAt + manifest.expiresInMinutes`), and
   `writeFileExclusive(path, data, mode = 0o600)` — `open(path, O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,
   0o600)` + `fchmod(0o600)` (umask-proof) + write + fsync + close; `EEXIST` surfaces to callers.
-- [ ] Step 8: Add `RunApprovalError` (`code`, `message`, `details?`, `name = 'RunApprovalError'`) to
+- [x] Step 8: Add `RunApprovalError` (`code`, `message`, `details?`, `name = 'RunApprovalError'`) to
   `backend/src/cli/errors.ts` and an `instanceof RunApprovalError` branch in `main()`
   (`backend/src/cli/index.ts`, alongside `ObservedFixtureError`, exit 1). Codes used by this
   slice: `MANIFEST_INVALID`, `APPROVAL_TTY_REQUIRED`, `APPROVAL_DECLINED` (wrong challenge /
@@ -166,8 +200,8 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   `APPROVAL_EXPIRED`, `APPROVAL_ENGINE_MISMATCH`, `APPROVAL_CONSUMED`.
 
 ### D. Ceremony (AGX-R2)
-- [ ] Step 9: Create `backend/src/cli/run-approval-command.ts` exporting
-  `type ApprovalTerminal = { stdin: NodeJS.ReadableStream & { isTTY?: boolean }, stderr:
+- [x] Step 9: Create `backend/src/cli/run-approval-command.ts` exporting
+  `type ApprovalTerminal = { stdin: NodeJS.ReadableStream & { isTTY?: boolean }, output:
   NodeJS.WritableStream & { isTTY?: boolean } }` and `runRunApprove(argv, options?: { terminal?,
   clock?, newId? })`. Flow: parse the same flags as step 6 plus required `--out <path>` → build
   manifest → **if stdin or stderr is not a TTY throw `APPROVAL_TTY_REQUIRED` before any write**
@@ -176,16 +210,16 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   (stdin, terminal) → mismatch/EOF → `APPROVAL_DECLINED`
   (nothing written) → `mintRunApprovalRecord` → `writeFileExclusive(out)` (`EEXIST` →
   `APPROVAL_OUT_EXISTS`) → output `{ approvalId, manifestHash, expiresAt, path }`. There is no
-  flag, env var, or non-TTY path that skips the prompt; defaults bind to `process.stdin` /
-  `process.stderr`.
-- [ ] Step 10: Wire the dispatcher in `backend/src/cli/index.ts` `case 'run'`: peek `rest[0]`;
+  flag, env var, or non-TTY path that skips the prompt; defaults bind to `process.stdin` / the
+  controlling terminal `/dev/tty`.
+- [x] Step 10: Wire the dispatcher in `backend/src/cli/index.ts` `case 'run'`: peek `rest[0]`;
   `'manifest'` → `await import('./run-manifest-command')` → `writeSuccess(await
   runRunManifest(rest.slice(1)))`; `'approve'` → `await import('./run-approval-command')` →
   `writeSuccess(await runRunApprove(rest.slice(1)))`; otherwise unchanged `runRunCommand(rest)`.
   Update the header docstring verb list.
 
 ### E. Verifier and consumption (AGX-R4, AGX-R5, AGX-R6)
-- [ ] Step 11: Create `backend/src/cli/run-approval-verifier.ts` exporting
+- [x] Step 11: Create `backend/src/cli/run-approval-verifier.ts` exporting
   `type VerifiedApproval = { approvalId, manifestHash, manifest, expiresAt, approvalPath }` and
   `verifyRunApproval({ approvalPath, expectedManifest, engineVersion, clock })`: read file
   (`ENOENT`/absent path → `APPROVAL_MISSING`) → `parseRunApprovalRecord` (`APPROVAL_INVALID`) →
@@ -194,7 +228,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   → `APPROVAL_HASH_MISMATCH` (details: both hashes) → `clock() >= expiresAt` →
   `APPROVAL_EXPIRED` → consumption marker already present → `APPROVAL_CONSUMED` (pre-check;
   authoritative check is step 12).
-- [ ] Step 12: In the same module export `consumeRunApproval(verified, { clock })`: marker path =
+- [x] Step 12: In the same module export `consumeRunApproval(verified, { clock })`: marker path =
   `approvalMarkerPath(approvalId)` = `<stateDir>/consumed/<approvalId>` (keyed by id, not by the
   approval file's path, so a copied file cannot replay — AGX-R5); `writeFileExclusive` of
   `{ approvalId, manifestHash, consumedAt }`; `EEXIST` → `APPROVAL_CONSUMED`. Doc comment: callers
@@ -203,7 +237,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   `run.start`, the spend ledger and the terminal outcome.
 
 ### F. Tests
-- [ ] Step 13: `tests/cli/run-manifest.test.ts` — `buildRunManifest` twice on the same inputs →
+- [x] Step 13: `tests/cli/run-manifest.test.ts` — `buildRunManifest` twice on the same inputs →
   byte-identical `canonicalJson` and identical `manifestHash`; tool-list order does not change the
   hash; each field change changes the hash; bound violations (`totalUsd > 20`, `perActionUsd >
   totalUsd`, `expiresInMinutes > 60`, allowed∩disallowed) → `MANIFEST_INVALID`;
@@ -211,7 +245,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   '--json'])` exit 0, one JSON line, empty stderr; missing `--profile` → exit 2 `USAGE_ERROR`;
   `main(['run', <req>, '--executor','stub'])` behaviour unchanged (existing `run-verb` tests keep
   passing).
-- [ ] Step 14: `tests/cli/run-approval.test.ts` — ceremony via fake `ApprovalTerminal`
+- [x] Step 14: `tests/cli/run-approval.test.ts` — ceremony via fake `ApprovalTerminal`
   (PassThrough streams with `isTTY` set): correct challenge → record written, mode `0o600`,
   schema valid, `expiresAt - createdAt` = 60 min default / shorter when requested; wrong
   challenge and EOF → `APPROVAL_DECLINED`, no file; `stdin.isTTY` false, `stderr.isTTY` false →
@@ -220,17 +254,17 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   (`USAGE_ERROR`); env vars (`GOAL_GEN_APPROVE=1` etc.) have no effect; subprocess test with piped
   stdin (`spawnSync(process.execPath, [tsx, cli, 'run','approve', …], { input: '<challenge>\n' })`)
   → exit 1 `APPROVAL_TTY_REQUIRED`, no file.
-- [ ] Step 15: `tests/cli/run-approval-verifier.test.ts` — one test per refusal code
+- [x] Step 15: `tests/cli/run-approval-verifier.test.ts` — one test per refusal code
   (`MISSING`, `INVALID` for bad JSON / schema / tampered hash / lengthened `expiresAt`,
   `ENGINE_MISMATCH`, `HASH_MISMATCH`, `EXPIRED` via injected `clock`, `CONSUMED`), happy path
   returns `VerifiedApproval` with the record's `approvalId`; `consumeRunApproval` second call →
   `APPROVAL_CONSUMED`; concurrency: 16 × `Promise.all(verify → consume)` on one approval → exactly
   one fulfilled, 15 rejected with `APPROVAL_CONSUMED`, marker mode `0o600`.
-- [ ] Step 16: Zero-spawn proof — in `tests/cli/run-manifest.test.ts` (or a dedicated
+- [x] Step 16: Zero-spawn proof — in `tests/cli/run-manifest.test.ts` (or a dedicated
   `run-approval-spawn.test.ts`) put a sentinel fake `claude` on `PATH` (pattern from
   `acceptance-evidence.test.ts:501-540`) and run `run manifest` and a refused `run approve` as
   subprocesses → stamp file absent (zero invocations).
-- [ ] Step 17: `tests/cli/run-approval-isolation.test.ts` modelled on
+- [x] Step 17: `tests/cli/run-approval-isolation.test.ts` modelled on
   `acceptance-record-isolation.test.ts`: source grep of `run-manifest.ts`,
   `run-manifest-command.ts`, `run-approval.ts`, `run-approval-command.ts`,
   `run-approval-verifier.ts` forbids `node:child_process`, `spawn`/`exec*`, `./run-command`, and
@@ -240,7 +274,7 @@ and its mirror `AGENTS.md:15-18`. Only runbook today: `docs/operator-committed-s
   `version`/`capabilities` never load the new modules.
 
 ### G. Docs for the verbs
-- [ ] Step 18: Add a `run manifest` / `run approve` bullet to the Commands section of `CLAUDE.md`
+- [x] Step 18: Add a `run manifest` / `run approve` bullet to the Commands section of `CLAUDE.md`
   (and its mirror `AGENTS.md:15-18`): zero-spend, TTY-only mint, not a Protocol v1 capability,
   never from CI or an autonomous session; link ADR-0020 and the runbook.
 

@@ -1,7 +1,8 @@
 # Spec: Approval-gated real execution (Yellow Harness step 6)
 
-Status: approved by the operator 2026-09-28; implementation not started. Date: 2026-09-28. Owner: Yellow Goal (engine) with Yellow
-Plugins (consumer). Decision: ADR-0020 (to be written in the first shell).
+Status: approved by the operator 2026-09-28; implementation in progress (approval foundation,
+AGX-R1–R6). Date: 2026-09-28. Owner: Yellow Goal (engine) with Yellow Plugins (consumer).
+Decision: [ADR-0020](../../docs/decisions/0020-approval-gated-real-execution.md).
 Source brainstorm: `docs/brainstorms/2026-09-28-approval-gated-real-claude-execution-brainstorm.md`
 (decisions D1–D10, confirmed by the operator 2026-09-28).
 

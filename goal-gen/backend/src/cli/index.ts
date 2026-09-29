@@ -4,6 +4,7 @@
  *
  * Commands: `request create`, `request validate <file>`, `inspect <request>`, `analyze
  * <request>`, `compile <request>`, `packet verify <path>`, `run <request>` (RR11),
+ * `run manifest <request>` / `run approve <request> --out <path>` (ADR-0020 zero-spend approval),
  * `version` (RR17, identity probe only), `acceptance record <fixture.json>` (VS spec
  * fixture-only recorder), `acceptance verify-fixture <profile-id> <variant-id>` (VS spec
  * observed fixture verification), `acceptance verify-candidate <profile-id> <candidate.json>`
@@ -12,8 +13,9 @@
  * `acceptance verify-candidate … --from-capture` (captured-base FILE-CONTENT overlay). `--json`
  * selects machine-readable stdout for successful command output; failures are always a
  * single-line structured JSON object on stderr with a nonzero exit code, `--json` or not, so
- * scripts can rely on it either way. `run` streams run-event/v1 JSON Lines on stdout instead of
- * one object (RR12) and exits 0 only when the run succeeded.
+ * scripts can rely on it either way. `run <request>` streams run-event/v1 JSON Lines on stdout
+ * instead of one object (RR12) and exits 0 only when the run succeeded; `run manifest` and
+ * `run approve` return one object like the compiler verbs.
  */
 import path from 'node:path';
 import {
@@ -26,7 +28,7 @@ import {
   runVersion,
   type CommandOutput,
 } from './commands';
-import { AcceptanceEvidenceError, CliUsageError, NotWiredError, ObservedFixtureError } from './errors';
+import { AcceptanceEvidenceError, CliUsageError, NotWiredError, ObservedFixtureError, RunApprovalError } from './errors';
 import { runCapabilities } from './provider-capabilities';
 import { IntakeValidationFailure } from '../intake';
 import { isDirectInvocation } from './direct-invocation';
@@ -88,6 +90,20 @@ async function dispatch(argv: string[]): Promise<number> {
       writeSuccess(await runCapabilities(rest));
       return 0;
     case 'run': {
+      // ADR-0020 approval verbs are intercepted BEFORE `./run-command` loads: `parseRunInvocation`
+      // would read `manifest`/`approve` as a request path, and these zero-spend verbs must never
+      // load executor/orchestrator code. A request file with either name stays reachable as `./…`.
+      const [sub, ...subRest] = rest;
+      if (sub === 'manifest') {
+        const { runRunManifest } = await import('./run-manifest-command');
+        writeSuccess(await runRunManifest(subRest));
+        return 0;
+      }
+      if (sub === 'approve') {
+        const { runRunApprove } = await import('./run-approval-command');
+        writeSuccess(await runRunApprove(subRest));
+        return 0;
+      }
       // M1 subsystem verb — dynamically imported so the compiler verbs' process never loads
       // executor/orchestrator mutation code (packet-compiler.md isolation rule). The command
       // streams its own stdout (run-event/v1 JSON Lines) and returns the exit code directly.
@@ -174,6 +190,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       return 1;
     }
     if (err instanceof ObservedFixtureError) {
+      writeError(err.code, err.message, err.details);
+      return 1;
+    }
+    if (err instanceof RunApprovalError) {
       writeError(err.code, err.message, err.details);
       return 1;
     }

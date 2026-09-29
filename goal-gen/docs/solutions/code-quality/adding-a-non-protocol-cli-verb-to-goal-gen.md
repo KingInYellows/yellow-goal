@@ -77,3 +77,16 @@ manifest artifact to the goal-gen CLI.
 
 Sibling runbook docs are safe: `scripts/operator-committed-source-paths.sh`
 pins `docs/operator-committed-source.md` by exact path only.
+
+## Update — 2026-09-28 (review of PR #55)
+
+8. **Type the error code.** A bare `code: string` on a `cli/errors.ts` class lets a typo at a
+   throw site compile and only fail in the emitted-code test. Declare the family's codes as a
+   `const` tuple and type `code` (and any `refuse(code, …)` helper) with its union — see
+   `RUN_APPROVAL_ERROR_CODES` in `cli/errors.ts`.
+9. **Derive flag-value types from the `parseArgs` options.** A hand-written mirror of the options
+   object drifts when a flag is added. Use
+   `ReturnType<typeof parseArgs<{ options: typeof OPTIONS }>>['values']`.
+10. **Keep defaults out of the command module.** If another code path must reproduce the same
+    output (here: the real run recomputing an approved manifest), put every default in the pure
+    builder, not in flag parsing — otherwise the two paths drift silently.
