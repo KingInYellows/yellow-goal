@@ -1,0 +1,29 @@
+goal-gen/tests/spikes/permission-probe.ts
+  s_94daf85b5914ee::t_056939903b155d 1-200
+goal-gen/docs/operator-permission-probe.md
+  s_94daf85b5914ee::t_64af1f72fe2b3b 1-75
+goal-gen/tests/spikes/permission-probe-findings.md
+  s_94daf85b5914ee::t_fd591a15882bcc 1-62
+goal-gen/docs/operator-real-run.md
+  s_94daf85b5914ee::t_625911473abec8 20-21,28-29,51-53
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_3f248862b63f2c 299
+goal-gen/plans/specs/approval-gated-real-execution.md
+  s_94daf85b5914ee::t_bfce4a815402d2 325-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3bae4446f2e2d593dfdf64d46f7099d28fbfa992",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
