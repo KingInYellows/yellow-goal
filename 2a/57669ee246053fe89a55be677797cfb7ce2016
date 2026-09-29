@@ -1,0 +1,23 @@
+goal-gen/tests/harness/real-run-harness.test.ts
+  s_94daf85b5914ee::t_2eedf14ce76898 1-93
+goal-gen/tests/harness/real-run-harness.ts
+  s_94daf85b5914ee::t_e3c4cf19411002 1-84
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_b507ff17767603 281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2a57669ee246053fe89a55be677797cfb7ce2016",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
