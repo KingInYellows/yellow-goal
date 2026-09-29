@@ -286,14 +286,14 @@ function classify(envelope: ResultEnvelope, exitCode: number | null): AgentRunSt
 }
 
 /**
- * Why a non-successful envelope failed (AGX-R19 `worker-failed` reasons). Only the success and
- * max-turns subtypes are documented; the budget-stop string was never observed (spike §3), so it
- * is matched defensively on subtype or terminal reason until the AGX-R34 probe records it. Any
- * other error envelope is `error-result` — never success.
+ * Why a non-successful envelope failed (AGX-R19 `worker-failed` reasons). The max-turns and
+ * budget-stop subtypes are the ones the AGX-R34 probe recorded on 2.1.285
+ * (`tests/spikes/permission-probe-findings.md`). Any other error envelope is `error-result` —
+ * never success.
  */
 function classifyFailure(envelope: ResultEnvelope): AgentRunFailureClass {
   if (envelope.subtype === 'error_max_turns') return 'max-turns';
-  if (/budget/i.test(envelope.subtype) || /budget/i.test(envelope.terminal_reason ?? '')) return 'budget';
+  if (envelope.subtype === 'error_max_budget_usd') return 'budget';
   if ((envelope.permission_denials?.length ?? 0) > 0) return 'permission-denied';
   return 'error-result';
 }

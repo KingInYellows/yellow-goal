@@ -114,9 +114,9 @@ describe('fake worker scenarios (AGX-R32)', () => {
 
   it.each<[string, AgentRunFailureClass, number | undefined]>([
     ['error-result', 'error-result', 0.0121],
-    ['budget-stop', 'budget', 0.5012],
-    ['max-turns', 'max-turns', 0.2104],
-    ['permission-denial', 'permission-denied', 0.0911],
+    ['budget-stop', 'budget', 0.0121978],
+    ['max-turns', 'max-turns', 0.0122338],
+    ['permission-denial', 'permission-denied', 0.032695],
     ['malformed-output', 'malformed-output', undefined],
     ['missing-cost', 'cost-unmetered', undefined],
   ])('%s: one invocation, failed as %s', async (scenario, failureClass, cost) => {

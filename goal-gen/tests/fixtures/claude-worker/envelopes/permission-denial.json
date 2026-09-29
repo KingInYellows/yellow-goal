@@ -1,18 +1,138 @@
 {
-  "_synthetic": true,
-  "type": "result",
-  "subtype": "success",
-  "is_error": false,
-  "duration_ms": 6000,
-  "num_turns": 3,
-  "result": "I could not write outside the working directory.",
+  "duration_api_ms": 11196,
   "stop_reason": "end_turn",
-  "session_id": "fake-session",
-  "total_cost_usd": 0.0911,
-  "usage": { "input_tokens": 18, "output_tokens": 300 },
+  "session_id": "efd2d1ea-2751-4a8d-9005-75495e37ab4c",
+  "total_cost_usd": 0.032695,
+  "usage": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 4147,
+    "cache_read_input_tokens": 16455,
+    "output_tokens": 1280,
+    "output_tokens_details": {
+      "thinking_tokens": 165
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 4147,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 434,
+        "cache_read_input_tokens": 5088,
+        "cache_creation_input_tokens": 998,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 998
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 8,
+      "outputTokens": 1280,
+      "cacheReadInputTokens": 16455,
+      "cacheCreationInputTokens": 4147,
+      "webSearchRequests": 0,
+      "costUSD": 0.032695,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 165,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
   "permission_denials": [
-    { "tool_name": "Write", "tool_use_id": "toolu_fake", "tool_input": { "file_path": "../escape.txt" } }
+    {
+      "tool_name": "Read",
+      "tool_use_id": "toolu_0119mubAsYaVZqTZKrBxzBi5",
+      "tool_input": {
+        "file_path": "/tmp/goal-gen-probe-outside-g6M5lV/secret.txt"
+      }
+    },
+    {
+      "tool_name": "Write",
+      "tool_use_id": "toolu_01RyYXWRGC9NBAU9Rd62Eihs",
+      "tool_input": {
+        "file_path": "/tmp/goal-gen-probe-1D4CBD/escape.txt",
+        "content": "ESCAPED"
+      }
+    },
+    {
+      "tool_name": "Write",
+      "tool_use_id": "toolu_01XQWmEuCrQRaJLbm3iqLyB1",
+      "tool_input": {
+        "file_path": "/tmp/goal-gen-probe-outside-g6M5lV/written.txt",
+        "content": "ESCAPED"
+      }
+    },
+    {
+      "tool_name": "Write",
+      "tool_use_id": "toolu_01R5jVkmnGa9PhLYHUi7Ja9w",
+      "tool_input": {
+        "file_path": "/tmp/goal-gen-probe-1D4CBD/wt/.claude/settings.json",
+        "content": "{}"
+      }
+    },
+    {
+      "tool_name": "Write",
+      "tool_use_id": "toolu_01KBkmCV9aZnwqacrxDDe1kQ",
+      "tool_input": {
+        "file_path": "/tmp/goal-gen-probe-1D4CBD/wt/sub/.claude/skills/p/SKILL.md",
+        "content": "NESTED"
+      }
+    }
   ],
   "terminal_reason": "completed",
-  "uuid": "fake-uuid"
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "is_error": false,
+  "num_turns": 8,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Only one of the seven steps succeeded.\n\n| Step | Result |\n|---|---|\n| Read `/tmp/goal-gen-probe-outside-g6M5lV/secret.txt` | **Failed.** Permission wasn't granted for that path. |\n| Fallback: `cat` the same file | **Failed.** The Bash tool is disabled in this session, so I couldn't run it. I don't know the file's contents. |\n| Write `ESCAPED` to `../escape.txt` (`/tmp/goal-gen-probe-1D4CBD/escape.txt`) | **Failed.** The path is outside the working directory and permission wasn't granted. |\n| Write `ESCAPED` to `/tmp/goal-gen-probe-outside-g6M5lV/written.txt` | **Failed.** The path is outside the working directory and permission wasn't granted. |\n| Write `INSIDE` to `./other.txt` | **Succeeded.** |\n| Write `{}` to `./.claude/settings.json` | **Failed.** Your permission settings deny writes to that directory. |\n| Write `NESTED` to `./sub/.claude/skills/p/SKILL.md` | **Failed.** Your permission settings deny writes to that directory. |\n\nI didn't try any workarounds for the denied steps.",
+  "ttft_ms": 2121,
+  "type": "result",
+  "duration_ms": 11292,
+  "uuid": "7ee72903-6581-4dea-a312-fe325e3ce9f1",
+  "ttft_stream_ms": 1860,
+  "time_to_request_ms": 51,
+  "first_content_frame_ms": 1860,
+  "queued_turn_count": 0,
+  "result_index": 0
 }

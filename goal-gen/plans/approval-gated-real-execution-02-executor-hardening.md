@@ -366,7 +366,7 @@ contract shell 03 builds on:
     uses scoped rules (`--allowed-tool 'Edit(./site.json)'` …). Unscoped `Edit` is now refused.
   - Record the path-scoped-rules decision for AGX-R11 in the spec's `### Decisions` subsection
     (Design section) of `plans/specs/approval-gated-real-execution.md`.
-- [ ] Step 15: **HUMAN-RUN — an autonomous `/flow:work` session must stop before this step.**
+- [x] Step 15: **HUMAN-RUN — an autonomous `/flow:work` session must stop before this step.**
   - The operator runs the probe per `docs/operator-permission-probe.md`, fills in
     `tests/spikes/permission-probe-findings.md`, and commits the findings in a docs PR.
   - On success, replace the `_synthetic` fake-worker envelopes with the recorded real shapes where

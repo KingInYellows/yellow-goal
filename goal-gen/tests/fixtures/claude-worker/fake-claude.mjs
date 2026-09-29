@@ -9,8 +9,9 @@
 // (inline stdout for malformed-output) and exits with the scenario's code. Scenarios with
 // writesCandidate also write a repaired config-repair candidate into cwd; gitfile-rewrite and
 // noise-only are hostile or edge scenarios that reuse the success envelope.
-// Envelopes marked `_synthetic` were never observed from a real CLI (spike §3); the AGX-R34
-// permission probe replaces them with recorded shapes.
+// Envelopes marked `_synthetic` were never observed from a real CLI (spike §3). budget-stop,
+// max-turns and permission-denial are the envelopes the AGX-R34 permission probe recorded on
+// 2.1.285 (tests/spikes/permission-probe-findings.md).
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +21,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SCENARIOS = {
   success: { exitCode: 0, writesCandidate: true },
   'error-result': { exitCode: 1 },
-  'budget-stop': { exitCode: 0 },
+  'budget-stop': { exitCode: 1 },
   'max-turns': { exitCode: 1 },
   'permission-denial': { exitCode: 0 },
   'malformed-output': { exitCode: 0, stdout: 'Error: this is not a result envelope\n' },
