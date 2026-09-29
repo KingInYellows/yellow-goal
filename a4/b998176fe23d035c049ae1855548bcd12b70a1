@@ -1,0 +1,37 @@
+goal-gen/tests/executors/fake-worker.test.ts
+  s_94daf85b5914ee::t_161ec172221e27 1-120
+goal-gen/tests/fixtures/claude-worker/fake-claude.mjs
+  s_94daf85b5914ee::t_15da087cffac59 1-58
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_94daf85b5914ee::t_66e68bdda17a7c 573-578
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_3e5d1f84f499d1 262
+goal-gen/tests/fixtures/claude-worker/envelopes/budget-stop.json
+  s_94daf85b5914ee::t_526abba4ade59d 1-15
+goal-gen/tests/fixtures/claude-worker/envelopes/error-result.json
+  s_94daf85b5914ee::t_b8d645abe4af7e 1-15
+goal-gen/tests/fixtures/claude-worker/envelopes/max-turns.json
+  s_94daf85b5914ee::t_5f40e3a4dbe8e3 1-15
+goal-gen/tests/fixtures/claude-worker/envelopes/missing-cost.json
+  s_94daf85b5914ee::t_fea0e05240c7dc 1-15
+goal-gen/tests/fixtures/claude-worker/envelopes/permission-denial.json
+  s_94daf85b5914ee::t_8e19e7862b146c 1-18
+goal-gen/tests/fixtures/claude-worker/envelopes/success.json
+  s_94daf85b5914ee::t_b81c031f847ece 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a4b998176fe23d035c049ae1855548bcd12b70a1",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
