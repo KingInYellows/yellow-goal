@@ -1,0 +1,27 @@
+goal-gen/tests/executors/real-run-executor.test.ts
+  s_94daf85b5914ee::t_4d6c1277b83bde 1-255
+goal-gen/tests/executors/real-run-bypass-static.test.ts
+  s_94daf85b5914ee::t_47237daa571466 1-25
+goal-gen/backend/src/executors/real-run-executor.ts
+  s_94daf85b5914ee::t_d3f76b0ff03a15 1-44
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_94daf85b5914ee::t_b224c3d4754614 121-124
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_32b9c8dae6e93f 238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8c24751807df2c58afac9595a04e989efb52763b",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
