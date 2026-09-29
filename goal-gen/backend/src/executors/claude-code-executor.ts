@@ -10,14 +10,32 @@
  *    ONLY thing that gates pass/fail. This module never touches verify.
  *
  * Ground truth MUST use porcelain/HEAD, never `git diff <sha>` — the agent creates NEW UNTRACKED
- * files and `git diff` misses them entirely (spike §5, the headline de-risking result).
+ * files and `git diff` misses them entirely (spike §5, the headline de-risking result). Every git
+ * call runs through `pinnedGit` (fsmonitor and hooks off), because the agent writes the worktree.
+ *
+ * With `realRun` set (ADR-0020, built only by `createRealRunExecutor`) the executor is the
+ * approval-gated worker: mode fixed to acceptEdits, prompt on stdin, `--tools` limited to the
+ * approved filesystem tools, engine deny rules and pinned config, pre-spawn refusals, and every
+ * failure classified (`AgentRun.failureClass`).
  */
 import { spawn } from 'node:child_process';
+import { lstatSync, realpathSync } from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
-import { ACTION_TIMEOUT_MS, DEFAULT_MODEL, DEFAULT_NOISE_FILTER_PATHS } from '../orchestrator/guardrails';
+import { RunApprovalError } from '../cli/errors';
+import { ACTION_TIMEOUT_MS, DEFAULT_MODEL, DEFAULT_NOISE_FILTER_PATHS, MAX_BUDGET_USD } from '../orchestrator/guardrails';
 import type { Action, ExecutorKind } from '../planner/types';
-import type { AgentRun, AgentRunStatus, Executor, RunContext } from '../types';
-import { GIT_ENV, git } from './worktree';
+import type { AgentRun, AgentRunFailureClass, AgentRunStatus, Executor, RunContext } from '../types';
+import {
+  allowedToolNames,
+  assertAuthModeMatchesEnv,
+  assertFilesystemToolsConfined,
+  REAL_RUN_CONTROL_NAMES,
+  resolveRealRunPermissionMode,
+  type RealRunAuthMode,
+  WRITE_TOOLS,
+} from './real-run-guards';
+import { GIT_ENV, type GitResult, pinnedGit } from './worktree';
 
 /** SIGKILL escalation grace after SIGTERM on cancel/timeout (plan task 2.5). */
 const SIGKILL_GRACE_MS = 5_000;
@@ -65,7 +83,11 @@ const ResultEnvelope = z
     session_id: z.string().optional(),
     num_turns: z.number().optional(),
     duration_ms: z.number().optional(),
-    total_cost_usd: z.number().optional(),
+    // A negative cost is not a meter reading: it fails parsing and ends as malformed output.
+    total_cost_usd: z.number().finite().nonnegative().optional(),
+    // Recorded on the success envelope (spike §2); read to classify real-run failures.
+    permission_denials: z.array(z.unknown()).optional(),
+    terminal_reason: z.string().optional(),
     usage: z
       .object({
         input_tokens: z.number().optional(),
@@ -91,22 +113,57 @@ interface SpawnResult {
 }
 
 /**
- * Spawn `claude` and resolve on the `close` event (all stdio flushed — NOT `exit`). Honors
+ * The worker process to spawn: `file` plus leading `args`, followed by the claude argv. Settable
+ * only through the executor constructor (AGX-R15) — never from environment variables or argv.
+ */
+export interface WorkerCommand {
+  file: string;
+  args: readonly string[];
+}
+
+const DEFAULT_WORKER_COMMAND: WorkerCommand = { file: 'claude', args: [] };
+
+/**
+ * The worker child's environment, built at spawn time. `GIT_ENV` is a snapshot taken at module
+ * load, so a real run builds a fresh copy: the AGX-R13 auth guard must check the exact
+ * environment the worker receives.
+ */
+function workerEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+  // An empty key is "no key" to the auth guard; do not hand the CLI an ambiguous empty value.
+  if (env.ANTHROPIC_API_KEY === '') delete env.ANTHROPIC_API_KEY;
+  return env;
+}
+
+/**
+ * Spawn the worker and resolve on the `close` event (all stdio flushed — NOT `exit`). Honors
  * cancellation via `signal` and a per-action timeout, both escalating SIGTERM → SIGKILL after a
  * grace period. Never rejects — a spawn error resolves with `killReason: 'spawn-error'`.
  */
 function spawnClaude(
+  command: WorkerCommand,
   argv: readonly string[],
   cwd: string,
+  env: NodeJS.ProcessEnv,
   signal: AbortSignal,
   timeoutMs: number,
+  stdinText?: string,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
     // Fix 2: wrap spawn so a synchronous throw (bad cwd, ENOENT, etc.) resolves as spawn-error
     // rather than rejecting or escaping as an unhandled exception.
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn('claude', [...argv], { cwd, env: GIT_ENV, stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn(command.file, [...command.args, ...argv], {
+        cwd,
+        env,
+        stdio: [stdinText === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      });
+      if (stdinText !== undefined) {
+        // A worker that exits without reading stdin must not crash the engine with EPIPE.
+        child.stdin?.on('error', () => {});
+        child.stdin?.end(stdinText);
+      }
     } catch (spawnErr) {
       resolve({
         code: null,
@@ -229,6 +286,19 @@ function classify(envelope: ResultEnvelope, exitCode: number | null): AgentRunSt
 }
 
 /**
+ * Why a non-successful envelope failed (AGX-R19 `worker-failed` reasons). Only the success and
+ * max-turns subtypes are documented; the budget-stop string was never observed (spike §3), so it
+ * is matched defensively on subtype or terminal reason until the AGX-R34 probe records it. Any
+ * other error envelope is `error-result` — never success.
+ */
+function classifyFailure(envelope: ResultEnvelope): AgentRunFailureClass {
+  if (envelope.subtype === 'error_max_turns') return 'max-turns';
+  if (/budget/i.test(envelope.subtype) || /budget/i.test(envelope.terminal_reason ?? '')) return 'budget';
+  if ((envelope.permission_denials?.length ?? 0) > 0) return 'permission-denied';
+  return 'error-result';
+}
+
+/**
  * Fix 4: Parse NUL-delimited `git status --porcelain -z` output.
  * With -z, entries are NUL-terminated (not newline), paths are never C-quoted, and rename entries
  * are two NUL-separated tokens: `XY SP <old> NUL <new> NUL`. We want the destination (new) path
@@ -281,15 +351,21 @@ interface OracleResult {
  * (`ruvector.db`, `.claude/`, …)? A FAILED git query must never masquerade as "no change" — we
  * report unknown (`diffRef` undefined) rather than a false "clean". This does NOT gate pass/fail.
  */
-function activityOracle(worktreePath: string, initialSha: string, noise: readonly string[]): OracleResult {
+function activityOracle(
+  runGit: (args: readonly string[]) => GitResult,
+  initialSha: string,
+  noise: readonly string[],
+): OracleResult {
   // Fix 4: use -z (NUL-delimited) so paths with spaces/unicode are never C-quoted.
-  const statusRes = git(['status', '--porcelain', '-z'], worktreePath);
-  const headRes = git(['rev-parse', 'HEAD'], worktreePath);
+  const statusRes = runGit(['status', '--porcelain', '-z']);
+  const headRes = runGit(['rev-parse', 'HEAD']);
   // Fix 5: git failure must NOT return changed:false (false-clean). Return changed:true so the
   // orchestrator treats it as unknown/changed rather than silently treating the run as clean.
   if (statusRes.status !== 0 || headRes.status !== 0) return { changed: true, diffRef: undefined };
 
-  const meaningful = parsePorcelainPaths(statusRes.stdout.trim()).filter((p) => !isNoise(p, noise));
+  // No trim(): with -z the first entry of an unstaged change starts with a space (` M path`), and
+  // trimming it would shift the path by one character. The parser already skips empty tokens.
+  const meaningful = parsePorcelainPaths(statusRes.stdout).filter((p) => !isNoise(p, noise));
   const headSha = headRes.stdout.trim();
   const headMoved = headSha !== initialSha;
   const changed = meaningful.length > 0 || headMoved;
@@ -311,6 +387,150 @@ export interface ClaudeCodeExecutorOptions {
    * be opted into explicitly by the call site — it is never a fallback. Unknown values throw.
    */
   permissionMode?: ClaudePermissionMode;
+  /** The worker process (default `claude`). Constructor-only by design (AGX-R15). */
+  workerCommand?: WorkerCommand;
+  /**
+   * Approval-gated real-run configuration (ADR-0020). When present the executor only ever uses
+   * `acceptEdits` (an action may not request any other mode, not even a narrower one), emits the
+   * approved tool lists, `--tools`, the budget flag, the pinned config flags and the engine deny
+   * rules, and sends the prompt on stdin. Construction validates the allowlist, budget, turns and
+   * deny-rule shape; before spawning it refuses a mismatched credential, a worktree that holds
+   * worker config, or a git dir inside the worktree. A missing cost is a failure.
+   */
+  realRun?: RealRunExecutorConfig;
+}
+
+export interface RealRunExecutorConfig {
+  /** `--allowedTools`, one rule per flag; must pass `assertFilesystemToolsConfined` (AGX-R11). */
+  allowedTools: readonly string[];
+  /** `--disallowedTools`, one rule per flag. */
+  disallowedTools: readonly string[];
+  /** `--max-budget-usd`: the manifest's per-action cap, `0 < cap <= MAX_BUDGET_USD` (AGX-R12). */
+  maxBudgetUsd: number;
+  /** Must match the worker environment's credential (AGX-R13). */
+  authMode: RealRunAuthMode;
+}
+
+/**
+ * Engine-constant real-run flags, covered by the manifest's `engineVersion`. The worker loads only
+ * project settings — the scratch worktree is seeded with profile base files and has none — and no
+ * MCP servers, so the operator's user settings, plugins, hooks and MCP servers cannot widen the
+ * approved allowlist (operator decision, 2026-09-29; to be verified headless by the AGX-R34 probe).
+ */
+export const REAL_RUN_CONFIG_FLAGS: readonly string[] = ['--setting-sources', 'project', '--strict-mcp-config'];
+
+/**
+ * Engine-constant deny rules, emitted after the approved `--disallowedTools`; a deny rule beats both
+ * acceptEdits and any allow rule. Project settings are the only settings a real-run worker loads,
+ * so it must never write them, MCP config or git metadata — at the worktree root or nested, since
+ * Claude Code discovers `.claude/` (skills, commands) in subdirectories too. `--tools` already
+ * removes the command-running and network tools; denying them too is a second layer.
+ */
+export const REAL_RUN_DENY_RULES: readonly string[] = [
+  ...WRITE_TOOLS.flatMap((tool) =>
+    REAL_RUN_CONTROL_NAMES.flatMap((name) =>
+      [`./${name}`, `./${name}/**`, `./**/${name}`, `./**/${name}/**`].map((pattern) => `${tool}(${pattern})`),
+    ),
+  ),
+  'Bash',
+  'WebFetch',
+  'WebSearch',
+];
+
+/**
+ * Control paths that must not exist before a real run: they would feed the worker settings, MCP
+ * servers or instructions. `.git` is excluded — the worktree's own gitfile is expected there.
+ */
+const PREEXISTING_CONFIG_PATHS: readonly string[] = REAL_RUN_CONTROL_NAMES.filter((name) => name !== '.git');
+
+/** A tool rule never starts with `-`, so it cannot be read as a CLI flag. */
+const TOOL_RULE_START = /^[A-Za-z]/;
+
+function validateRealRunConfig(config: RealRunExecutorConfig, maxTurns: number): void {
+  assertFilesystemToolsConfined(config.allowedTools);
+  const badDisallowed = config.disallowedTools.filter((rule) => !TOOL_RULE_START.test(rule));
+  if (badDisallowed.length > 0) {
+    throw new RunApprovalError('MANIFEST_INVALID', `invalid disallowed tool rule(s): ${badDisallowed.join(', ')}`, {
+      disallowedTools: badDisallowed,
+    });
+  }
+  if (!Number.isFinite(config.maxBudgetUsd) || config.maxBudgetUsd <= 0 || config.maxBudgetUsd > MAX_BUDGET_USD) {
+    throw new RunApprovalError(
+      'MANIFEST_INVALID',
+      `per-action budget must be > 0 and <= ${MAX_BUDGET_USD} USD (ADR-0010); got ${String(config.maxBudgetUsd)}`,
+      { maxBudgetUsd: config.maxBudgetUsd },
+    );
+  }
+  if (!Number.isInteger(maxTurns) || maxTurns < 1) {
+    throw new RunApprovalError('MANIFEST_INVALID', `maxTurns must be a positive integer; got ${String(maxTurns)}`, {
+      maxTurns,
+    });
+  }
+}
+
+/** Real-run flags appended after the base argv (AGX-R11/R12). */
+function realRunArgv(config: RealRunExecutorConfig): string[] {
+  // `--allowedTools` only adds approvals (read-only Bash commands are auto-approved regardless), so
+  // `--tools` restricts the available built-in set to the approved filesystem tools.
+  const argv: string[] = ['--tools', allowedToolNames(config.allowedTools).join(',')];
+  for (const rule of config.allowedTools) argv.push('--allowedTools', rule);
+  for (const rule of [...config.disallowedTools, ...REAL_RUN_DENY_RULES]) argv.push('--disallowedTools', rule);
+  argv.push('--max-budget-usd', String(config.maxBudgetUsd));
+  argv.push(...REAL_RUN_CONFIG_FLAGS);
+  return argv;
+}
+
+/** Whether anything — a dangling symlink included — sits at `target`. Fails closed on odd errors. */
+function entryExists(target: string): boolean {
+  try {
+    lstatSync(target);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+}
+
+type WorktreePreflight = { ok: true; gitDir: string } | { ok: false; reason: string };
+
+/**
+ * Pre-spawn worktree checks for a real run: no pre-existing config the worker would load, and a
+ * git dir that lives outside the worktree (a worker-written `.git` gitfile would point inside it).
+ * The git dir comes from the caller when it recorded one at worktree creation (`ctx.gitDir`), and
+ * is resolved here otherwise. Never throws: every failure is a refusal.
+ */
+function preflightRealRunWorktree(worktreePath: string, knownGitDir: string | undefined): WorktreePreflight {
+  const present = PREEXISTING_CONFIG_PATHS.filter((rel) => entryExists(path.join(worktreePath, rel)));
+  if (present.length > 0) return { ok: false, reason: `worktree already contains worker config: ${present.join(', ')}` };
+  let gitDir: string;
+  let worktree: string;
+  try {
+    let candidate = knownGitDir;
+    if (candidate === undefined) {
+      const resolved = pinnedGit(['rev-parse', '--absolute-git-dir'], worktreePath);
+      if (resolved.status !== 0) return { ok: false, reason: `worktree git dir unavailable: ${resolved.stderr.trim()}` };
+      candidate = resolved.stdout.trim();
+    }
+    gitDir = realpathSync(candidate);
+    worktree = realpathSync(worktreePath);
+  } catch (err) {
+    return { ok: false, reason: `worktree git dir unavailable: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (gitDir === worktree || gitDir.startsWith(worktree + path.sep)) {
+    return { ok: false, reason: `worktree git dir ${gitDir} is inside the worktree` };
+  }
+  return { ok: true, gitDir };
+}
+
+/** Legacy (non-real-run) mode resolution: fail closed on an unknown configured mode. */
+function legacyPermissionMode(configured: string): ClaudePermissionMode {
+  // An unknown configured mode is a host config error, not something to coerce. The default is
+  // acceptEdits, never bypassPermissions.
+  if (!VALID_PERMISSION_MODES.has(configured)) {
+    throw new Error(
+      `[executor] unknown permissionMode '${configured}' — valid: ${[...VALID_PERMISSION_MODES].join(', ')} (fail-closed; bypassPermissions is never a fallback)`,
+    );
+  }
+  return configured as ClaudePermissionMode;
 }
 
 export class ClaudeCodeExecutor implements Executor {
@@ -320,6 +540,8 @@ export class ClaudeCodeExecutor implements Executor {
   private readonly noiseFilterPaths: readonly string[];
   private readonly maxTurns: number;
   private readonly permissionMode: ClaudePermissionMode;
+  private readonly workerCommand: WorkerCommand;
+  private readonly realRun: RealRunExecutorConfig | undefined;
   private seq = 0;
 
   constructor(opts: ClaudeCodeExecutorOptions = {}) {
@@ -327,15 +549,14 @@ export class ClaudeCodeExecutor implements Executor {
     this.timeoutMs = opts.timeoutMs ?? ACTION_TIMEOUT_MS;
     this.noiseFilterPaths = opts.noiseFilterPaths ?? DEFAULT_NOISE_FILTER_PATHS;
     this.maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
-    // Fail closed at construction: an unknown configured mode is a host config error, not
-    // something to coerce. The default is acceptEdits, never bypassPermissions.
-    const configured = opts.permissionMode ?? 'acceptEdits';
-    if (!VALID_PERMISSION_MODES.has(configured)) {
-      throw new Error(
-        `[executor] unknown permissionMode '${String(configured)}' — valid: ${[...VALID_PERMISSION_MODES].join(', ')} (fail-closed; bypassPermissions is never a fallback)`,
-      );
-    }
-    this.permissionMode = configured;
+    this.workerCommand = opts.workerCommand ?? DEFAULT_WORKER_COMMAND;
+    this.realRun = opts.realRun;
+    // Fail closed at construction. A real run resolves through the acceptEdits-only resolver,
+    // never the legacy mode set.
+    this.permissionMode = this.realRun
+      ? resolveRealRunPermissionMode(opts.permissionMode ?? 'acceptEdits')
+      : legacyPermissionMode(opts.permissionMode ?? 'acceptEdits');
+    if (this.realRun) validateRealRunConfig(this.realRun, this.maxTurns);
   }
 
   async run(action: Action, ctx: RunContext): Promise<AgentRun> {
@@ -350,15 +571,27 @@ export class ClaudeCodeExecutor implements Executor {
       status: 'failed',
     };
 
+    // A real run never spawns on these paths, so it reports a failure class and no cost; the
+    // legacy path keeps its historical `costUsd: 0` shape.
+    const refuse = (stderr: string, failureClass: AgentRunFailureClass): AgentRun =>
+      this.realRun
+        ? { ...base, endedAt: new Date().toISOString(), failureClass, stderr: `${stderr} (nothing spawned)` }
+        : { ...base, endedAt: new Date().toISOString(), costUsd: 0, stderr };
+
+    // The agent writes this worktree, so every engine git call here — on both paths — runs with
+    // fsmonitor and hooks off, pinned to a git dir resolved before the agent ran when one is known.
+    let pinnedDir = ctx.gitDir;
+    if (this.realRun) {
+      const preflight = preflightRealRunWorktree(ctx.worktreePath, ctx.gitDir);
+      if (!preflight.ok) return refuse(`[executor] ${preflight.reason}`, 'worktree-refused');
+      pinnedDir = preflight.gitDir;
+    }
+    const runGit = (args: readonly string[]): GitResult => pinnedGit(args, ctx.worktreePath, pinnedDir);
+
     // Ground-truth baseline (CLAUDE.md #2): never trust a run whose baseline we cannot read.
-    const baseline = git(['rev-parse', 'HEAD'], ctx.worktreePath);
+    const baseline = runGit(['rev-parse', 'HEAD']);
     if (baseline.status !== 0) {
-      return {
-        ...base,
-        endedAt: new Date().toISOString(),
-        costUsd: 0,
-        stderr: `[executor] worktree baseline unavailable: ${baseline.stderr.trim()}`,
-      };
+      return refuse(`[executor] worktree baseline unavailable: ${baseline.stderr.trim()}`, 'worktree-refused');
     }
     const initialSha = baseline.stdout.trim();
 
@@ -368,6 +601,13 @@ export class ClaudeCodeExecutor implements Executor {
     // unknown, or an attempt to escalate above the configured mode, fails the action WITHOUT
     // spawning — it is never coerced to bypassPermissions (or any other executable mode).
     const requestedMode = action.payload.permissionMode;
+    if (this.realRun && requestedMode !== undefined && requestedMode !== this.permissionMode) {
+      // The approved manifest fixes the mode; a real-run action cannot change it, even to narrow.
+      return refuse(
+        `[executor] rejected action permissionMode '${String(requestedMode)}' (real run: the approved mode is fixed)`,
+        'mode-rejected',
+      );
+    }
     let permissionMode: ClaudePermissionMode;
     if (requestedMode === undefined) {
       permissionMode = this.permissionMode;
@@ -377,16 +617,16 @@ export class ClaudeCodeExecutor implements Executor {
     ) {
       permissionMode = requestedMode as ClaudePermissionMode;
     } else {
-      return {
-        ...base,
-        endedAt: new Date().toISOString(),
-        costUsd: 0,
-        stderr: `[executor] rejected action permissionMode '${String(requestedMode)}' (fail-closed: unknown or more permissive than configured '${this.permissionMode}'; never coerced to bypassPermissions)`,
-      };
+      return refuse(
+        `[executor] rejected action permissionMode '${String(requestedMode)}' (fail-closed: unknown or more permissive than configured '${this.permissionMode}'; never coerced to bypassPermissions)`,
+        'mode-rejected',
+      );
     }
+    // A real run sends the prompt on stdin, so no prompt text can be parsed as a CLI flag or
+    // subcommand; the legacy path keeps it as the positional argument.
     const argv = [
       '-p',
-      prompt,
+      ...(this.realRun ? [] : [prompt]),
       '--output-format',
       'json',
       '--permission-mode',
@@ -395,37 +635,81 @@ export class ClaudeCodeExecutor implements Executor {
       this.model,
       '--max-turns',
       String(this.maxTurns),
+      ...(this.realRun ? realRunArgv(this.realRun) : []),
     ];
 
-    const res = await spawnClaude(argv, ctx.worktreePath, ctx.signal, this.timeoutMs);
+    let env: NodeJS.ProcessEnv = GIT_ENV;
+    if (this.realRun) {
+      env = workerEnv();
+      try {
+        assertAuthModeMatchesEnv(this.realRun.authMode, env);
+      } catch (err) {
+        return refuse(
+          `[executor] AUTH_MODE_MISMATCH: ${err instanceof Error ? err.message : String(err)}`,
+          'auth-mode-mismatch',
+        );
+      }
+    }
+
+    const res = await spawnClaude(
+      this.workerCommand,
+      argv,
+      ctx.worktreePath,
+      env,
+      ctx.signal,
+      this.timeoutMs,
+      this.realRun ? prompt : undefined,
+    );
     const endedAt = new Date().toISOString();
 
     // Activity oracle runs regardless of outcome (the agent may have made partial changes).
-    const oracle = activityOracle(ctx.worktreePath, initialSha, this.noiseFilterPaths);
+    const oracle = activityOracle(runGit, initialSha, this.noiseFilterPaths);
 
     let status: AgentRunStatus;
-    let costUsd = 0;
+    // Real runs never default a missing cost to 0 (AGX-R12): unmetered stays undefined.
+    let costUsd: number | undefined = this.realRun ? undefined : 0;
+    let failureClass: AgentRunFailureClass | undefined;
     let tokens: number | undefined;
     let stderr = res.stderr;
 
     if (res.killReason === 'cancel') {
       status = 'cancelled';
+      failureClass = 'cancel';
       stderr = `${stderr}\n[executor] cancelled via AbortSignal (SIGTERM→SIGKILL)`.trim();
     } else if (res.killReason === 'timeout') {
       status = 'failed';
+      failureClass = 'timeout';
       stderr = `${stderr}\n[executor] timed out after ${this.timeoutMs}ms (SIGTERM→SIGKILL)`.trim();
     } else if (res.killReason === 'spawn-error') {
       status = 'failed';
+      failureClass = 'spawn-error';
       stderr = `${stderr}\n[executor] claude failed to spawn: ${res.spawnErrorMessage ?? 'unknown'} (is the CLI installed and logged in?)`.trim();
     } else {
       const envelope = parseEnvelope(res.stdout);
       if (!envelope) {
         status = 'failed';
+        failureClass = 'malformed-output';
         stderr = `${stderr}\n[executor] RUN_FAIL: stdout was not a parseable result envelope (exit ${res.code})`.trim();
       } else {
         status = classify(envelope, res.code);
-        costUsd = envelope.total_cost_usd ?? 0;
+        if (status === 'failed') failureClass = classifyFailure(envelope);
+        if (this.realRun && status === 'succeeded' && (envelope.permission_denials?.length ?? 0) > 0) {
+          // A real-run worker that hit a denied tool attempted something outside its approved
+          // allowlist; that is a worker failure (AGX-R19), never a success handed to the verifier.
+          status = 'failed';
+          failureClass = 'permission-denied';
+        }
         tokens = envelope.usage?.output_tokens;
+        if (!this.realRun) {
+          costUsd = envelope.total_cost_usd ?? 0;
+        } else if (typeof envelope.total_cost_usd === 'number') {
+          costUsd = envelope.total_cost_usd;
+        } else if (status === 'succeeded') {
+          // A result without a cost figure cannot be metered, so it cannot succeed (AGX-R12).
+          status = 'failed';
+          failureClass = 'cost-unmetered';
+          stderr = `${stderr}\n[executor] cost-unmetered: result envelope has no total_cost_usd`.trim();
+        }
       }
     }
 
@@ -433,10 +717,11 @@ export class ClaudeCodeExecutor implements Executor {
       ...base,
       endedAt,
       status,
-      costUsd,
       stdout: res.stdout,
       stderr,
     };
+    if (costUsd !== undefined) run.costUsd = costUsd;
+    if (this.realRun && failureClass !== undefined) run.failureClass = failureClass;
     if (res.code !== null) run.exitCode = res.code;
     if (tokens !== undefined) run.tokens = tokens;
     if (oracle.diffRef !== undefined) run.diffRef = oracle.diffRef;

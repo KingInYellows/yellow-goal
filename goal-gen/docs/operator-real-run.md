@@ -17,14 +17,17 @@ Harness workspace, put approvals, bundles and ledgers under `runtime/`.
 - A validated `approved-implementation` request file (`request validate <file>`).
 - An engine built from a released tarball (the live acceptance run, AGX-R35, uses the release).
 - Caps inside the ADR-0010 defaults. The per-action cap and timeouts for `config-repair` come from
-  the AGX-R34 permission probe.
+  the AGX-R34 permission probe ([`operator-permission-probe.md`](operator-permission-probe.md));
+  real runs wait until `tests/spikes/permission-probe-findings.md` records a passing probe.
 
 ## 1. Render the manifest (zero spend)
 
 ```bash
 goal-gen run manifest <request.json> --profile config-repair \
   --per-action-usd <usd> --total-usd <usd> --auth-mode subscription \
-  --max-turns <n> --allowed-tool Edit --allowed-tool Read [--model sonnet] \
+  --max-turns <n> --allowed-tool 'Read(./**)' --allowed-tool 'Edit(./site.json)' \
+  --allowed-tool 'Edit(./SITE)' --allowed-tool 'Write(./site.json)' --allowed-tool 'Write(./SITE)' \
+  [--model sonnet] \
   [--action-timeout-ms <ms>] [--run-wall-clock-ms <ms>] [--expires-in-minutes <1-60>] --json
 ```
 
@@ -46,6 +49,10 @@ the request id, mode and goal — read them: the manifest itself carries only th
 
 Tool entries are Claude Code tool rules: a name (`Edit`, `mcp__server__tool`) optionally followed
 by one parenthesised ASCII specifier (`Bash(git status:*)`). Anything else is `MANIFEST_INVALID`.
+A manifest accepts any such rule, but a real run refuses before spawn (`TOOLS_UNCONFINED`) unless
+every allowed tool is a filesystem tool scoped to the scratch worktree, such as `Edit(./site.json)`
+(AGX-R11). Approve only scoped rules, and only an allowlist the permission probe passed with (the
+example above is the probe's default).
 
 The approval file is consent evidence, not a credential: anything running as you can forge one.
 Never run this step from, or on behalf of, an agent session (ADR-0020 Consequences).
@@ -81,3 +88,5 @@ accepted.
 | `APPROVAL_EXPIRED` (at consume) | The approval lapsed between verification and consumption; not spent |
 | `APPROVAL_CONSUMED` | The approval (by `approvalId`, even via a copied file) was already used |
 | `APPROVAL_STATE_UNAVAILABLE` | The consumption-marker directory could not be read or written; the run is refused |
+| `AUTH_MODE_MISMATCH` | The environment's credential contradicts the manifest's auth mode: `ANTHROPIC_API_KEY` is set but the auth mode is not `api-key` (it would silently override the subscription), or it is unset under `api-key` (the CLI would silently fall back to the subscription); or `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_CUSTOM_HEADERS`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL` or a `CLAUDE_CODE_USE_*` provider toggle is set, which would substitute another credential or provider. Nothing spawned |
+| `TOOLS_UNCONFINED` | An allowed tool is not a filesystem tool path-scoped to the scratch worktree (`Read`/`Edit`/`Write`/`MultiEdit`/`Glob`/`Grep` with a relative in-worktree specifier such as `Edit(./site.json)`, built only from letters, digits, `.`, `_`, `-`, `*` and `/`); `Bash`, unscoped, absolute, `~`, `..`, whitespace and multi-rule specifiers are refused, as are an empty allowlist and write rules naming `.git`, `.claude`, `.mcp.json`, `CLAUDE.local.md` (any case) or a dotfile wildcard. Nothing spawned |

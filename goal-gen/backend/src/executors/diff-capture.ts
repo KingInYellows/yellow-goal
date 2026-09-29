@@ -13,21 +13,25 @@
  * This mutates the index, which is normally unsafe to do carelessly, but the worktree is torn down
  * immediately after this call (see `worktree.ts`'s documented teardown ordering) — no caller ever
  * observes the mutated index.
+ *
+ * The agent has written to this worktree, so every git call goes through `pinnedGit`: fsmonitor and
+ * hooks off, and pinned to the pre-run `gitDir` when the caller has it, so a rewritten `.git`
+ * gitfile cannot point git at a planted config.
  */
-import { git } from './worktree';
+import { pinnedGit } from './worktree';
 
 /**
  * Full diff of `worktreePath` against `initialSha`, or `undefined` if nothing changed or the git
  * calls themselves failed (fail-open — mirrors the activity oracle's `diffRef` contract; this
  * never throws).
  */
-export function captureDiff(worktreePath: string, initialSha: string): string | undefined {
-  const add = git(['add', '-N', '.'], worktreePath);
+export function captureDiff(worktreePath: string, initialSha: string, gitDir?: string): string | undefined {
+  const add = pinnedGit(['add', '-N', '.'], worktreePath, gitDir);
   if (add.status !== 0) return undefined;
   // --no-ext-diff/--no-textconv: the agent can write repo-local .git/config + .gitattributes
   // during its turn (GIT_ENV only pins the GLOBAL/SYSTEM config, not this worktree's own), and a
   // planted diff driver would otherwise execute inside the orchestrator process on this call.
-  const diff = git(['diff', '--no-ext-diff', '--no-textconv', initialSha], worktreePath);
+  const diff = pinnedGit(['diff', '--no-ext-diff', '--no-textconv', initialSha], worktreePath, gitDir);
   if (diff.status !== 0 || diff.stdout.length === 0) return undefined;
   return diff.stdout;
 }

@@ -90,3 +90,15 @@ pins `docs/operator-committed-source.md` by exact path only.
 10. **Keep defaults out of the command module.** If another code path must reproduce the same
     output (here: the real run recomputing an approved manifest), put every default in the pure
     builder, not in flag parsing — otherwise the two paths drift silently.
+
+## Update — 2026-09-29 (executor hardening, shell 02, PR #60)
+
+11. **Digest key order is load-bearing.** `candidateProfileDigest`
+    (`cli/candidate-offline-profiles.ts`) hashes literal `JSON.stringify` key order. Emit a new
+    profile field only when present. Capture a pinned v1 digest constant BEFORE the change, because
+    no golden bundles exist (bundles are made in tmpdirs). Reproduce (`candidate-offline-command.ts`)
+    originally looked up by id only, ignoring `stored.profile.version`; a versioned registry must
+    resolve the recorded version (AGX-R7), and it now fails closed when a bundle has no version.
+12. **`package.json` `files` is a positive allowlist.** It lists `bin/`, `backend/src/`, `packs/`,
+    `policies/` and `schemas/`, and there is no `.npmignore`. Anything under `backend/src` ships in
+    the tarball, so test-only harnesses and fake workers must live under `tests/`.

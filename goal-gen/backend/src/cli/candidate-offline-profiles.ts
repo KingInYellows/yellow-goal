@@ -27,6 +27,11 @@ export type CandidateOfflineProfile = {
   maxFileBytes: number;
   maxDepth: number;
   maxDocumentBytes: number;
+  /**
+   * The real-run worker's milestone (AGX-R7), present from v2. Hashed by
+   * `candidateProfileDigest` only when present, so v1's digest is unchanged.
+   */
+  milestoneText?: string;
 };
 
 export type CandidateFileDocument = {
@@ -70,14 +75,45 @@ function configRepairProfile(): CandidateOfflineProfile {
   };
 }
 
-export function listCandidateOfflineProfiles(): CandidateOfflineProfile[] {
-  return [configRepairProfile()];
+/**
+ * The worker's milestone for a real run (AGX-R9 builds its one action from this). It names only
+ * the profile's allowed paths and states what the `schema-host` and `site-bind` checks require.
+ */
+const CONFIG_REPAIR_MILESTONE_TEXT = [
+  'Repair the site configuration in the current directory. Edit only `site.json` and `SITE`;',
+  'do not create, rename or delete any other file.',
+  '`site.json` must be a JSON object whose `host` is a lowercase hostname such as `alpha.test`,',
+  'whose `mode` is `"offline"`, and whose `retries` is an integer from 1 to 5.',
+  '`SITE` must contain exactly that same hostname on a single line ending in a newline.',
+].join(' ');
+
+/** v1 plus the worker milestone text (AGX-R7). Base files, allowed paths and checks are v1's. */
+function configRepairProfileV2(): CandidateOfflineProfile {
+  return { ...configRepairProfile(), version: '2', milestoneText: CONFIG_REPAIR_MILESTONE_TEXT };
 }
 
-export function getCandidateOfflineProfile(id: string): CandidateOfflineProfile {
-  const match = listCandidateOfflineProfiles().find((profile) => profile.id === id);
-  if (!match) {
+/** Every registered profile version. A bundle records `id` + `version`, and lookup is keyed by both. */
+export function listCandidateOfflineProfiles(): CandidateOfflineProfile[] {
+  return [configRepairProfile(), configRepairProfileV2()];
+}
+
+/**
+ * The default version stays `'1'` so every caller that predates versioning (verify without
+ * `--profile-version`, `run manifest`) keeps producing byte-identical output (AGX-R7).
+ */
+export const DEFAULT_CANDIDATE_PROFILE_VERSION = '1';
+
+export function getCandidateOfflineProfile(
+  id: string,
+  version: string = DEFAULT_CANDIDATE_PROFILE_VERSION,
+): CandidateOfflineProfile {
+  const versions = listCandidateOfflineProfiles().filter((profile) => profile.id === id);
+  if (versions.length === 0) {
     throw new Error(`unknown candidate-offline profile: ${id}`);
+  }
+  const match = versions.find((profile) => profile.version === version);
+  if (!match) {
+    throw new Error(`unknown candidate-offline profile version: ${id}@${version}`);
   }
   return match;
 }
@@ -158,6 +194,8 @@ export function candidateProfileDigest(profile: CandidateOfflineProfile): string
       maxDepth: profile.maxDepth,
       maxDocumentBytes: profile.maxDocumentBytes,
       checkers: profile.checks.map(trustedCheckerIdentity),
+      // Appended only when present: v1 has no milestone text and must keep its digest (AGX-R7).
+      ...(profile.milestoneText === undefined ? {} : { milestoneText: profile.milestoneText }),
     }),
   );
 }

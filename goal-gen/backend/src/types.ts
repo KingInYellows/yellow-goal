@@ -24,6 +24,12 @@ export interface RunContext {
   signal: AbortSignal;
   /** USD budget still available this run (the orchestrator decrements as actions spend). */
   budgetUsdRemaining: number;
+  /**
+   * The worktree's git dir, resolved when the worktree was created and before any agent ran
+   * (`WorktreeHandle.gitDir`). Post-run engine git calls pin to it; when absent the executor
+   * resolves it itself before spawning.
+   */
+  gitDir?: string;
 }
 
 export type AgentRunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -57,7 +63,27 @@ export interface AgentRun {
   diffContent?: string;
   tokens?: number;
   costUsd?: number;
+  /**
+   * Why a real run failed (AGX-R19). Set only when the executor has a `realRun` config: every
+   * real-run failure carries one, including the pre-spawn refusals (`auth-mode-mismatch`,
+   * `worktree-refused`, `mode-rejected`), which never spawn a worker. Legacy runs leave it unset.
+   */
+  failureClass?: AgentRunFailureClass;
 }
+
+export type AgentRunFailureClass =
+  | 'error-result'
+  | 'budget'
+  | 'max-turns'
+  | 'permission-denied'
+  | 'malformed-output'
+  | 'cost-unmetered'
+  | 'timeout'
+  | 'cancel'
+  | 'spawn-error'
+  | 'auth-mode-mismatch'
+  | 'worktree-refused'
+  | 'mode-rejected';
 
 /** One uniform interface over every coding-agent backend (v1: `claude-code` only). */
 export interface Executor {

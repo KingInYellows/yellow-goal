@@ -1,0 +1,27 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "api_error_status": null,
+  "duration_ms": 19957,
+  "duration_api_ms": 13555,
+  "ttft_ms": 4113,
+  "num_turns": 4,
+  "result": "Both files are repaired.",
+  "stop_reason": "end_turn",
+  "session_id": "fake-session",
+  "total_cost_usd": 0.0803324,
+  "usage": {
+    "input_tokens": 26,
+    "cache_creation_input_tokens": 32591,
+    "cache_read_input_tokens": 101044,
+    "output_tokens": 1004
+  },
+  "modelUsage": {
+    "claude-sonnet": { "inputTokens": 26, "outputTokens": 1004, "costUSD": 0.0803324 }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "uuid": "fake-uuid"
+}

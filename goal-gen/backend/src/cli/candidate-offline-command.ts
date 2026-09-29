@@ -24,6 +24,7 @@ import {
   CANDIDATE_MAX_FILES,
   candidateProfileDigest,
   getCandidateOfflineProfile,
+  DEFAULT_CANDIDATE_PROFILE_VERSION,
   listCandidateOfflineProfiles,
   type CandidateFileDocument,
   type CandidateOfflineProfile,
@@ -37,7 +38,7 @@ import { observeFixture, removeObservationRepo } from './observed-fixture-observ
 
 function knownProfiles(): string {
   return listCandidateOfflineProfiles()
-    .map((profile) => profile.id)
+    .map((profile) => `${profile.id}@${profile.version}`)
     .join('|');
 }
 
@@ -154,14 +155,31 @@ export function readBoundedUtf8File(filePath: string, maxBytes: number): string 
   }
 }
 
-function parseVerifyArgv(argv: string[]): { json: boolean; bundleDir?: string; positionals: string[] } {
+function parseVerifyArgv(argv: string[]): {
+  json: boolean;
+  bundleDir?: string;
+  profileVersion: string;
+  positionals: string[];
+} {
   const positionals: string[] = [];
   let json = false;
   let bundleDir: string | undefined;
+  let profileVersion = DEFAULT_CANDIDATE_PROFILE_VERSION;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
     if (arg === '--json') {
       json = true;
+      continue;
+    }
+    if (arg === '--profile-version') {
+      const next = argv[i + 1];
+      if (next === undefined) throw new CliUsageError('acceptance verify-candidate --profile-version requires a version');
+      profileVersion = next;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--profile-version=')) {
+      profileVersion = arg.slice('--profile-version='.length);
       continue;
     }
     if (arg === '--bundle-dir') {
@@ -177,7 +195,7 @@ function parseVerifyArgv(argv: string[]): { json: boolean; bundleDir?: string; p
     }
     positionals.push(arg);
   }
-  return { json, bundleDir, positionals };
+  return { json, bundleDir, profileVersion, positionals };
 }
 
 async function verifyWithProfile(
@@ -242,10 +260,10 @@ async function verifyWithProfile(
 }
 
 export async function runCandidateOfflineVerify(argv: string[]): Promise<CommandOutput<CandidateOfflineBundle>> {
-  const { json, bundleDir, positionals } = parseVerifyArgv(argv);
+  const { json, bundleDir, profileVersion, positionals } = parseVerifyArgv(argv);
   if (positionals.length !== 2) {
     throw new CliUsageError(
-      `acceptance verify-candidate requires <profile-id> <candidate.json> (profiles: ${knownProfiles()})`,
+      `acceptance verify-candidate requires <profile-id> <candidate.json> [--profile-version <v>] (profiles: ${knownProfiles()})`,
     );
   }
   const [profileId, candidatePath] = positionals;
@@ -258,9 +276,11 @@ export async function runCandidateOfflineVerify(argv: string[]): Promise<Command
 
   let profile: CandidateOfflineProfile;
   try {
-    profile = getCandidateOfflineProfile(profileId);
+    profile = getCandidateOfflineProfile(profileId, profileVersion);
   } catch {
-    throw new CliUsageError(`unknown candidate-offline profile: ${profileId} (profiles: ${knownProfiles()})`);
+    throw new CliUsageError(
+      `unknown candidate-offline profile: ${profileId}@${profileVersion} (profiles: ${knownProfiles()})`,
+    );
   }
 
   const resolvedCandidate = path.resolve(candidatePath);
@@ -288,10 +308,17 @@ export async function runCandidateOfflineReproduce(argv: string[]): Promise<Comm
   const bundleDir = path.resolve(positionals[0]!);
   const stored = readPersistedBundle(bundleDir);
   let profile: CandidateOfflineProfile;
+  if (typeof stored.profile.version !== 'string') {
+    // Fail closed rather than letting a missing version fall through to the default.
+    throw new CliUsageError(`bundle profile has no version: ${stored.profile.id}`);
+  }
   try {
-    profile = getCandidateOfflineProfile(stored.profile.id);
+    // Resolve the recorded version, never the latest: a v1 bundle must re-verify against v1 (AGX-R7).
+    profile = getCandidateOfflineProfile(stored.profile.id, stored.profile.version);
   } catch {
-    throw new CliUsageError(`unknown candidate-offline profile in bundle: ${stored.profile.id}`);
+    throw new CliUsageError(
+      `unknown candidate-offline profile in bundle: ${stored.profile.id}@${stored.profile.version}`,
+    );
   }
   const digest = candidateProfileDigest(profile);
   if (digest !== stored.profile.digest) {

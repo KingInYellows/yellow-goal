@@ -579,6 +579,7 @@ export class Orchestrator {
           worktreePath: handle.worktreePath,
           signal: this.signal,
           budgetUsdRemaining: Math.max(0, this.config.maxBudgetUsd - state.accumulatedCostUsd),
+          ...(handle.gitDir === undefined ? {} : { gitDir: handle.gitDir }),
         };
         const agentRun = await this.executor.run(action, ctx);
         agentRun.planId = planId; // the executor cannot know the plan id; stamp it (spec: AgentRun.planId)
@@ -624,7 +625,7 @@ export class Orchestrator {
         // BEFORE handle.cleanup() (finally block below) destroys the git objects. Diffs against the
         // worktree's stored baseline, not bare HEAD, so this is correct even when the agent ran
         // `git commit` (activityOracle's `headMoved` case).
-        const diffContent = captureDiff(handle.worktreePath, handle.initialSha);
+        const diffContent = captureDiff(handle.worktreePath, handle.initialSha, handle.gitDir);
         if (diffContent !== undefined) agentRun.diffContent = diffContent;
         await this.persistAgentRun(agentRun, state.runId);
 

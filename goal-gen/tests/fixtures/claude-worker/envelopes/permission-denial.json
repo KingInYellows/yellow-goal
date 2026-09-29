@@ -1,0 +1,18 @@
+{
+  "_synthetic": true,
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "duration_ms": 6000,
+  "num_turns": 3,
+  "result": "I could not write outside the working directory.",
+  "stop_reason": "end_turn",
+  "session_id": "fake-session",
+  "total_cost_usd": 0.0911,
+  "usage": { "input_tokens": 18, "output_tokens": 300 },
+  "permission_denials": [
+    { "tool_name": "Write", "tool_use_id": "toolu_fake", "tool_input": { "file_path": "../escape.txt" } }
+  ],
+  "terminal_reason": "completed",
+  "uuid": "fake-uuid"
+}

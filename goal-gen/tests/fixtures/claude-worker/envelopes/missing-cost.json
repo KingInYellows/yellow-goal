@@ -1,0 +1,15 @@
+{
+  "_synthetic": true,
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "duration_ms": 19957,
+  "num_turns": 4,
+  "result": "Both files are repaired.",
+  "stop_reason": "end_turn",
+  "session_id": "fake-session",
+  "usage": { "input_tokens": 26, "output_tokens": 1004 },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "uuid": "fake-uuid"
+}

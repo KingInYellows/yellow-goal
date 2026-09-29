@@ -1,0 +1,15 @@
+{
+  "_synthetic": true,
+  "type": "result",
+  "subtype": "error_max_budget_usd",
+  "is_error": true,
+  "duration_ms": 9000,
+  "num_turns": 3,
+  "stop_reason": null,
+  "session_id": "fake-session",
+  "total_cost_usd": 0.5012,
+  "usage": { "input_tokens": 20, "output_tokens": 800 },
+  "permission_denials": [],
+  "terminal_reason": "max_budget",
+  "uuid": "fake-uuid"
+}

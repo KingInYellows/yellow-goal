@@ -13,6 +13,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
@@ -40,11 +41,29 @@ export interface GitResult {
 
 /** Synchronous git in `cwd` with isolated config + a timeout. `status` is -1 when killed/timed out. */
 export function git(args: readonly string[], cwd: string): GitResult {
+  return runGit(args, cwd, GIT_ENV);
+}
+
+/**
+ * Git in a worktree an untrusted worker may have written to. `core.fsmonitor` and hooks are always
+ * disabled, so no config can make the engine's own git call execute a command. When `gitDir` (the
+ * git dir resolved before the worker ran) is given, git is also pinned to it, so a rewritten `.git`
+ * gitfile cannot redirect git to a worker-authored config (ADR-0020 real runs).
+ */
+export function pinnedGit(args: readonly string[], worktreePath: string, gitDir?: string): GitResult {
+  return runGit(
+    ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', ...args],
+    worktreePath,
+    gitDir === undefined ? GIT_ENV : { ...GIT_ENV, GIT_DIR: gitDir, GIT_WORK_TREE: worktreePath },
+  );
+}
+
+function runGit(args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): GitResult {
   let r: SpawnSyncReturns<string>;
   try {
     r = spawnSync('git', args, {
       cwd,
-      env: GIT_ENV,
+      env,
       encoding: 'utf8',
       timeout: GIT_TIMEOUT_MS,
       maxBuffer: GIT_MAX_BUFFER_BYTES,
@@ -78,6 +97,11 @@ export interface WorktreeHandle {
   branch: string;
   /** HEAD sha at creation — the activity oracle's baseline. */
   initialSha: string;
+  /**
+   * The worktree's git dir, resolved at creation before any agent ran (it lives under `root`,
+   * outside `worktreePath`). Post-run git calls pin to it via `pinnedGit`.
+   */
+  gitDir?: string;
   /** Idempotent teardown: worktree remove --force → prune → rm scratch root. */
   cleanup(): Promise<void>;
 }
@@ -130,7 +154,8 @@ export async function createWorktree(opts: CreateWorktreeOptions = {}): Promise<
     const initialSha = gitOrThrow(['rev-parse', 'HEAD'], root).trim();
     worktreePath = join(root, 'wt');
     gitOrThrow(['worktree', 'add', worktreePath, '-b', branch], root);
-    return { root, worktreePath, branch, initialSha, cleanup: () => teardown(root, worktreePath) };
+    const gitDir = realpathSync(gitOrThrow(['rev-parse', '--absolute-git-dir'], worktreePath).trim());
+    return { root, worktreePath, branch, initialSha, gitDir, cleanup: () => teardown(root, worktreePath) };
   } catch (e) {
     await teardown(root, worktreePath).catch(() => {});
     throw e;

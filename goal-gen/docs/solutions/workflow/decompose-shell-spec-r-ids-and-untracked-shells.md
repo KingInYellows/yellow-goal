@@ -29,3 +29,15 @@ While expanding approval-gated-real-execution shell 01, every shell showed
   `/flow:pick-next-shell` from the main checkout then reports nothing. Before
   concluding there is no work, check `git -C yellow-goal worktree list` and
   `gh pr list -R KingInYellows/yellow-goal`, then run from the right worktree.
+
+---
+
+## Update — 2026-09-29 (expanding shell 02, executor-hardening)
+
+3. **A sub-numbered requirement added after decomposition trips the drift check.** The spec gained
+   R8a after decompose ran. `expand-shell`'s R-id drift check reports it as a mismatch even though
+   R8a belongs to a different shell (03). Confirm which shell `Covers` it before treating it as
+   drift in yours, then proceed and record the operator's decision.
+4. **Defer a shell's open questions to a probe, as recorded outputs.** Per-action caps, timeouts and
+   whether an engine-owned settings file is needed were answered by putting them in a human-run
+   probe's recorded output, not by guessing in the plan. Say so in the plan's exit gate.

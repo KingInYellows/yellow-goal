@@ -59,6 +59,8 @@ export const RUN_APPROVAL_ERROR_CODES = [
   'APPROVAL_EXPIRED',
   'APPROVAL_CONSUMED',
   'APPROVAL_STATE_UNAVAILABLE',
+  'AUTH_MODE_MISMATCH',
+  'TOOLS_UNCONFINED',
 ] as const;
 export type RunApprovalErrorCode = (typeof RUN_APPROVAL_ERROR_CODES)[number];
 

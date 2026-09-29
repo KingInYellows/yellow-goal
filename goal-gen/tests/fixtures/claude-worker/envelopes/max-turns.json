@@ -1,0 +1,15 @@
+{
+  "_synthetic": true,
+  "type": "result",
+  "subtype": "error_max_turns",
+  "is_error": true,
+  "duration_ms": 8000,
+  "num_turns": 8,
+  "stop_reason": null,
+  "session_id": "fake-session",
+  "total_cost_usd": 0.2104,
+  "usage": { "input_tokens": 30, "output_tokens": 900 },
+  "permission_denials": [],
+  "terminal_reason": "max_turns",
+  "uuid": "fake-uuid"
+}

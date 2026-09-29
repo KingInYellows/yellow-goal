@@ -322,6 +322,26 @@ legacy `--executor claude-code` path (follow-up after R35).
   ledger locations are operator-supplied (the workspace puts them under `runtime/`). Bundle and
   ledger destinations are approved as part of the manifest (R8a), so a host session cannot choose
   them after the human approved.
+- **Filesystem confinement by path-scoped permission rules, not an OS sandbox (R11).** Decided
+  when expanding the worker-execution shell (operator, 2026-09-29). Before spawn the engine
+  refuses (`TOOLS_UNCONFINED`) any allowed tool that is not `Read`/`Edit`/`Write`/`MultiEdit`/
+  `Glob`/`Grep` with a relative in-worktree specifier; `Bash` can never be path-scoped. CI proves
+  the refusal; the human-run R34 probe proves Claude Code enforces the scoped rules headless (an
+  out-of-worktree read and write are denied). An escape in the probe stops the work for a redesign
+  toward a sandbox — never a wider permission mode.
+- **The worker's Claude Code config and tool set are pinned (R11).** Real runs always pass
+  engine-constant `--setting-sources project --strict-mcp-config` (the scratch worktree has no
+  project settings), so the operator's user settings, plugins, hooks and MCP servers cannot widen
+  the approved allowlist (operator, 2026-09-29). `--tools` limits the available built-in tools to
+  the approved filesystem tools, because allow rules only add approvals and read-only Bash commands
+  are auto-approved. Because project settings are then the only source, the engine also emits
+  constant deny rules for `Bash`, `WebFetch`, `WebSearch`, and for writes to `.claude/`,
+  `.mcp.json`, `CLAUDE.local.md` and `.git` at any depth, and refuses a worktree that already
+  holds worker config.
+  The prompt goes to the worker on stdin, never argv.
+  Engine git calls in the worker-writable worktree — the executor's activity oracle and the
+  orchestrator's diff capture — are pinned to the pre-run git dir (which must lie outside the
+  worktree) with `core.fsmonitor` and hooks disabled.
 
 ### Acceptance matrix
 
@@ -360,4 +380,6 @@ Both are deliberately deferred to the R34 probe (operator decision 2026-09-28):
 - Exact per-action cap and timeouts inside the $5 envelope: set from the R34 probe's measured
   sonnet cost on `config-repair`.
 - Whether the worker child gets a minimal `--settings` to suppress hook/plugin side effects, or
-  relies on allowed-paths-only extraction (R17): decided by the R34 probe.
+  relies on allowed-paths-only extraction (R17): decided by the R34 probe. Narrowed 2026-09-29:
+  the worker config is now pinned (see Decisions), so the probe only decides whether residual side
+  effects need an engine-owned settings file, which would be carried in the approved manifest.
