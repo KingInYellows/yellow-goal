@@ -1,0 +1,23 @@
+goal-gen/backend/src/cli/errors.ts
+  s_94daf85b5914ee::t_152761b7ba9629 62-63
+goal-gen/docs/operator-real-run.md
+  s_94daf85b5914ee::t_b76c00e0a00960 84-85
+goal-gen/plans/approval-gated-real-execution-02-executor-hardening.md
+  s_94daf85b5914ee::t_22ee3cfdf1c22b 175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3ec14b82fe2e6a3723b4340203986f7bc59f8cba",
+  "prompts": {},
+  "sessions": {
+    "s_94daf85b5914ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea2603f2-1292-40ad-a16b-e32a18470b88",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
