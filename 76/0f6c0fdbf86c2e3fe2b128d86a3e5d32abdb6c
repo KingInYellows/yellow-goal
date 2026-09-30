@@ -1,0 +1,19 @@
+goal-gen/tests/cli/committed-source.test.ts
+  s_e67a66722f60de::t_fc4cb3a20ddce5 373-374,460-461,510-521,4316,4373,6949,7017,7094,7162,7241,7316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "760f6c0fdbf86c2e3fe2b128d86a3e5d32abdb6c",
+  "prompts": {},
+  "sessions": {
+    "s_e67a66722f60de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7c97b7c-9d7e-4c69-bf15-40f711e9b42c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
