@@ -1,0 +1,25 @@
+goal-gen/CLAUDE.md
+  s_e67a66722f60de::t_7f78636bd24aac 78
+goal-gen/docs/operator-real-run.md
+  s_e67a66722f60de::t_00943ba693c922 9-11,21-27,32-33,36,41-51,78-109,121,135-136
+goal-gen/plans/approval-gated-real-execution-03-real-run-orchestration.md
+  s_e67a66722f60de::t_8cb5f344c2614e 145,166,173,177,180,186,190,194,198,207,210,217,224,232,237,242,255,260,266,275,280,286,301,303
+goal-gen/plans/specs/approval-gated-real-execution.md
+  s_e67a66722f60de::t_8b8a00e4bc4901 345-360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a99a1eb139d57c0c771200800eaf669ace09ea87",
+  "prompts": {},
+  "sessions": {
+    "s_e67a66722f60de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7c97b7c-9d7e-4c69-bf15-40f711e9b42c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
