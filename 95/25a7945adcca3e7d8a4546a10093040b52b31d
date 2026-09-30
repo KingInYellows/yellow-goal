@@ -1,0 +1,32 @@
+goal-gen/tests/cli/committed-source.test.ts
+  s_e5044774027d85::t_aaeb3eda2e0264 560-561
+  s_e5044774027d85::t_430e3565e8d0dd 571-575
+goal-gen/tests/real-run/real-run-engine.test.ts
+  s_e5044774027d85::t_417a8dae72112c 319-336
+goal-gen/backend/src/real-run/real-run-engine.ts
+  s_e5044774027d85::t_4413da474a58b3 278-279,282-286
+  s_e5044774027d85::t_5c34ae57c75bfe 293-299
+  s_e5044774027d85::t_34df1c2a587377 272-274
+  s_e5044774027d85::t_850de38bbc5802 307-312
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_e5044774027d85::t_baf64373984145 228
+  s_e5044774027d85::t_145e1ff5e4b4ad 249-252
+  s_e5044774027d85::t_d637867bc1d6c0 227
+  s_e5044774027d85::t_ba2d0620ac36cb 232-235
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9525a7945adcca3e7d8a4546a10093040b52b31d",
+  "prompts": {},
+  "sessions": {
+    "s_e5044774027d85": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9facd43-4713-4c05-9549-536f2cb70050",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
