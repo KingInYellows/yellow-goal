@@ -1,0 +1,63 @@
+goal-gen/backend/src/cli/fd-path.ts
+  s_e67a66722f60de::t_117b091d6a1fdb 1-20
+goal-gen/CLAUDE.md
+  s_e67a66722f60de::t_93549aef9f1163 28
+goal-gen/backend/src/cli/candidate-offline-bundle.ts
+  s_e67a66722f60de::t_63157ed3741699 18,122-126,128-130,132,138-166,169-175,179,200
+goal-gen/backend/src/cli/errors.ts
+  s_e67a66722f60de::t_a838e61ac51c4d 66
+goal-gen/backend/src/cli/run-manifest.ts
+  s_e67a66722f60de::t_6cc6efb388e6d0 63-64
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_e67a66722f60de::t_9231d969e7b356 38,159-177,293-297,299,302-306,320-321,355,357-359
+goal-gen/backend/src/executors/worktree.ts
+  s_e67a66722f60de::t_9046c66367a5d4 83-119
+goal-gen/backend/src/orchestrator/guardrails.ts
+  s_e67a66722f60de::t_538b1c1230f613 35-37
+goal-gen/backend/src/real-run/candidate-builder.ts
+  s_e67a66722f60de::t_df76ac1e8994c2 33,35,59-60,126-127
+goal-gen/backend/src/real-run/evidence-destinations.ts
+  s_e67a66722f60de::t_a80edc8848225f 3-5,7-8,50-51,67,72,74,91-92
+goal-gen/backend/src/real-run/outcome.ts
+  s_e67a66722f60de::t_20190f9fca5866 11-17,22,24,52,54
+goal-gen/backend/src/real-run/real-run-engine.ts
+  s_e67a66722f60de::t_f07159f067b1b0 21-31,34,46,48,63-66,76-78,122-127,132,137,166-174,181-182,189,214-222,230,237-241,243,265-267,269,271-279,295
+goal-gen/backend/src/real-run/spend-ledger.ts
+  s_e67a66722f60de::t_a73c740cb5798b 8,20
+goal-gen/backend/src/types.ts
+  s_e67a66722f60de::t_84404d2ed01036 66,68-69
+goal-gen/docs/operator-real-run.md
+  s_e67a66722f60de::t_f776260cb33d03 25-27,42-43,100-103,144-146
+goal-gen/tests/fixtures/claude-worker/fake-claude.mjs
+  s_e67a66722f60de::t_bd39e402e3f29a 50-54,74-78,82,84,88-89,114-116,149
+goal-gen/tests/harness/real-run-harness.process.test.ts
+  s_e67a66722f60de::t_be5fdd5331cabe 7,76-94
+goal-gen/tests/harness/real-run-harness.ts
+  s_e67a66722f60de::t_b58a21fb3b74d0 29,78,102-108
+goal-gen/tests/real-run/candidate-builder.test.ts
+  s_e67a66722f60de::t_1be130227752fd 1-97
+goal-gen/tests/real-run/evidence-destinations.test.ts
+  s_e67a66722f60de::t_4c6fb3208ac5ea 6,145-156,158-184
+goal-gen/tests/real-run/real-run-bounds.test.ts
+  s_e67a66722f60de::t_7233224edbda7b 102,108,111-112
+goal-gen/tests/real-run/real-run-engine.test.ts
+  s_e67a66722f60de::t_9f3657a72dcde3 7,13,17,236-326
+goal-gen/tests/real-run/real-run-static.test.ts
+  s_e67a66722f60de::t_e8a40456f5392c 2-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "9f5b16abefb7c3d19ea4b36d42a3ad6270f372b1",
+  "prompts": {},
+  "sessions": {
+    "s_e67a66722f60de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7c97b7c-9d7e-4c69-bf15-40f711e9b42c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
