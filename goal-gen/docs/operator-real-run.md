@@ -6,8 +6,9 @@
 
 Decision: [ADR-0020](decisions/0020-approval-gated-real-execution.md). Spec:
 [`plans/specs/approval-gated-real-execution.md`](../plans/specs/approval-gated-real-execution.md)
-(AGX-R1..R35). Status: **skeleton** — steps 1–2 are implemented; steps 3–4 land with later
-slices.
+(AGX-R1..R35). Status: steps 1–2 are implemented. The real-run engine behind step 3 exists
+(shell 03) but has no command yet: the `run --protocol v2 --executor agx-claude-code` surface lands
+with shell 04. Step 4 lands with a later slice.
 
 All paths are operator-supplied arguments; the engine has no `runtime/` concept. In the Yellow
 Harness workspace, put approvals, bundles and ledgers under `runtime/`.
@@ -17,19 +18,37 @@ Harness workspace, put approvals, bundles and ledgers under `runtime/`.
 - A validated `approved-implementation` request file (`request validate <file>`).
 - An engine built from a released tarball (the live acceptance run, AGX-R35, uses the release).
 - Caps inside the ADR-0010 defaults. The per-action cap and timeouts for `config-repair` come from
-  the AGX-R34 permission probe ([`operator-permission-probe.md`](operator-permission-probe.md));
-  real runs wait until `tests/spikes/permission-probe-findings.md` records a passing probe.
+  the AGX-R34 permission probe ([`operator-permission-probe.md`](operator-permission-probe.md)),
+  which passed (`tests/spikes/permission-probe-findings.md`):
+  - Per-action cap: **$0.50** recommended. `--per-action-usd` and `--total-usd` are always
+    required, so spend is typed explicitly. A budget stop can overshoot its cap by up to one turn.
+  - Action timeout: **120000 ms** and run wall-clock: **600000 ms** are the manifest defaults.
+    `--action-timeout-ms` and `--run-wall-clock-ms` accept any value up to ADR-0010's ceilings
+    (10 min per action, 60 min per run).
 
 ## 1. Render the manifest (zero spend)
 
 ```bash
-goal-gen run manifest <request.json> --profile config-repair \
-  --per-action-usd <usd> --total-usd <usd> --auth-mode subscription \
+goal-gen run manifest <request.json> --profile config-repair@2 \
+  --per-action-usd 0.5 --total-usd <usd> --auth-mode subscription \
   --max-turns <n> --allowed-tool 'Read(./**)' --allowed-tool 'Edit(./site.json)' \
   --allowed-tool 'Edit(./SITE)' --allowed-tool 'Write(./site.json)' --allowed-tool 'Write(./SITE)' \
+  --bundle-dir runtime/bundles/<name> --spend-ledger runtime/ledgers/<name>.jsonl \
   [--model sonnet] \
   [--action-timeout-ms <ms>] [--run-wall-clock-ms <ms>] [--expires-in-minutes <1-60>] --json
 ```
+
+`--profile` takes `<id>` (version 1) or `<id>@<version>`. A real run needs a version that carries
+the worker milestone, which for `config-repair` is `config-repair@2`. A version-1 manifest renders
+and can be approved, but the real run refuses it before consuming the approval (`MANIFEST_INVALID`).
+
+`--bundle-dir` and `--spend-ledger` are required: the evidence destinations are part of what you
+approve (AGX-R8a). Each must be a path that does not exist yet, under a directory that exists, is
+owned by you, and is not group- or world-writable (so not directly in `/tmp`). The
+manifest stores them as canonical absolute paths (the parent resolved through any symlink), so
+check the `evidence` block you are shown. The real run refuses a destination that exists by then,
+sits inside the request's target repository or a scratch worktree, or whose parent was swapped
+for a symlink or made writable by others.
 
 Prints `{ manifest, manifestHash, challenge }`. Rendering twice with the same inputs yields the
 same bytes. Nothing is spawned. `manifest` and `approve` must come directly after `run`; a
@@ -57,13 +76,51 @@ example above is the probe's default).
 The approval file is consent evidence, not a credential: anything running as you can forge one.
 Never run this step from, or on behalf of, an agent session (ADR-0020 Consequences).
 
-## 3. Run (not yet implemented)
+## 3. Run (engine implemented; command lands with shell 04)
 
-Placeholder — the real-run verb (`run --protocol v2 --executor agx-claude-code --profile … --approval
-<path> --bundle-dir <dir>`) lands with a later slice. It verifies the approval, consumes it
-(creating `$XDG_STATE_HOME/yellow-goal/consumed/<approvalId>`, default under
-`~/.local/state/yellow-goal/`), spawns exactly one worker, and ends in one outcome. Copying the
-approval file does not make it reusable.
+The real-run command (`run --protocol v2 --executor agx-claude-code <same flags as step 1>
+--approval <path>`) lands with shell 04. The engine it will call already runs, in this order:
+
+1. Recompute the manifest from the invocation's flags and verify the approval against it.
+2. Refuse a mismatched credential (`AUTH_MODE_MISMATCH`), an unscoped allowlist
+   (`TOOLS_UNCONFINED`) or a bad evidence destination (`EVIDENCE_DESTINATION_REFUSED`).
+3. Consume the approval (creating `$XDG_STATE_HOME/yellow-goal/consumed/<approvalId>`, default
+   under `~/.local/state/yellow-goal/`). Copying the approval file does not make it reusable.
+4. Seed a scratch worktree from the profile's base files. The request's target repository is never
+   touched.
+5. Run exactly one worker attempt on the profile's milestone, bounded by the action timeout, the
+   run wall-clock and cancellation. Each kills the worker's whole process group.
+6. Write one entry to the spend ledger (`yellow-goal/real-run-spend/v1` JSON Lines: `approvalId`,
+   `model`, `costUsd` or `null`, `turns`, `durationMs`, `exitClass`, `startedAt`, `endedAt`).
+   `durationMs` is the worker-reported duration when the result envelope carried one, else the
+   engine-measured time.
+7. Read only the allowed paths into the candidate. A symlink, FIFO, device or oversize entry is
+   never read and fails the run.
+8. Judge the candidate with `acceptance verify-candidate` for the approved profile version, and
+   write the bundle to `--bundle-dir`.
+
+From consumption until the run ends, SIGHUP, SIGINT and SIGTERM stop the worker (outcome
+`worker-failed`, `cancel`) instead of killing the engine; a cancel that arrives before
+consumption is refused (`RUN_CANCELLED`) and leaves the approval usable.
+
+It ends in exactly one outcome:
+
+- `refused`: nothing spawned or metered. The approval stays unconsumed, except for
+  `APPROVAL_CONSUMED`.
+- `worker-failed`: the worker failed (its failure class, or `wall-clock`, `cancel`,
+  `worker-not-terminated`), produced an unsafe candidate (`unsafe-allowed-path`,
+  `non-utf8-candidate`), or the engine could not finish after consumption
+  (`evidence-write-failed`, `evidence-destination-refused`, `engine-error`). A cancel or wall-clock
+  expiry before the worker started spawns nothing and writes no ledger entry. The wall-clock and
+  cancellation also cover candidate extraction and verification: if one lands meanwhile, the
+  outcome is `worker-failed` (`wall-clock` / `cancel`) with the candidate kept as evidence, and no
+  bundle is written.
+- `verification-rejected`: the verifier rejected the candidate; the bundle holds the reasons.
+- `verified`: the verifier accepted the candidate, which now awaits your decision.
+
+Files the worker changed outside the allowed paths are listed in `outOfScopeChanges` as evidence.
+They are never part of the candidate and never fail the run. The worker's own exit status and
+narrative never decide success. Nothing is committed, merged or pushed.
 
 ## 4. Reproduce and accept (not yet implemented)
 
@@ -75,7 +132,7 @@ accepted.
 
 | Code | Meaning |
 |---|---|
-| `MANIFEST_INVALID` | A manifest input is out of range (caps above ADR-0010 defaults, expiry above 60 min, tool in both lists, …) |
+| `MANIFEST_INVALID` | A manifest input is out of range (caps above ADR-0010 defaults, expiry above 60 min, tool in both lists, an unknown profile version, an evidence destination whose parent cannot be resolved, …), or the approved profile version has no worker milestone |
 | `APPROVAL_TTY_REQUIRED` | `run approve` was not run with stdin and stderr attached to a terminal; nothing written |
 | `APPROVAL_DECLINED` | The typed challenge did not match (or input ended); nothing written |
 | `APPROVAL_OUT_EXISTS` | The `--out` path already exists (a symlink counts); approvals are never overwritten |
@@ -89,4 +146,7 @@ accepted.
 | `APPROVAL_CONSUMED` | The approval (by `approvalId`, even via a copied file) was already used |
 | `APPROVAL_STATE_UNAVAILABLE` | The consumption-marker directory could not be read or written; the run is refused |
 | `AUTH_MODE_MISMATCH` | The environment's credential contradicts the manifest's auth mode: `ANTHROPIC_API_KEY` is set but the auth mode is not `api-key` (it would silently override the subscription), or it is unset under `api-key` (the CLI would silently fall back to the subscription); or `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_CUSTOM_HEADERS`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL` or a `CLAUDE_CODE_USE_*` provider toggle is set, which would substitute another credential or provider. Nothing spawned |
+| `EVIDENCE_DESTINATION_REFUSED` | A bundle or ledger destination already exists, is inside the request's target repository or a real-run scratch worktree, or its parent now resolves through a symlink, is owned by another user, or is group- or world-writable. Checked before consumption (outcome `refused`; nothing spawned). The same checks run again once the scratch worktree exists and just before each evidence file is written; failing them then is `worker-failed` with reason `evidence-destination-refused` (the approval is already consumed; a verified candidate is kept in the outcome) |
+| `EVIDENCE_WRITE_FAILED` | The spend ledger or bundle could not be written after the worker ran (including a ledger destination that failed its re-check just before the write); reported as a `worker-failed` outcome (`evidence-write-failed`) with the spend so far, and with the candidate and verifier decision when the bundle was the failed write |
+| `RUN_CANCELLED` | The run was cancelled before the approval was consumed; the approval stays usable and nothing spawned |
 | `TOOLS_UNCONFINED` | An allowed tool is not a filesystem tool path-scoped to the scratch worktree (`Read`/`Edit`/`Write`/`MultiEdit`/`Glob`/`Grep` with a relative in-worktree specifier such as `Edit(./site.json)`, built only from letters, digits, `.`, `_`, `-`, `*` and `/`); `Bash`, unscoped, absolute, `~`, `..`, whitespace and multi-rule specifiers are refused, as are an empty allowlist and write rules naming `.git`, `.claude`, `.mcp.json`, `CLAUDE.local.md` (any case) or a dotfile wildcard. Nothing spawned |

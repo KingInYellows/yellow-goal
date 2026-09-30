@@ -54,6 +54,9 @@ const flags = [
   '--total-usd', '5',
   '--auth-mode', 'subscription',
   '--allowed-tool', 'Edit',
+  // Relative to the spawned CLI's cwd; the manifest only resolves their parent.
+  '--bundle-dir', 'bundle',
+  '--spend-ledger', 'spend.jsonl',
 ];
 
 describe('approval verbs never spawn', () => {

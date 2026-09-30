@@ -43,6 +43,8 @@ function manifestFlags(extra: string[] = []): string[] {
     '--auth-mode', 'subscription',
     '--allowed-tool', 'Read',
     '--allowed-tool', 'Edit',
+    '--bundle-dir', path.join(tempDir, 'bundle'),
+    '--spend-ledger', path.join(tempDir, 'spend.jsonl'),
     ...extra,
   ];
 }

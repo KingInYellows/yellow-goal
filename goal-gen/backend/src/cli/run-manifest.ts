@@ -1,15 +1,25 @@
 /**
  * Real-run manifest (ADR-0020, AGX-R1): the deterministic, offline description of exactly what a
- * human approves before any real `claude` spend. Pure — never spawns, never touches the network,
- * never imports run-command, executors, or the orchestrator loop.
+ * human approves before any real `claude` spend. Never spawns, never touches the network, never
+ * imports run-command, executors, or the orchestrator loop. Its only filesystem access is
+ * resolving the evidence destinations' parent directories to canonical paths (AGX-R8a).
  *
  * `expiresInMinutes` is relative on purpose: the manifest (and so `manifestHash`) must be
  * byte-identical across `run manifest`, `run approve`, and the later real-run recompute; the
  * absolute `expiresAt` lives only on the approval record.
  */
+import { realpathSync } from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import type { RepositoryGoalRequest } from '../contracts/request';
-import { ACTION_TIMEOUT_MS, DEFAULT_MODEL, MAX_BUDGET_USD, RUN_WALL_CLOCK_MS } from '../orchestrator/guardrails';
+import {
+  ACTION_TIMEOUT_MS,
+  DEFAULT_MODEL,
+  MAX_BUDGET_USD,
+  REAL_RUN_ACTION_TIMEOUT_MS,
+  REAL_RUN_WALL_CLOCK_MS,
+  RUN_WALL_CLOCK_MS,
+} from '../orchestrator/guardrails';
 import { canonicalJson } from '../packs/canonical-json';
 import { sha256Hex } from '../packets/checksums';
 import { candidateProfileDigest, getCandidateOfflineProfile, type CandidateOfflineProfile } from './candidate-offline-profiles';
@@ -35,6 +45,25 @@ const TOOL_RULE = /^[A-Za-z][A-Za-z0-9_]*(\([\x20-\x27\x2a-\x7e]*\))?$/;
 
 const ToolNameSchema = z.string().regex(TOOL_RULE, 'expected a tool name like Edit or Bash(git status:*)');
 
+/** An absolute path already in canonical form (`path.resolve` leaves it unchanged), never a root. */
+const CanonicalPathSchema = z
+  .string()
+  .refine(
+    (value) => path.isAbsolute(value) && path.resolve(value) === value && path.parse(value).root !== value,
+    'must be an absolute canonical path that is not a filesystem root',
+  );
+
+/** Where a real run writes its evidence (AGX-R8a): approved with the manifest, never chosen later. */
+const EvidenceDestinationsSchema = z
+  .object({ bundleDir: CanonicalPathSchema, spendLedgerPath: CanonicalPathSchema })
+  .strict();
+
+/** Lexical containment of canonical absolute paths: `child` is `parent` or below it. */
+export function isSameOrInside(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
 export const RunManifestSchema = z
   .object({
     schemaVersion: z.literal(RunManifestSchemaVersion),
@@ -56,6 +85,7 @@ export const RunManifestSchema = z
     authMode: z.enum(['subscription', 'api-key']),
     attemptCount: z.literal(1),
     expiresInMinutes: z.number().int().min(1).max(RUN_APPROVAL_MAX_EXPIRY_MINUTES),
+    evidence: EvidenceDestinationsSchema,
   })
   .strict()
   .superRefine((manifest, ctx) => {
@@ -71,6 +101,10 @@ export const RunManifestSchema = z
     }
     if (manifest.runWallClockMs > RUN_WALL_CLOCK_MS) {
       ctx.addIssue({ code: 'custom', path: ['runWallClockMs'], message: `must be <= ${RUN_WALL_CLOCK_MS}` });
+    }
+    const { bundleDir, spendLedgerPath } = manifest.evidence;
+    if (isSameOrInside(bundleDir, spendLedgerPath) || isSameOrInside(spendLedgerPath, bundleDir)) {
+      ctx.addIssue({ code: 'custom', path: ['evidence'], message: 'bundleDir and spendLedgerPath must be separate paths, neither inside the other' });
     }
     const overlap = manifest.allowedTools.filter((tool) => manifest.disallowedTools.includes(tool));
     if (overlap.length > 0) {
@@ -95,6 +129,10 @@ export type RunManifestInputs = {
   actionTimeoutMs?: number;
   runWallClockMs?: number;
   expiresInMinutes?: number;
+  /** Evidence destinations (AGX-R8a). Required by the schema; optional here so a missing one
+   *  refuses as MANIFEST_INVALID like every other out-of-range input. */
+  bundleDir?: string;
+  spendLedgerPath?: string;
 };
 
 /**
@@ -105,8 +143,8 @@ export type RunManifestInputs = {
 export const RUN_MANIFEST_DEFAULTS = {
   model: DEFAULT_MODEL,
   disallowedTools: [] as readonly string[],
-  actionTimeoutMs: ACTION_TIMEOUT_MS,
-  runWallClockMs: RUN_WALL_CLOCK_MS,
+  actionTimeoutMs: REAL_RUN_ACTION_TIMEOUT_MS,
+  runWallClockMs: REAL_RUN_WALL_CLOCK_MS,
   expiresInMinutes: RUN_APPROVAL_MAX_EXPIRY_MINUTES,
 } as const;
 
@@ -129,11 +167,38 @@ export function approvalChallenge(manifestHash: string): string {
   return `${manifestHash.slice(0, 4)}-${manifestHash.slice(4, 8)}`;
 }
 
+/**
+ * Resolves `<id>` (version '1', unchanged since before versioning) or `<id>@<version>`, so a real
+ * run can select `config-repair@2` (AGX-R7). An unknown id or version is MANIFEST_INVALID.
+ */
 function resolveProfile(profileId: string): CandidateOfflineProfile {
+  const at = profileId.indexOf('@');
   try {
-    return getCandidateOfflineProfile(profileId);
+    if (at === -1) return getCandidateOfflineProfile(profileId);
+    return getCandidateOfflineProfile(profileId.slice(0, at), profileId.slice(at + 1));
   } catch (err) {
     throw new RunApprovalError('MANIFEST_INVALID', err instanceof Error ? err.message : String(err), { profileId });
+  }
+}
+
+/**
+ * The canonical form of an evidence destination: its parent resolved through `realpath` plus its
+ * own basename, so the approved path names no symlinked directory. The destination itself need not
+ * exist (and must not, at run time). An unresolvable parent is MANIFEST_INVALID.
+ */
+function canonicalDestination(flag: string, raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const absolute = path.resolve(raw);
+  const parent = path.dirname(absolute);
+  if (parent === absolute) {
+    throw new RunApprovalError('MANIFEST_INVALID', `${flag} must not be a filesystem root`, { [flag]: raw });
+  }
+  try {
+    return path.join(realpathSync(parent), path.basename(absolute));
+  } catch (err) {
+    throw new RunApprovalError('MANIFEST_INVALID', `${flag} parent directory ${parent} cannot be resolved: ${err instanceof Error ? err.message : String(err)}`, {
+      [flag]: raw,
+    });
   }
 }
 
@@ -156,6 +221,10 @@ export function buildRunManifest(inputs: RunManifestInputs): RunManifest {
     authMode: inputs.authMode,
     attemptCount: 1,
     expiresInMinutes: inputs.expiresInMinutes ?? RUN_MANIFEST_DEFAULTS.expiresInMinutes,
+    evidence: {
+      bundleDir: canonicalDestination('bundleDir', inputs.bundleDir),
+      spendLedgerPath: canonicalDestination('spendLedgerPath', inputs.spendLedgerPath),
+    },
   };
   const parsed = RunManifestSchema.safeParse(candidate);
   if (!parsed.success) {

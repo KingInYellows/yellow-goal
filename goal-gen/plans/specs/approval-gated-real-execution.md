@@ -342,6 +342,26 @@ legacy `--executor claude-code` path (follow-up after R35).
   Engine git calls in the worker-writable worktree — the executor's activity oracle and the
   orchestrator's diff capture — are pinned to the pre-run git dir (which must lie outside the
   worktree) with `core.fsmonitor` and hooks disabled.
+- **No intermediate consumption states (R5; decided in shell 03, 2026-09-29).** The marker is
+  written once, at consumption; there are no `starting`/`spawned` states. A crash between
+  consumption and spawn leaves the approval consumed with nothing spawned, and the operator mints a
+  new approval — the single-use guarantee never depends on crash recovery.
+- **Evidence destinations are canonicalized at manifest time (R8a; shell 03).** `run manifest`
+  stores each destination as `realpath(parent)` plus its basename, so the approved path names no
+  symlinked directory, and the real run recomputes the manifest the same way. A destination whose
+  parent was later swapped for a symlink therefore no longer matches the approval
+  (`APPROVAL_HASH_MISMATCH`); a removed parent cannot be recomputed (`MANIFEST_INVALID`). Before
+  consumption the engine also refuses (`EVIDENCE_DESTINATION_REFUSED`) a destination that already
+  exists, sits inside the request's target repository or a real-run scratch worktree, or whose
+  parent no longer resolves to itself, is owned by another user or is group/world-writable. The
+  check is repeated once the scratch worktree exists and just before each evidence write (a
+  failure then is `worker-failed`, the approval already consumed), and the bundle is created
+  through a held parent directory descriptor. A cancel before consumption refuses
+  (`RUN_CANCELLED`) and leaves the approval usable.
+- **Out-of-scope changes are evidence only (R17; AGX-R34 probe decision).** `acceptEdits` does
+  not confine in-worktree writes, so the worker may leave files outside the allowed paths. They
+  are listed by name in the outcome (`outOfScopeChanges`), never read into the candidate, and
+  never fail the run; only the allowed paths are extracted and judged.
 
 ### Acceptance matrix
 

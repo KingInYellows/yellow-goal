@@ -31,14 +31,17 @@ export const RUN_MANIFEST_OPTIONS = {
   'allowed-tool': { type: 'string', multiple: true },
   'disallowed-tool': { type: 'string', multiple: true },
   'expires-in-minutes': { type: 'string' },
+  // Evidence destinations are approved with the manifest (AGX-R8a).
+  'bundle-dir': { type: 'string' },
+  'spend-ledger': { type: 'string' },
 } as const;
 
 /** Derived from the options table, so a flag added there is typed here automatically. */
-type ManifestFlagValues = ReturnType<typeof parseArgs<{ options: typeof RUN_MANIFEST_OPTIONS }>>['values'];
+export type ManifestFlagValues = ReturnType<typeof parseArgs<{ options: typeof RUN_MANIFEST_OPTIONS }>>['values'];
 
 export type RunManifestOutput = { manifest: RunManifest; manifestHash: string; challenge: string };
 
-type RequiredFlag = 'profile' | 'max-turns' | 'per-action-usd' | 'total-usd' | 'auth-mode';
+type RequiredFlag = 'profile' | 'max-turns' | 'per-action-usd' | 'total-usd' | 'auth-mode' | 'bundle-dir' | 'spend-ledger';
 type OptionalIntegerFlag = 'action-timeout-ms' | 'run-wall-clock-ms' | 'expires-in-minutes';
 
 function required(values: ManifestFlagValues, flag: RequiredFlag): string {
@@ -90,6 +93,8 @@ export async function manifestFromFlags(
     actionTimeoutMs: optional('action-timeout-ms'),
     runWallClockMs: optional('run-wall-clock-ms'),
     expiresInMinutes: optional('expires-in-minutes'),
+    bundleDir: required(values, 'bundle-dir'),
+    spendLedgerPath: required(values, 'spend-ledger'),
   });
   const manifestHash = computeManifestHash(manifest);
   return { manifest, manifestHash, challenge: approvalChallenge(manifestHash), request };

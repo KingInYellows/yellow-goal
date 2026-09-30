@@ -83,7 +83,7 @@ describe('run approval isolation', () => {
       vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
       const { main } = await import('../../backend/src/cli/index');
-      const flags = ['--profile', 'config-repair', '--max-turns', '8', '--per-action-usd', '1', '--total-usd', '5', '--auth-mode', 'subscription', '--allowed-tool', 'Edit'];
+      const flags = ['--profile', 'config-repair', '--max-turns', '8', '--per-action-usd', '1', '--total-usd', '5', '--auth-mode', 'subscription', '--allowed-tool', 'Edit', '--bundle-dir', path.join(dir, 'bundle'), '--spend-ledger', path.join(dir, 'spend.jsonl')];
       expect(await main(['run', 'manifest', requestPath, ...flags, '--json'])).toBe(0);
       expect(stderr.mock.calls).toHaveLength(0);
       // A refused approve (injected non-TTY terminal, so a developer's real TTY never prompts)

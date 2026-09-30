@@ -19,7 +19,8 @@
  * failure classified (`AgentRun.failureClass`).
  */
 import { spawn } from 'node:child_process';
-import { lstatSync, realpathSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { RunApprovalError } from '../cli/errors';
@@ -35,10 +36,19 @@ import {
   type RealRunAuthMode,
   WRITE_TOOLS,
 } from './real-run-guards';
-import { GIT_ENV, type GitResult, pinnedGit } from './worktree';
+import { GIT_ENV, type GitResult, parsePorcelainPaths, pinnedGit } from './worktree';
 
 /** SIGKILL escalation grace after SIGTERM on cancel/timeout (plan task 2.5). */
 const SIGKILL_GRACE_MS = 5_000;
+/** How often, and for how long at most, a real run polls for its worker's process group to be gone. */
+const GROUP_POLL_MS = 25;
+const GROUP_GONE_TIMEOUT_MS = 5_000;
+/** How often a live real-run worker's descendants are snapshotted (see `DescendantTracker`). */
+const DESCENDANT_SNAPSHOT_MS = 200;
+/** Real runs keep at most this much worker stdout (the result envelope is a few KiB); more is malformed. */
+const REAL_RUN_STDOUT_MAX_BYTES = 8 * 1024 * 1024;
+/** Real runs keep only this rolling tail of worker stderr. */
+const REAL_RUN_STDERR_TAIL_BYTES = 64 * 1024;
 const DEFAULT_MAX_TURNS = 10;
 
 /**
@@ -110,6 +120,10 @@ interface SpawnResult {
   stderr: string;
   killReason: KillReason;
   spawnErrorMessage?: string;
+  /** Real runs: stdout exceeded `REAL_RUN_STDOUT_MAX_BYTES` and was cut off. */
+  stdoutTruncated?: boolean;
+  /** Real runs: a process of the worker's group was still present after SIGKILL and the bounded wait. */
+  processGroupSurvived?: boolean;
 }
 
 /**
@@ -135,10 +149,208 @@ function workerEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+/** What the executor reads of `/proc/<pid>/stat` (Linux only). */
+interface ProcStat {
+  state: string;
+  ppid: number;
+  pgrp: number;
+  /** Field 22: clock ticks since boot at process start; with the pid it identifies a process. */
+  start: string;
+}
+
+const PROC_AVAILABLE = existsSync('/proc/self/stat');
+
+/**
+ * Parse `/proc/<pid>/stat`. `comm` (field 2) may contain spaces and parentheses, so the remaining
+ * fields are read after the LAST ')'. Undefined when the process is gone or unreadable.
+ */
+function readProcStat(pid: number): ProcStat | undefined {
+  let text: string;
+  try {
+    text = readFileSync(`/proc/${pid}/stat`, 'utf8');
+  } catch {
+    return undefined;
+  }
+  const close = text.lastIndexOf(')');
+  if (close < 0) return undefined;
+  const fields = text.slice(close + 2).split(' ');
+  const [state, ppid, pgrp] = [fields[0], Number(fields[1]), Number(fields[2])];
+  const start = fields[19];
+  if (state === undefined || start === undefined || !Number.isInteger(ppid) || !Number.isInteger(pgrp)) return undefined;
+  return { state, ppid, pgrp, start };
+}
+
+/** A zombie (`Z`) or dead (`X`) process can no longer execute or write anything. */
+function isLiveState(state: string): boolean {
+  return state !== 'Z' && state !== 'X';
+}
+
+function listProcPids(): number[] {
+  try {
+    return readdirSync('/proc')
+      .filter((name) => /^[0-9]+$/.test(name))
+      .map(Number);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Whether process group `pgid` still has a LIVE member. A group holding only zombies (orphans
+ * whose reaper is slow) does not count: they cannot run. Without `/proc`, falls back to
+ * `kill(-pgid, 0)`, where EPERM means a member exists but is not ours.
+ */
+function processGroupAlive(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+  if (!PROC_AVAILABLE) return true;
+  for (const pid of listProcPids()) {
+    const stat = readProcStat(pid);
+    if (stat !== undefined && stat.pgrp === pgid && isLiveState(stat.state)) return true;
+  }
+  return false;
+}
+
+/**
+ * Tracks the descendants of one worker, including ones that leave its process group or session,
+ * which group signals cannot reach. Snapshots walk `/proc` ppid links from the worker pid while it
+ * is alive (once it exits its children are reparented and the link is lost), and every process
+ * records its start time so a reused pid is never signalled. A per-run token in the worker's
+ * environment (inherited by descendants) additionally finds ones missed between snapshots.
+ * Best effort: cgroup/container isolation is the real containment. No-op without `/proc`.
+ */
+class DescendantTracker {
+  private readonly known = new Map<number, string>();
+  /** The worker's own start time: once it is reaped its pid may belong to an unrelated process. */
+  private readonly rootStart: string | undefined;
+  constructor(
+    private readonly rootPid: number,
+    private readonly envToken: string,
+  ) {
+    // The tracker is built right after spawn, while the worker is alive and visible in /proc.
+    if (PROC_AVAILABLE) this.rootStart = readProcStat(rootPid)?.start;
+  }
+
+  snapshot(): void {
+    if (!PROC_AVAILABLE) return;
+    const children = new Map<number, number[]>();
+    const stats = new Map<number, ProcStat>();
+    for (const pid of listProcPids()) {
+      const stat = readProcStat(pid);
+      if (stat === undefined) continue;
+      stats.set(pid, stat);
+      const siblings = children.get(stat.ppid);
+      if (siblings) siblings.push(pid);
+      else children.set(stat.ppid, [pid]);
+    }
+    // Never walk from a pid that no longer identifies the worker (reaped, possibly reused). An
+    // unreadable start time at construction fails closed: scanEnvironments() still covers descendants.
+    const root = stats.get(this.rootPid);
+    if (this.rootStart === undefined || root === undefined || root.start !== this.rootStart) return;
+    const queue = [this.rootPid];
+    while (queue.length > 0) {
+      for (const pid of children.get(queue.pop()!) ?? []) {
+        const stat = stats.get(pid)!;
+        if (isLiveState(stat.state)) this.known.set(pid, stat.start);
+        queue.push(pid);
+      }
+    }
+  }
+
+  /** Adds every live process whose environment carries this run's token (same-user only). */
+  private scanEnvironments(): void {
+    const needle = Buffer.from(`YELLOW_GOAL_WORKER_TOKEN=${this.envToken}`);
+    for (const pid of listProcPids()) {
+      if (pid === process.pid || this.known.has(pid)) continue;
+      try {
+        if (!readFileSync(`/proc/${pid}/environ`).includes(needle)) continue;
+      } catch {
+        continue;
+      }
+      const stat = readProcStat(pid);
+      if (stat !== undefined && isLiveState(stat.state)) this.known.set(pid, stat.start);
+    }
+  }
+
+  /** SIGKILLs every recorded descendant still alive with its recorded start time; true if any is. */
+  sweep(): boolean {
+    if (!PROC_AVAILABLE) return false;
+    this.snapshot();
+    this.scanEnvironments();
+    let anyAlive = false;
+    for (const [pid, start] of this.known) {
+      const stat = readProcStat(pid);
+      if (stat === undefined || stat.start !== start || !isLiveState(stat.state)) continue;
+      anyAlive = true;
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }
+    return anyAlive;
+  }
+}
+
+/**
+ * Worker process groups still running. If the engine process exits while one is live (an
+ * uncaught error, `process.exit`), the exit hook SIGKILLs it, so a real worker never outlives the
+ * engine to keep spending. Death by an unhandled signal skips exit hooks; the engine maps the
+ * termination signals onto its abort signal for the attempt instead.
+ */
+const liveWorkerGroups = new Set<number>();
+let workerExitHookInstalled = false;
+
+function trackWorkerGroup(pgid: number): void {
+  if (!workerExitHookInstalled) {
+    process.on('exit', () => {
+      for (const group of liveWorkerGroups) signalProcessGroup(group, 'SIGKILL');
+    });
+    workerExitHookInstalled = true;
+  }
+  liveWorkerGroups.add(pgid);
+}
+
+function signalProcessGroup(pgid: number, sig: NodeJS.Signals): void {
+  try {
+    process.kill(-pgid, sig);
+  } catch {
+    // ESRCH: the group is already gone.
+  }
+}
+
+/**
+ * Polls until process group `pgid` has no live member and every tracked descendant is dead
+ * (re-killing stragglers each poll), bounded by `GROUP_GONE_TIMEOUT_MS`; true once gone.
+ */
+async function waitForProcessGroupGone(pgid: number, tracker: DescendantTracker): Promise<boolean> {
+  const deadline = Date.now() + GROUP_GONE_TIMEOUT_MS;
+  while (processGroupAlive(pgid) || tracker.sweep()) {
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, GROUP_POLL_MS));
+  }
+  return true;
+}
+
 /**
  * Spawn the worker and resolve on the `close` event (all stdio flushed — NOT `exit`). Honors
  * cancellation via `signal` and a per-action timeout, both escalating SIGTERM → SIGKILL after a
  * grace period. Never rejects — a spawn error resolves with `killReason: 'spawn-error'`.
+ *
+ * With `processGroup` (real runs, AGX-R14) the worker leads its own process group: every signal
+ * goes to the whole group, so a descendant that ignores SIGTERM is still killed, and once the
+ * worker exits any descendant it left behind is killed at once. Zombie-only groups count as gone.
+ * A descendant that leaves the group (a new session) is out of signal reach, so, while the worker
+ * lives, its descendants are snapshotted (every ~200 ms and on output, via /proc ppid links with
+ * start times against pid reuse, plus an environment token inherited by descendants) and, after
+ * the worker exits, each one still alive is SIGKILLed. This is best effort: a descendant that
+ * escapes and re-parents between snapshots and scrubs its environment is missed, so cgroup or
+ * container isolation is the real containment. The promise resolves only after the group and
+ * all tracked descendants are gone, or with `processGroupSurvived` when the bounded wait gives up.
+ * Output is bounded too: stdout is capped and stderr keeps a rolling tail.
  */
 function spawnClaude(
   command: WorkerCommand,
@@ -148,8 +360,11 @@ function spawnClaude(
   signal: AbortSignal,
   timeoutMs: number,
   stdinText?: string,
+  processGroup = false,
 ): Promise<SpawnResult> {
   return new Promise((resolve) => {
+    const envToken = randomBytes(16).toString('hex');
+    if (processGroup) env = { ...env, YELLOW_GOAL_WORKER_TOKEN: envToken };
     // Fix 2: wrap spawn so a synchronous throw (bad cwd, ENOENT, etc.) resolves as spawn-error
     // rather than rejecting or escaping as an unhandled exception.
     let child: ReturnType<typeof spawn>;
@@ -158,6 +373,7 @@ function spawnClaude(
         cwd,
         env,
         stdio: [stdinText === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+        detached: processGroup,
       });
       if (stdinText !== undefined) {
         // A worker that exits without reading stdin must not crash the engine with EPIPE.
@@ -176,22 +392,84 @@ function spawnClaude(
       return;
     }
 
-    const out: Buffer[] = [];
-    const err: Buffer[] = [];
-    child.stdout?.on('data', (d: Buffer) => out.push(d));
-    child.stderr?.on('data', (d: Buffer) => err.push(d));
+    let out: Buffer[] = [];
+    let err: Buffer[] = [];
+    let outBytes = 0;
+    let errBytes = 0;
+    let stdoutTruncated = false;
+    child.stdout?.on('data', (d: Buffer) => {
+      if (processGroup && outBytes + d.length > REAL_RUN_STDOUT_MAX_BYTES) {
+        stdoutTruncated = true;
+        return;
+      }
+      outBytes += d.length;
+      out.push(d);
+    });
+    child.stderr?.on('data', (d: Buffer) => {
+      err.push(d);
+      errBytes += d.length;
+      if (processGroup && errBytes > 2 * REAL_RUN_STDERR_TAIL_BYTES) {
+        const tail = Buffer.concat(err).subarray(-REAL_RUN_STDERR_TAIL_BYTES);
+        err = [tail];
+        errBytes = tail.length;
+      }
+    });
+    const stdoutText = (): string => Buffer.concat(out).toString('utf8');
+    const stderrText = (): string => {
+      const all = Buffer.concat(err);
+      return (processGroup ? all.subarray(-REAL_RUN_STDERR_TAIL_BYTES) : all).toString('utf8');
+    };
 
     let killReason: KillReason = 'none';
     let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
     // Fix 3: settled guard — 'error' and 'close' can both fire; first one wins.
     let settled = false;
 
+    const pgid = processGroup ? child.pid : undefined;
+    const sendSignal = (sig: NodeJS.Signals): void => {
+      if (pgid !== undefined) signalProcessGroup(pgid, sig);
+      else child.kill(sig);
+    };
+
     const escalate = (reason: Exclude<KillReason, 'none' | 'spawn-error'>): void => {
       if (killReason !== 'none') return; // already terminating
       killReason = reason;
-      child.kill('SIGTERM');
-      sigkillTimer = setTimeout(() => child.kill('SIGKILL'), SIGKILL_GRACE_MS);
+      sendSignal('SIGTERM');
+      sigkillTimer = setTimeout(() => sendSignal('SIGKILL'), SIGKILL_GRACE_MS);
     };
+
+    // A worker that has exited has no legitimate descendants: kill any it left behind (they may
+    // hold its stdout open, which would otherwise delay 'close' until the timeout). A descendant
+    // that left the group (a new session) is out of reach; if it still holds the pipes once the
+    // bounded wait is over, they are destroyed so 'close' fires, and the run fails as untrusted.
+    let pipesHeld = false;
+    let pipeTimer: ReturnType<typeof setTimeout> | undefined;
+    const tracker = new DescendantTracker(child.pid ?? -1, envToken);
+    let snapshotTimer: ReturnType<typeof setInterval> | undefined;
+    if (pgid !== undefined) {
+      trackWorkerGroup(pgid);
+      tracker.snapshot();
+      snapshotTimer = setInterval(() => tracker.snapshot(), DESCENDANT_SNAPSHOT_MS);
+      let lastOutputSnapshot = 0;
+      const snapshotOnOutput = (): void => {
+        const now = Date.now();
+        if (now - lastOutputSnapshot < 50) return;
+        lastOutputSnapshot = now;
+        tracker.snapshot();
+      };
+      child.stdout?.on('data', snapshotOnOutput);
+      child.stderr?.on('data', snapshotOnOutput);
+      child.once('exit', () => {
+        if (snapshotTimer) clearInterval(snapshotTimer);
+        tracker.sweep();
+        if (processGroupAlive(pgid)) signalProcessGroup(pgid, 'SIGKILL');
+        pipeTimer = setTimeout(() => {
+          pipesHeld = true;
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+        }, GROUP_GONE_TIMEOUT_MS);
+      });
+    }
 
     const timeoutTimer = setTimeout(() => escalate('timeout'), timeoutMs);
     const onAbort = (): void => escalate('cancel');
@@ -203,6 +481,9 @@ function spawnClaude(
       settled = true;
       clearTimeout(timeoutTimer);
       if (sigkillTimer) clearTimeout(sigkillTimer);
+      if (pipeTimer) clearTimeout(pipeTimer);
+      if (snapshotTimer) clearInterval(snapshotTimer);
+      if (pgid !== undefined) liveWorkerGroups.delete(pgid);
       signal.removeEventListener('abort', onAbort);
       resolve(res);
     };
@@ -211,21 +492,39 @@ function spawnClaude(
       finish({
         code: null,
         signal: null,
-        stdout: Buffer.concat(out).toString('utf8'),
-        stderr: Buffer.concat(err).toString('utf8'),
+        stdout: stdoutText(),
+        stderr: stderrText(),
         killReason: 'spawn-error',
         spawnErrorMessage: e.message,
       }),
     );
-    child.on('close', (code, sig) =>
-      finish({
+    child.on('close', (code, sig) => {
+      // Captured now: the timers below are disarmed before the group wait, so a worker that
+      // exited on its own is never relabelled timeout/cancel while its descendants are reaped.
+      const reasonAtClose = killReason;
+      const result = (groupSurvived = false): SpawnResult => ({
         code,
         signal: sig,
-        stdout: Buffer.concat(out).toString('utf8'),
-        stderr: Buffer.concat(err).toString('utf8'),
-        killReason,
-      }),
-    );
+        stdout: stdoutText(),
+        stderr: stderrText(),
+        killReason: reasonAtClose,
+        ...(stdoutTruncated ? { stdoutTruncated: true } : {}),
+        ...(groupSurvived ? { processGroupSurvived: true } : {}),
+      });
+      if (pgid === undefined) {
+        finish(result());
+        return;
+      }
+      clearTimeout(timeoutTimer);
+      if (sigkillTimer) clearTimeout(sigkillTimer);
+      if (pipeTimer) clearTimeout(pipeTimer);
+      if (snapshotTimer) clearInterval(snapshotTimer);
+      signal.removeEventListener('abort', onAbort);
+      // Only a group that still has members is signalled: an empty group's id may be reused.
+      tracker.sweep();
+      if (processGroupAlive(pgid)) signalProcessGroup(pgid, 'SIGKILL');
+      void waitForProcessGroupGone(pgid, tracker).then((gone) => finish(result(!gone || pipesHeld)));
+    });
   });
 }
 
@@ -296,43 +595,6 @@ function classifyFailure(envelope: ResultEnvelope): AgentRunFailureClass {
   if (envelope.subtype === 'error_max_budget_usd') return 'budget';
   if ((envelope.permission_denials?.length ?? 0) > 0) return 'permission-denied';
   return 'error-result';
-}
-
-/**
- * Fix 4: Parse NUL-delimited `git status --porcelain -z` output.
- * With -z, entries are NUL-terminated (not newline), paths are never C-quoted, and rename entries
- * are two NUL-separated tokens: `XY SP <old> NUL <new> NUL`. We want the destination (new) path
- * for renames/copies, and the single path for all other entries.
- *
- * Layout per entry: [2-char XY][SP][path][NUL]
- * For R/C (rename/copy): [2-char XY][SP][old-path][NUL][new-path][NUL]
- */
-function parsePorcelainPaths(nulDelimited: string): string[] {
-  if (!nulDelimited) return [];
-  // Split on NUL; trailing NUL produces an empty last token — filter empties at the end.
-  const tokens = nulDelimited.split('\0');
-  const paths: string[] = [];
-  let i = 0;
-  while (i < tokens.length) {
-    const token = tokens[i]!;
-    if (token.length === 0) { i++; continue; }
-    // Each entry starts with 2 status chars + 1 space (total 3 chars) then the path.
-    const xy = token.slice(0, 2);
-    const path = token.slice(3);
-    const isRename = xy[0] === 'R' || xy[0] === 'C' || xy[1] === 'R' || xy[1] === 'C';
-    if (isRename) {
-      // Next token is the destination path.
-      const dest = tokens[i + 1];
-      if (dest && dest.length > 0) {
-        paths.push(dest);
-        i += 2;
-        continue;
-      }
-    }
-    paths.push(path);
-    i++;
-  }
-  return paths;
 }
 
 /** A path is noise if any noise entry equals it, prefixes it, or appears as one of its segments. */
@@ -659,6 +921,7 @@ export class ClaudeCodeExecutor implements Executor {
       ctx.signal,
       this.timeoutMs,
       this.realRun ? prompt : undefined,
+      this.realRun !== undefined,
     );
     const endedAt = new Date().toISOString();
 
@@ -670,9 +933,17 @@ export class ClaudeCodeExecutor implements Executor {
     let costUsd: number | undefined = this.realRun ? undefined : 0;
     let failureClass: AgentRunFailureClass | undefined;
     let tokens: number | undefined;
+    let turns: number | undefined;
+    let durationMs: number | undefined;
     let stderr = res.stderr;
 
-    if (res.killReason === 'cancel') {
+    if (res.processGroupSurvived) {
+      // The worker's processes may still be writing the worktree: nothing read from it is
+      // trustworthy, so the run fails whatever the envelope says (AGX-R14).
+      status = 'failed';
+      failureClass = 'worker-not-terminated';
+      stderr = `${stderr}\n[executor] worker process group still present after SIGKILL`.trim();
+    } else if (res.killReason === 'cancel') {
       status = 'cancelled';
       failureClass = 'cancel';
       stderr = `${stderr}\n[executor] cancelled via AbortSignal (SIGTERM→SIGKILL)`.trim();
@@ -685,11 +956,13 @@ export class ClaudeCodeExecutor implements Executor {
       failureClass = 'spawn-error';
       stderr = `${stderr}\n[executor] claude failed to spawn: ${res.spawnErrorMessage ?? 'unknown'} (is the CLI installed and logged in?)`.trim();
     } else {
-      const envelope = parseEnvelope(res.stdout);
+      const envelope = res.stdoutTruncated ? null : parseEnvelope(res.stdout);
       if (!envelope) {
         status = 'failed';
         failureClass = 'malformed-output';
-        stderr = `${stderr}\n[executor] RUN_FAIL: stdout was not a parseable result envelope (exit ${res.code})`.trim();
+        stderr = res.stdoutTruncated
+          ? `${stderr}\n[executor] RUN_FAIL: stdout exceeded ${REAL_RUN_STDOUT_MAX_BYTES} bytes`.trim()
+          : `${stderr}\n[executor] RUN_FAIL: stdout was not a parseable result envelope (exit ${res.code})`.trim();
       } else {
         status = classify(envelope, res.code);
         if (status === 'failed') failureClass = classifyFailure(envelope);
@@ -700,6 +973,8 @@ export class ClaudeCodeExecutor implements Executor {
           failureClass = 'permission-denied';
         }
         tokens = envelope.usage?.output_tokens;
+        turns = envelope.num_turns;
+        durationMs = envelope.duration_ms;
         if (!this.realRun) {
           costUsd = envelope.total_cost_usd ?? 0;
         } else if (typeof envelope.total_cost_usd === 'number') {
@@ -724,6 +999,9 @@ export class ClaudeCodeExecutor implements Executor {
     if (this.realRun && failureClass !== undefined) run.failureClass = failureClass;
     if (res.code !== null) run.exitCode = res.code;
     if (tokens !== undefined) run.tokens = tokens;
+    // Real-run metering for the spend ledger (AGX-R16); legacy runs keep their historical shape.
+    if (this.realRun && turns !== undefined) run.turns = turns;
+    if (this.realRun && durationMs !== undefined) run.durationMs = durationMs;
     if (oracle.diffRef !== undefined) run.diffRef = oracle.diffRef;
     return run;
   }

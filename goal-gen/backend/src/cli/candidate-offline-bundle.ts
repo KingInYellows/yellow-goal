@@ -1,6 +1,21 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants as fsConstants,
+  existsSync,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { CliUsageError, ObservedFixtureError } from './errors';
+import { DIRECTORY_NOFOLLOW_FLAGS, O_NOFOLLOW_FLAG, pathThroughFd } from './fd-path';
 import {
   CandidateFileContentSchemaVersion,
   CandidateOfflineSchemaVersion,
@@ -103,14 +118,93 @@ export function assertBundleDirWritable(raw: string): string {
   return resolved;
 }
 
+/**
+ * Writes the bundle into `dir` for `acceptance verify-candidate --bundle-dir`: an absent `dir` is
+ * created (with any missing parents), an existing one must be an empty real directory. The
+ * directory is then opened `O_NOFOLLOW` once and every file is created through that descriptor with
+ * `O_EXCL|O_NOFOLLOW` and fsynced, so a symlink swapped in for the directory or a planted file is
+ * refused rather than followed or overwritten. `COMPLETE` is renamed into place last.
+ */
 export function persistCandidateBundle(dir: string, bundle: CandidateOfflineBundle): void {
   requireEmptyDirectory(dir);
-  const manifestPath = path.join(dir, BUNDLE_MANIFEST_NAME);
-  const markerPath = path.join(dir, BUNDLE_COMPLETE_MARKER);
-  const markerTmp = `${markerPath}.tmp`;
-  writeFileSync(manifestPath, `${JSON.stringify(bundle, null, 2)}\n`, 'utf8');
-  writeFileSync(markerTmp, `${bundle.schemaVersion}\n`, 'utf8');
-  renameSync(markerTmp, markerPath);
+  const dirFd = openSync(dir, DIRECTORY_NOFOLLOW_FLAGS);
+  try {
+    writeBundleInto(dirFd, dir, bundle);
+  } finally {
+    closeSync(dirFd);
+  }
+}
+
+/**
+ * The real-run bundle writer (AGX-R8a): `dir` must not exist, and its parent must still be the
+ * canonical directory the manifest approved. The parent is opened and held `O_NOFOLLOW`, checked
+ * against `path.dirname(dir)` through its descriptor, and the bundle directory is created (mode
+ * 0700) and opened relative to that descriptor — so swapping the parent or an ancestor for a symlink
+ * cannot redirect the write. The new directory must be owned by this user. After the write, the held
+ * directory must still be the entry named `dir` under the still-approved parent (same dev/ino), so a
+ * directory renamed away mid-write is reported rather than silently accepted. Throws on any mismatch.
+ *
+ * Residual window: a rename after that final check is not detected. The bundle directory is 0700 under
+ * an owner-owned, non-group/world-writable approved parent, so only same-UID processes can race it.
+ */
+export function persistCandidateBundleExclusive(dir: string, bundle: CandidateOfflineBundle): void {
+  const parent = path.dirname(dir);
+  const parentFd = openSync(parent, DIRECTORY_NOFOLLOW_FLAGS);
+  try {
+    const parentPath = pathThroughFd(parentFd, parent);
+    const heldParent = realpathSync(parentPath);
+    if (heldParent !== parent) throw new Error(`bundle parent ${parent} now resolves to ${heldParent}`);
+    const created = path.join(parentPath, path.basename(dir));
+    mkdirSync(created, 0o700);
+    const dirFd = openSync(created, DIRECTORY_NOFOLLOW_FLAGS);
+    try {
+      if (typeof process.getuid === 'function' && fstatSync(dirFd).uid !== process.getuid()) {
+        throw new Error(`bundle directory ${dir} is not owned by this user`);
+      }
+      writeBundleInto(dirFd, dir, bundle);
+      assertBundleBound(parentFd, parent, path.basename(dir), dirFd);
+    } finally {
+      closeSync(dirFd);
+    }
+    fsyncSync(parentFd);
+  } finally {
+    closeSync(parentFd);
+  }
+}
+
+/**
+ * Throws unless the held parent still resolves to `parent` and its entry `name` is the very
+ * directory `dirFd` holds (same dev/ino).
+ */
+export function assertBundleBound(parentFd: number, parent: string, name: string, dirFd: number): void {
+  const parentPath = pathThroughFd(parentFd, parent);
+  const held = realpathSync(parentPath);
+  if (held !== parent) throw new Error(`bundle parent ${parent} now resolves to ${held}`);
+  const named = lstatSync(path.join(parentPath, name));
+  const opened = fstatSync(dirFd);
+  if (named.dev !== opened.dev || named.ino !== opened.ino) {
+    throw new Error(`bundle directory ${path.join(parent, name)} was replaced or renamed during the write`);
+  }
+}
+
+function writeBundleInto(dirFd: number, dir: string, bundle: CandidateOfflineBundle): void {
+  const root = pathThroughFd(dirFd, realpathSync(dir));
+  const markerTmp = `${BUNDLE_COMPLETE_MARKER}.tmp`;
+  writeChildExclusive(root, BUNDLE_MANIFEST_NAME, `${JSON.stringify(bundle, null, 2)}\n`);
+  writeChildExclusive(root, markerTmp, `${bundle.schemaVersion}\n`);
+  renameSync(path.join(root, markerTmp), path.join(root, BUNDLE_COMPLETE_MARKER));
+  fsyncSync(dirFd);
+}
+
+function writeChildExclusive(root: string, name: string, data: string): void {
+  const flags = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | O_NOFOLLOW_FLAG;
+  const fd = openSync(path.join(root, name), flags, 0o644);
+  try {
+    writeFileSync(fd, data, 'utf8');
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function requireEmptyDirectory(dir: string): void {

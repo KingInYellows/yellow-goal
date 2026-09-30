@@ -44,6 +44,8 @@ async function writeManifest(): Promise<string> {
     authMode: 'subscription',
     attemptCount: 1,
     expiresInMinutes: 60,
+    // The executor never reads the evidence destinations; the engine owns them (AGX-R8a).
+    evidence: { bundleDir: '/nonexistent/goal-gen/bundle', spendLedgerPath: '/nonexistent/goal-gen/spend.jsonl' },
   };
   const file = path.join(dir, 'manifest.json');
   await writeFile(file, JSON.stringify(manifest), 'utf8');

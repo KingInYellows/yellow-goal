@@ -63,6 +63,11 @@ export interface AgentRun {
   diffContent?: string;
   tokens?: number;
   costUsd?: number;
+  /** Real runs only: the envelope's `num_turns`, recorded in the spend ledger (AGX-R16). */
+  turns?: number;
+  /** Real runs only: the envelope's self-reported `duration_ms`. The spend ledger records it, falling
+   *  back to the engine-measured wall time when the envelope omits it. */
+  durationMs?: number;
   /**
    * Why a real run failed (AGX-R19). Set only when the executor has a `realRun` config: every
    * real-run failure carries one, including the pre-spawn refusals (`auth-mode-mismatch`,
@@ -81,6 +86,7 @@ export type AgentRunFailureClass =
   | 'timeout'
   | 'cancel'
   | 'spawn-error'
+  | 'worker-not-terminated'
   | 'auth-mode-mismatch'
   | 'worktree-refused'
   | 'mode-rejected';

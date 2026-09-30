@@ -2,6 +2,7 @@
  * ADR-0020 / AGX-R4, AGX-R5, AGX-R6: each pre-spawn refusal has a distinct code, and an approval
  * is consumed exactly once — even under concurrent starts.
  */
+import { realpathSync } from 'node:fs';
 import { copyFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -15,7 +16,7 @@ import {
   newlyCreatedDirParents,
   verifyRunApproval,
 } from '../../backend/src/cli/run-approval-verifier';
-import { buildRunManifest, type RunManifest, type RunManifestInputs } from '../../backend/src/cli/run-manifest';
+import { buildRunManifest, computeManifestHash, type RunManifest, type RunManifestInputs } from '../../backend/src/cli/run-manifest';
 import { RepositoryGoalRequestSchema } from '../../backend/src/contracts/request';
 import { requestExecutionSample as rawRequestExecutionSample } from '../contracts/support/samples';
 
@@ -39,6 +40,8 @@ function manifest(overrides: Partial<RunManifestInputs> = {}): RunManifest {
     runWallClockMs: 1_800_000,
     authMode: 'subscription',
     expiresInMinutes: 60,
+    bundleDir: path.join(realpathSync(tmpdir()), 'goal-gen-verify-bundle'),
+    spendLedgerPath: path.join(realpathSync(tmpdir()), 'goal-gen-verify-spend.jsonl'),
     ...overrides,
   });
 }
@@ -139,6 +142,20 @@ describe('verifyRunApproval', () => {
       value.expiresAt = '2027-09-28T13:00:00.000Z';
     });
     await expectCode(verify(), 'APPROVAL_INVALID');
+  });
+
+  it('APPROVAL_INVALID: an approval minted before evidence destinations were bound (AGX-R8a)', async () => {
+    await rewrite((value) => {
+      const manifest = value.manifest as Record<string, unknown>;
+      delete manifest.evidence;
+      // Re-hash so only the missing field (not a stale hash) makes the record invalid.
+      value.manifestHash = computeManifestHash(manifest as RunManifest);
+    });
+    await expectCode(verify(), 'APPROVAL_INVALID');
+  });
+
+  it('APPROVAL_HASH_MISMATCH: a different evidence destination than the approved one', async () => {
+    await expectCode(verify({ expectedManifest: manifest({ bundleDir: path.join(realpathSync(tmpdir()), 'goal-gen-other-bundle') }) }), 'APPROVAL_HASH_MISMATCH');
   });
 
   it('APPROVAL_ENGINE_MISMATCH: approval from another engine version', async () => {

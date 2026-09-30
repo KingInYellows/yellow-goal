@@ -80,6 +80,35 @@ function runGit(args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): G
   return { status: r.status ?? -1, stdout: r.stdout ?? '', stderr: r.error ? `${stderr}${r.error.message}`.trim() : stderr };
 }
 
+/**
+ * Fix 4: Parse NUL-delimited `git status --porcelain -z` output.
+ * With -z, entries are NUL-terminated (not newline), paths are never C-quoted, and rename/copy
+ * entries are two NUL-separated tokens with the DESTINATION FIRST (verified against real git):
+ * `XY SP <new> NUL <old> NUL`. We return the destination (new) path for renames/copies, and the
+ * single path for all other entries.
+ *
+ * Layout per entry: [2-char XY][SP][path][NUL]
+ * For R/C (rename/copy): [2-char XY][SP][new-path][NUL][old-path][NUL]
+ */
+export function parsePorcelainPaths(nulDelimited: string): string[] {
+  if (!nulDelimited) return [];
+  // Split on NUL; trailing NUL produces an empty last token — filter empties at the end.
+  const tokens = nulDelimited.split('\0');
+  const paths: string[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i]!;
+    if (token.length === 0) { i++; continue; }
+    // Each entry starts with 2 status chars + 1 space (total 3 chars) then the path.
+    const xy = token.slice(0, 2);
+    paths.push(token.slice(3));
+    const isRename = xy[0] === 'R' || xy[0] === 'C' || xy[1] === 'R' || xy[1] === 'C';
+    // A rename/copy carries the original path as the following token; it is not an entry of its own.
+    i += isRename ? 2 : 1;
+  }
+  return paths;
+}
+
 function gitOrThrow(args: readonly string[], cwd: string): string {
   const r = git(args, cwd);
   if (r.status !== 0) {

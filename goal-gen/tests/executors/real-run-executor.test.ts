@@ -49,6 +49,8 @@ function manifest(overrides: Partial<RunManifest> = {}): RunManifest {
     authMode: 'subscription',
     attemptCount: 1,
     expiresInMinutes: 60,
+    // The executor never reads the evidence destinations; the engine owns them (AGX-R8a).
+    evidence: { bundleDir: '/nonexistent/goal-gen/bundle', spendLedgerPath: '/nonexistent/goal-gen/spend.jsonl' },
     ...overrides,
   };
 }

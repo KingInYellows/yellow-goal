@@ -24,6 +24,20 @@ export const RUN_WALL_CLOCK_MS = 60 * 60_000;
  *  cap is never meaningful, so `orchestration.execution.guardrails.actionTimeoutMs` is bounded by it. */
 export const MAX_WALL_CLOCK_MS = RUN_WALL_CLOCK_MS;
 
+/**
+ * Approval-gated real-run defaults (ADR-0020), from the AGX-R34 permission probe decisions for
+ * shell 03 (`tests/spikes/permission-probe-findings.md`). They are the `run manifest` defaults;
+ * `ACTION_TIMEOUT_MS` and `RUN_WALL_CLOCK_MS` above stay the ceilings a manifest may not exceed.
+ */
+export const REAL_RUN_ACTION_TIMEOUT_MS = 120_000;
+export const REAL_RUN_WALL_CLOCK_MS = 600_000;
+/**
+ * Recommended real-run per-action cap in USD — the value `docs/operator-real-run.md` recommends.
+ * Deliberately not a default: `--per-action-usd` and `--total-usd` stay required so spend is always
+ * typed explicitly. A budget stop can overshoot its cap by up to one turn (probe finding).
+ */
+export const REAL_RUN_PER_ACTION_USD_RECOMMENDED = 0.5;
+
 /** Default executor model alias — `haiku` keeps the per-action context floor (~$0.08) low (spike §4). */
 export const DEFAULT_MODEL = 'haiku';
 

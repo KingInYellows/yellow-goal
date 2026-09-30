@@ -191,8 +191,9 @@ function copyCaptureTree(src: string, dest: string): void {
 function startHeldDestMoveIntoSourceWorker(
   dest: string,
   stolen: string,
-): { worker: Worker; readyWait: Promise<void>; flipped: () => boolean; err: () => unknown } {
+): RaceHandle {
   let flipped = false;
+  let flippedAt: number | undefined;
   let workerErr: unknown;
   const worker = new Worker(
     `
@@ -224,7 +225,7 @@ function startHeldDestMoveIntoSourceWorker(
           try {
             renameSync(dest, stolen);
             mkdirSync(dest);
-            parentPort.postMessage('flipped');
+            parentPort.postMessage('flipped:' + Date.now());
           } catch (err) {
             parentPort.postMessage(String(err));
           }
@@ -246,8 +247,9 @@ function startHeldDestMoveIntoSourceWorker(
       resolveReady();
       return;
     }
-    if (msg === 'flipped') {
+    if (msg.startsWith('flipped:')) {
       flipped = true;
+      flippedAt = Number(msg.slice('flipped:'.length));
       return;
     }
     workerErr = msg;
@@ -261,6 +263,7 @@ function startHeldDestMoveIntoSourceWorker(
     worker,
     readyWait,
     flipped: () => flipped,
+    flippedAt: () => flippedAt,
     err: () => workerErr,
   };
 }
@@ -268,8 +271,9 @@ function startHeldDestMoveIntoSourceWorker(
 function startHeldDestEmptySwapWorker(
   dest: string,
   aside: string,
-): { worker: Worker; readyWait: Promise<void>; flipped: () => boolean; err: () => unknown } {
+): RaceHandle {
   let flipped = false;
+  let flippedAt: number | undefined;
   let workerErr: unknown;
   const worker = new Worker(
     `
@@ -316,7 +320,7 @@ function startHeldDestEmptySwapWorker(
           try {
             renameSync(dest, aside);
             mkdirSync(dest);
-            parentPort.postMessage('flipped');
+            parentPort.postMessage('flipped:' + Date.now());
           } catch (err) {
             parentPort.postMessage(String(err));
           }
@@ -338,8 +342,9 @@ function startHeldDestEmptySwapWorker(
       resolveReady();
       return;
     }
-    if (msg === 'flipped') {
+    if (msg.startsWith('flipped:')) {
       flipped = true;
+      flippedAt = Number(msg.slice('flipped:'.length));
       return;
     }
     workerErr = msg;
@@ -353,6 +358,7 @@ function startHeldDestEmptySwapWorker(
     worker,
     readyWait,
     flipped: () => flipped,
+    flippedAt: () => flippedAt,
     err: () => workerErr,
   };
 }
@@ -361,8 +367,9 @@ function startHeldDestChildrenStealWorker(
   dest: string,
   stolenManifest: string,
   stolenBlobs: string,
-): { worker: Worker; readyWait: Promise<void>; flipped: () => boolean; err: () => unknown } {
+): RaceHandle {
   let flipped = false;
+  let flippedAt: number | undefined;
   let workerErr: unknown;
   const worker = new Worker(
     `
@@ -370,7 +377,8 @@ function startHeldDestChildrenStealWorker(
     import { parentPort, workerData } from 'node:worker_threads';
     const { dest, stolenManifest, stolenBlobs } = workerData;
     const flags = constants.O_RDONLY | constants.O_DIRECTORY | (constants.O_NOFOLLOW ?? 0);
-    const deadline = Date.now() + 5000;
+    // Generous: the command under test can be slow on a starved CI runner; this only bounds a hang.
+    const deadline = Date.now() + 20_000;
     let heldFd;
     try {
       heldFd = openSync(dest, flags);
@@ -402,7 +410,7 @@ function startHeldDestChildrenStealWorker(
             renameSync(dest + '/blobs', stolenBlobs);
           }
           stole = true;
-          parentPort.postMessage('flipped');
+          parentPort.postMessage('flipped:' + Date.now());
         } catch (err) {
           parentPort.postMessage(String(err));
         }
@@ -426,8 +434,9 @@ function startHeldDestChildrenStealWorker(
       resolveReady();
       return;
     }
-    if (msg === 'flipped') {
+    if (msg.startsWith('flipped:')) {
       flipped = true;
+      flippedAt = Number(msg.slice('flipped:'.length));
       return;
     }
     workerErr = msg;
@@ -441,6 +450,7 @@ function startHeldDestChildrenStealWorker(
     worker,
     readyWait,
     flipped: () => flipped,
+    flippedAt: () => flippedAt,
     err: () => workerErr,
   };
 }
@@ -448,15 +458,17 @@ function startHeldDestChildrenStealWorker(
 function startStashMidMoveIntoSourceWorker(
   stash: string,
   stolen: string,
-): { worker: Worker; readyWait: Promise<void>; flipped: () => boolean; err: () => unknown } {
+): RaceHandle {
   let flipped = false;
+  let flippedAt: number | undefined;
   let workerErr: unknown;
   const worker = new Worker(
     `
     import { existsSync, renameSync } from 'node:fs';
     import { parentPort, workerData } from 'node:worker_threads';
     const { stash, stolen } = workerData;
-    const deadline = Date.now() + 5000;
+    // Generous: the command under test can be slow on a starved CI runner; this only bounds a hang.
+    const deadline = Date.now() + 20_000;
     parentPort.postMessage('ready');
     const mid = stash + '/mid';
     let stole = false;
@@ -465,7 +477,7 @@ function startStashMidMoveIntoSourceWorker(
       try {
         renameSync(stash, stolen);
         stole = true;
-        parentPort.postMessage('flipped');
+        parentPort.postMessage('flipped:' + Date.now());
       } catch (err) {
         parentPort.postMessage(String(err));
       }
@@ -486,8 +498,9 @@ function startStashMidMoveIntoSourceWorker(
       resolveReady();
       return;
     }
-    if (msg === 'flipped') {
+    if (msg.startsWith('flipped:')) {
       flipped = true;
+      flippedAt = Number(msg.slice('flipped:'.length));
       return;
     }
     workerErr = msg;
@@ -501,8 +514,68 @@ function startStashMidMoveIntoSourceWorker(
     worker,
     readyWait,
     flipped: () => flipped,
+    flippedAt: () => flippedAt,
     err: () => workerErr,
   };
+}
+
+/** A tamper worker racing the command under test; `flippedAt` is when its tamper completed (Date.now()). */
+type RaceHandle = {
+  worker: Worker;
+  readyWait: Promise<void>;
+  flipped: () => boolean;
+  flippedAt: () => number | undefined;
+  err: () => unknown;
+};
+
+/** Waits (bounded) for a race worker's postMessage outcome, which can trail the command's return. */
+async function workerSettled(race: RaceHandle, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!race.flipped() && race.err() === undefined && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+const RACE_ATTEMPTS = 5;
+
+/**
+ * Runs `command` while the tamper worker from `start` races it, and returns only an attempt in
+ * which the tamper completed before the command returned. A tamper that lands after the command
+ * has finished (or never) means the scheduler, not the code under test, decided that attempt:
+ * `reset` restores the pre-attempt paths and the scenario runs again. Every assertion in the
+ * caller then runs against an exercised race; after RACE_ATTEMPTS unexercised attempts the test
+ * fails rather than asserting on one.
+ */
+async function exerciseRace(
+  label: string,
+  start: () => RaceHandle,
+  command: () => Promise<number>,
+  reset: () => Promise<void>,
+  track: (worker: Worker) => void,
+): Promise<{ race: RaceHandle; code: number }> {
+  for (let attempt = 1; ; attempt += 1) {
+    const race = start();
+    track(race.worker);
+    await race.readyWait;
+    // A worker that could not even set up is reported to the caller's assertions as before. Once the
+    // command has run, a worker error (e.g. its rename failing after cleanup) is an unexercised race.
+    if (race.err() !== undefined) return { race, code: Number.NaN };
+    stdoutSpy.mockClear();
+    stderrSpy.mockClear();
+    const code = await command();
+    // Date.now() on both sides: one system clock. (performance.timeOrigin is fixed per thread, so
+    // timeOrigin + now() can disagree between the worker and this thread by milliseconds.)
+    const returnedAt = Date.now();
+    await workerSettled(race, 2_000);
+    const flippedAt = race.flippedAt();
+    if (flippedAt !== undefined && flippedAt < returnedAt) return { race, code };
+    if (attempt === RACE_ATTEMPTS) {
+      const lastErr = race.err() === undefined ? '' : `; last worker error: ${String(race.err())}`;
+      throw new Error(`race not exercised in ${RACE_ATTEMPTS} attempts (${label})${lastErr}`);
+    }
+    await race.worker.terminate();
+    await reset();
+  }
 }
 
 function fixtureIdentity(dir: string): {
@@ -4277,28 +4350,28 @@ describe('committed-source capture', () => {
     let captureWorker: Worker | undefined;
     let overlayWorker: Worker | undefined;
     try {
-      const captureSwap = startStashMidMoveIntoSourceWorker(stash, stolen);
-      captureWorker = captureSwap.worker;
-      await captureSwap.readyWait;
-      expect(captureSwap.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const captureCode = await main([
-        'acceptance',
-        'capture-source',
-        'package-manifest-lockfile',
-        dir,
-        commit,
-        '--json',
-        '--bundle-dir',
-        dest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      const { race: captureSwap, code: captureCode } = await exerciseRace(
+        'captureSwap',
+        () => startStashMidMoveIntoSourceWorker(stash, stolen),
+        () =>
+          main([
+            'acceptance',
+            'capture-source',
+            'package-manifest-lockfile',
+            dir,
+            commit,
+            '--json',
+            '--bundle-dir',
+            dest,
+          ]),
+        async () => {
+          for (const leftover of [stash, stolen]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(stash);
+        },
+        (worker) => {
+          captureWorker = worker;
+        },
+      );
       expect(captureSwap.err()).toBeUndefined();
       expect(captureSwap.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
@@ -4332,29 +4405,29 @@ describe('committed-source capture', () => {
 
       const extraPath = path.join(work, 'extra.json');
       await writeFile(extraPath, fileContentCandidate({ 'goal-gen/package.json': extraFieldManifest() }), 'utf8');
-      const overlaySwap = startStashMidMoveIntoSourceWorker(overlayStash, overlayStolen);
-      overlayWorker = overlaySwap.worker;
-      await overlaySwap.readyWait;
-      expect(overlaySwap.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const overlayCode = await main([
-        'acceptance',
-        'verify-candidate',
-        'package-manifest-lockfile',
-        extraPath,
-        '--from-capture',
-        honestCapture,
-        '--json',
-        '--bundle-dir',
-        overlayDest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      const { race: overlaySwap, code: overlayCode } = await exerciseRace(
+        'overlaySwap',
+        () => startStashMidMoveIntoSourceWorker(overlayStash, overlayStolen),
+        () =>
+          main([
+            'acceptance',
+            'verify-candidate',
+            'package-manifest-lockfile',
+            extraPath,
+            '--from-capture',
+            honestCapture,
+            '--json',
+            '--bundle-dir',
+            overlayDest,
+          ]),
+        async () => {
+          for (const leftover of [overlayStash, overlayStolen]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(overlayStash);
+        },
+        (worker) => {
+          overlayWorker = worker;
+        },
+      );
       expect(overlaySwap.err()).toBeUndefined();
       expect(overlaySwap.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
@@ -6908,28 +6981,28 @@ exec "$real_git" "$@"
     let captureWorker: Worker | undefined;
     let overlayWorker: Worker | undefined;
     try {
-      const captureSwap = startHeldDestEmptySwapWorker(dest, aside);
-      captureWorker = captureSwap.worker;
-      await captureSwap.readyWait;
-      expect(captureSwap.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const captureCode = await main([
-        'acceptance',
-        'capture-source',
-        'package-manifest-lockfile',
-        dir,
-        commit,
-        '--json',
-        '--bundle-dir',
-        dest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      const { race: captureSwap, code: captureCode } = await exerciseRace(
+        'captureSwap',
+        () => startHeldDestEmptySwapWorker(dest, aside),
+        () =>
+          main([
+            'acceptance',
+            'capture-source',
+            'package-manifest-lockfile',
+            dir,
+            commit,
+            '--json',
+            '--bundle-dir',
+            dest,
+          ]),
+        async () => {
+          for (const leftover of [dest, aside]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(dest);
+        },
+        (worker) => {
+          captureWorker = worker;
+        },
+      );
       expect(captureSwap.err()).toBeUndefined();
       expect(captureSwap.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
@@ -6974,29 +7047,29 @@ exec "$real_git" "$@"
 
       const extraPath = path.join(work, 'extra.json');
       await writeFile(extraPath, fileContentCandidate({ 'goal-gen/package.json': extraFieldManifest() }), 'utf8');
-      const overlaySwap = startHeldDestEmptySwapWorker(overlayDest, overlayAside);
-      overlayWorker = overlaySwap.worker;
-      await overlaySwap.readyWait;
-      expect(overlaySwap.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const overlayCode = await main([
-        'acceptance',
-        'verify-candidate',
-        'package-manifest-lockfile',
-        extraPath,
-        '--from-capture',
-        captureDir,
-        '--json',
-        '--bundle-dir',
-        overlayDest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      const { race: overlaySwap, code: overlayCode } = await exerciseRace(
+        'overlaySwap',
+        () => startHeldDestEmptySwapWorker(overlayDest, overlayAside),
+        () =>
+          main([
+            'acceptance',
+            'verify-candidate',
+            'package-manifest-lockfile',
+            extraPath,
+            '--from-capture',
+            captureDir,
+            '--json',
+            '--bundle-dir',
+            overlayDest,
+          ]),
+        async () => {
+          for (const leftover of [overlayDest, overlayAside]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(overlayDest);
+        },
+        (worker) => {
+          overlayWorker = worker;
+        },
+      );
       expect(overlaySwap.err()).toBeUndefined();
       expect(overlaySwap.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
@@ -7051,28 +7124,28 @@ exec "$real_git" "$@"
     let captureWorker: Worker | undefined;
     let overlayWorker: Worker | undefined;
     try {
-      const captureSwap = startHeldDestMoveIntoSourceWorker(dest, stolen);
-      captureWorker = captureSwap.worker;
-      await captureSwap.readyWait;
-      expect(captureSwap.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const captureCode = await main([
-        'acceptance',
-        'capture-source',
-        'package-manifest-lockfile',
-        dir,
-        commit,
-        '--json',
-        '--bundle-dir',
-        dest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      const { race: captureSwap, code: captureCode } = await exerciseRace(
+        'captureSwap',
+        () => startHeldDestMoveIntoSourceWorker(dest, stolen),
+        () =>
+          main([
+            'acceptance',
+            'capture-source',
+            'package-manifest-lockfile',
+            dir,
+            commit,
+            '--json',
+            '--bundle-dir',
+            dest,
+          ]),
+        async () => {
+          for (const leftover of [dest, stolen]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(dest);
+        },
+        (worker) => {
+          captureWorker = worker;
+        },
+      );
       expect(captureSwap.err()).toBeUndefined();
       expect(captureSwap.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
@@ -7117,29 +7190,29 @@ exec "$real_git" "$@"
 
       const extraPath = path.join(work, 'extra.json');
       await writeFile(extraPath, fileContentCandidate({ 'goal-gen/package.json': extraFieldManifest() }), 'utf8');
-      const overlaySwap = startHeldDestMoveIntoSourceWorker(overlayDest, overlayStolen);
-      overlayWorker = overlaySwap.worker;
-      await overlaySwap.readyWait;
-      expect(overlaySwap.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const overlayCode = await main([
-        'acceptance',
-        'verify-candidate',
-        'package-manifest-lockfile',
-        extraPath,
-        '--from-capture',
-        captureDir,
-        '--json',
-        '--bundle-dir',
-        overlayDest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      const { race: overlaySwap, code: overlayCode } = await exerciseRace(
+        'overlaySwap',
+        () => startHeldDestMoveIntoSourceWorker(overlayDest, overlayStolen),
+        () =>
+          main([
+            'acceptance',
+            'verify-candidate',
+            'package-manifest-lockfile',
+            extraPath,
+            '--from-capture',
+            captureDir,
+            '--json',
+            '--bundle-dir',
+            overlayDest,
+          ]),
+        async () => {
+          for (const leftover of [overlayDest, overlayStolen]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(overlayDest);
+        },
+        (worker) => {
+          overlayWorker = worker;
+        },
+      );
       expect(overlaySwap.err()).toBeUndefined();
       expect(overlaySwap.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
@@ -7196,28 +7269,28 @@ exec "$real_git" "$@"
     let captureWorker: Worker | undefined;
     let overlayWorker: Worker | undefined;
     try {
-      const captureSteal = startHeldDestChildrenStealWorker(dest, stolenManifest, stolenBlobs);
-      captureWorker = captureSteal.worker;
-      await captureSteal.readyWait;
-      expect(captureSteal.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const captureCode = await main([
-        'acceptance',
-        'capture-source',
-        'package-manifest-lockfile',
-        dir,
-        commit,
-        '--json',
-        '--bundle-dir',
-        dest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
+      const { race: captureSteal, code: captureCode } = await exerciseRace(
+        'captureSteal',
+        () => startHeldDestChildrenStealWorker(dest, stolenManifest, stolenBlobs),
+        () =>
+          main([
+            'acceptance',
+            'capture-source',
+            'package-manifest-lockfile',
+            dir,
+            commit,
+            '--json',
+            '--bundle-dir',
+            dest,
+          ]),
+        async () => {
+          for (const leftover of [dest, stolenManifest, stolenBlobs]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(dest);
+        },
+        (worker) => {
+          captureWorker = worker;
+        },
+      );
       expect(captureSteal.err()).toBeUndefined();
       expect(captureSteal.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);
@@ -7265,33 +7338,33 @@ exec "$real_git" "$@"
 
       const extraPath = path.join(work, 'extra.json');
       await writeFile(extraPath, fileContentCandidate({ 'goal-gen/package.json': extraFieldManifest() }), 'utf8');
-      const overlaySteal = startHeldDestChildrenStealWorker(
+      const { race: overlaySteal, code: overlayCode } = await exerciseRace(
+        'overlaySteal',
+        () => startHeldDestChildrenStealWorker(
         overlayDest,
         overlayStolenManifest,
         overlayStolenBlobs,
+      ),
+        () =>
+          main([
+            'acceptance',
+            'verify-candidate',
+            'package-manifest-lockfile',
+            extraPath,
+            '--from-capture',
+            captureDir,
+            '--json',
+            '--bundle-dir',
+            overlayDest,
+          ]),
+        async () => {
+          for (const leftover of [overlayDest, overlayStolenManifest, overlayStolenBlobs, ]) await rm(leftover, { recursive: true, force: true });
+          mkdirSync(overlayDest);
+        },
+        (worker) => {
+          overlayWorker = worker;
+        },
       );
-      overlayWorker = overlaySteal.worker;
-      await overlaySteal.readyWait;
-      expect(overlaySteal.err()).toBeUndefined();
-      stdoutSpy.mockClear();
-      stderrSpy.mockClear();
-      const overlayCode = await main([
-        'acceptance',
-        'verify-candidate',
-        'package-manifest-lockfile',
-        extraPath,
-        '--from-capture',
-        captureDir,
-        '--json',
-        '--bundle-dir',
-        overlayDest,
-      ]);
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
-      await new Promise<void>((resolve) => {
-        setImmediate(resolve);
-      });
       expect(overlaySteal.err()).toBeUndefined();
       expect(overlaySteal.flipped()).toBe(true);
       expect(JSON.parse(stdoutText() || '{}').decision?.accepted).not.toBe(true);

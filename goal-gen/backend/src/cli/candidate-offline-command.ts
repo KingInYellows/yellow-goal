@@ -259,6 +259,19 @@ async function verifyWithProfile(
   }
 }
 
+/**
+ * The in-process verifier entry (AGX-R18): the exact judgement `acceptance verify-candidate` makes,
+ * for a candidate document already bounded by the profile's limits and an explicitly chosen
+ * profile version. Paths outside the profile's allowed paths make the decision unauthorized.
+ */
+export async function verifyCandidateDocument(
+  profile: CandidateOfflineProfile,
+  candidate: CandidateFileDocument,
+): Promise<CandidateOfflineBundle> {
+  const { bundle } = await verifyWithProfile(profile, candidate, unauthorizedCandidatePaths(candidate, profile));
+  return bundle;
+}
+
 export async function runCandidateOfflineVerify(argv: string[]): Promise<CommandOutput<CandidateOfflineBundle>> {
   const { json, bundleDir, profileVersion, positionals } = parseVerifyArgv(argv);
   if (positionals.length !== 2) {
@@ -291,8 +304,7 @@ export async function runCandidateOfflineVerify(argv: string[]): Promise<Command
     maxFileBytes: Math.min(profile.maxFileBytes, CANDIDATE_MAX_FILE_BYTES),
     maxDepth: Math.min(profile.maxDepth, CANDIDATE_MAX_DEPTH),
   });
-  const unauthorized = unauthorizedCandidatePaths(candidate, profile);
-  const { bundle } = await verifyWithProfile(profile, candidate, unauthorized);
+  const bundle = await verifyCandidateDocument(profile, candidate);
   if (bundleDir !== undefined) {
     persistCandidateBundle(bundleDir, bundle);
   }
