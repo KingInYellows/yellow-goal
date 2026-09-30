@@ -1,0 +1,23 @@
+goal-gen/backend/src/executors/claude-code-executor.ts
+  s_e67a66722f60de::t_7f94f91c162688 42-44,141-168,173-177,187,198,227-232,236-237,240-247,272-276,280-294,376,728,740-741,772-773,798-800
+goal-gen/backend/src/types.ts
+  s_e67a66722f60de::t_6f5c455109eef5 66-68
+goal-gen/tests/fixtures/claude-worker/fake-claude.mjs
+  s_e67a66722f60de::t_c7cd0e9c6973c8 11-14,18-19,38-49,52-76,101,107,121-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "11d2b1cf307762f7a2e361a76641b696fbae9a07",
+  "prompts": {},
+  "sessions": {
+    "s_e67a66722f60de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7c97b7c-9d7e-4c69-bf15-40f711e9b42c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
