@@ -1,0 +1,52 @@
+goal-gen/backend/src/real-run/fixed-goal.ts
+  s_e67a66722f60de::t_0f52721f9e0291 1-30
+goal-gen/tests/real-run/spend-ledger.test.ts
+  s_e67a66722f60de::t_ebafaea38b07ee 1-128
+goal-gen/backend/src/real-run/real-run-engine.ts
+  s_e67a66722f60de::t_543619a42623fb 1-247
+  s_e67a66722f60de::t_d48b4b34b7709a 248-251
+goal-gen/backend/src/real-run/outcome.ts
+  s_e67a66722f60de::t_7fd95ab8c1189b 1-58
+goal-gen/tests/real-run/real-run-bounds.test.ts
+  s_e67a66722f60de::t_88058a41a1a73f 1-87
+goal-gen/tests/real-run/real-run-engine.test.ts
+  s_e67a66722f60de::t_9a1fe3a80eba60 1-211,218-226
+  s_e67a66722f60de::t_e9841049684685 212-217
+goal-gen/tests/real-run/evidence-destinations.test.ts
+  s_e67a66722f60de::t_6780e5ced7a758 1-117
+  s_e67a66722f60de::t_51ac34ee7d5643 118-134
+goal-gen/backend/src/real-run/candidate-builder.ts
+  s_e67a66722f60de::t_758d50f4007e95 1-173
+goal-gen/backend/src/real-run/evidence-destinations.ts
+  s_e67a66722f60de::t_30d81380b067a6 1-80
+goal-gen/tests/real-run/support.ts
+  s_e67a66722f60de::t_414454c2dab2da 1-168
+goal-gen/backend/src/real-run/spend-ledger.ts
+  s_e67a66722f60de::t_3e207b6338aac5 1-28
+goal-gen/backend/src/cli/run-manifest-command.ts
+  s_e67a66722f60de::t_08d597654164e0 40
+goal-gen/tests/executors/real-run-bypass-static.test.ts
+  s_e67a66722f60de::t_74653dfde4b6ad 7,12-17,30-40
+goal-gen/tests/harness/real-run-harness.process.test.ts
+  s_e67a66722f60de::t_64bf5736a45540 1-84
+goal-gen/tests/harness/real-run-harness.ts
+  s_e67a66722f60de::t_57b892674de4e9 4-5,7-8,10-18,26,29-30,34-58,60-88,97
+goal-gen/tests/real-run/real-run-static.test.ts
+  s_e67a66722f60de::t_968cab04d60c70 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "36d5f1f932934904ce56b1b9a5d3136c2dbe1153",
+  "prompts": {},
+  "sessions": {
+    "s_e67a66722f60de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e7c97b7c-9d7e-4c69-bf15-40f711e9b42c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
