@@ -185,15 +185,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       writeError('USAGE_ERROR', err.message);
       return 2;
     }
-    if (err instanceof AcceptanceEvidenceError) {
-      writeError(err.code, err.message, err.details);
-      return 1;
-    }
-    if (err instanceof ObservedFixtureError) {
-      writeError(err.code, err.message, err.details);
-      return 1;
-    }
-    if (err instanceof RunApprovalError) {
+    if (err instanceof AcceptanceEvidenceError || err instanceof ObservedFixtureError || err instanceof RunApprovalError) {
       writeError(err.code, err.message, err.details);
       return 1;
     }

@@ -31,7 +31,7 @@ const lines = (): Array<Record<string, unknown>> => stdout.mock.calls.map((call:
 const error = (): Record<string, unknown> => JSON.parse(stderr.mock.calls.map((call: unknown[]) => String(call[0])).join(''));
 
 const fixtureWorktree: ProviderEngineDeps['worktreeProvider'] = async (opts) => ({
-  root: '(fixture)', worktreePath: '(fixture)', branch: opts.branch ?? 'run', initialSha: '0'.repeat(40), cleanup: async () => {},
+  root: '(fixture)', worktreePath: '(fixture)', gitDir: '(fixture)', branch: opts.branch ?? 'run', initialSha: '0'.repeat(40), cleanup: async () => {},
 });
 
 function fixtureEngine(goalSpec: GoalSpec, expansions: Action[][] = []): { deps: ProviderEngineDeps; extractor: StubExtractor; executor: StubExecutor; verifier: StubVerifier } {

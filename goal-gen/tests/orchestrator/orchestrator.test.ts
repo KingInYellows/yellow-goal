@@ -22,6 +22,7 @@ import type { RunConfig, RunStatus, VerifyResult } from '../../backend/src/types
 const stubWorktree: WorktreeProvider = async (opts) => ({
   root: '(stub)',
   worktreePath: '(stub)',
+  gitDir: '(stub)',
   branch: opts.branch ?? 'run',
   initialSha: '0'.repeat(40),
   cleanup: async () => {},

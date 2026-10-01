@@ -61,6 +61,7 @@ class CapturingWorktreeProvider {
     const proxy: WorktreeHandle = {
       root: real.root,
       worktreePath: real.worktreePath,
+      gitDir: real.gitDir,
       branch: real.branch,
       initialSha: real.initialSha,
       cleanup: async () => {

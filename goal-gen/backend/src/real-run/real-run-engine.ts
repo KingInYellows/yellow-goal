@@ -255,7 +255,7 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         worktreePath: worktree.worktreePath,
         signal: controller.signal,
         budgetUsdRemaining: manifest.caps.totalUsd,
-        ...(worktree.gitDir === undefined ? {} : { gitDir: worktree.gitDir }),
+        gitDir: worktree.gitDir,
       });
     } catch (err) {
       // The executor contract is to resolve, never reject. Whether a worker ran is unknown, so the

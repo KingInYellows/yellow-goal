@@ -24,7 +24,7 @@ import type { RunManifest } from '../../backend/src/cli/run-manifest';
 import { ClaudeCodeExecutor, REAL_RUN_DENY_RULES } from '../../backend/src/executors/claude-code-executor';
 import { createRealRunExecutor } from '../../backend/src/executors/real-run-executor';
 import type { Action } from '../../backend/src/planner/types';
-import type { RunContext } from '../../backend/src/types';
+import type { Executor, RunContext } from '../../backend/src/types';
 
 const FAKE_SHA = 'a'.repeat(40);
 const HEX = 'b'.repeat(64);
@@ -408,7 +408,7 @@ describe('permission mode is only ever acceptEdits (AGX-R11, exhaustive)', () =>
   const candidates: unknown[] = ['acceptEdits', 'plan', 'auto', 'dontAsk', 'manual', 'bypassPermissions', '', undefined, 42];
 
   it.each(candidates.map((mode) => [mode]))('manifest permissionMode %s either refuses or spawns acceptEdits', async (mode) => {
-    let exec: ClaudeCodeExecutor | undefined;
+    let exec: Executor | undefined;
     try {
       exec = createRealRunExecutor({ ...manifest(), permissionMode: mode } as unknown as RunManifest);
     } catch (err) {
