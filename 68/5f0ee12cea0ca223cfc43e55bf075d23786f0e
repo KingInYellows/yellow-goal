@@ -1,0 +1,23 @@
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_dc73a7b1432916 250
+goal-gen/scripts/installed-protocol-smoke.mjs
+  s_c1e36b8311e25e::t_24f0bfdae0f1d1 2,27-29,177,239-271
+goal-gen/tests/release/installed-protocol-smoke.test.ts
+  s_c1e36b8311e25e::t_0f6d055c7c8a1c 18-22,25,32-38,40,45-99,143-147,153-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "685f0ee12cea0ca223cfc43e55bf075d23786f0e",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
