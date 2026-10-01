@@ -1,0 +1,29 @@
+goal-gen/package-lock.json
+  s_c1e36b8311e25e::t_a48be21dd4dec9 3,9
+goal-gen/package.json
+  s_c1e36b8311e25e::t_e94ac8405a252d 3
+goal-gen/tests/cli/candidate-offline.test.ts
+  s_c1e36b8311e25e::t_002c8ebfe41a76 28-32,81-82
+goal-gen/tests/cli/committed-source.test.ts
+  s_c1e36b8311e25e::t_a8a8ea6bfd2046 66-70,739
+goal-gen/tests/cli/observed-fixture.test.ts
+  s_c1e36b8311e25e::t_f633620e8e55f0 37-41,163,467
+goal-gen/tests/release/installed-protocol-smoke.test.ts
+  s_c1e36b8311e25e::t_7399cbde00b90c 71,75-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "51e6492f8570349768d398c9d3108e30612df5d9",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
