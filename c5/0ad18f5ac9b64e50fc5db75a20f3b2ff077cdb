@@ -1,0 +1,23 @@
+.github/workflows/ci.yml
+  s_c1e36b8311e25e::t_d64fb98c3c940e 92-95
+.github/workflows/release.yml
+  s_c1e36b8311e25e::t_97a0bc1fcd67ee 155
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_07a2aac6e5e232 245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "c50ad18f5ac9b64e50fc5db75a20f3b2ff077cdb",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
