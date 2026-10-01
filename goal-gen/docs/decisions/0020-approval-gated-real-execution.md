@@ -78,9 +78,9 @@ Requirements are cited outside the spec as `AGX-R<n>` (spec
   `runtime/` concept. The one exception is the consumption-marker directory
   (`$XDG_STATE_HOME/yellow-goal/consumed/`, default `~/.local/state/yellow-goal/`): single use
   must hold across wherever an approval file is copied, so markers live in engine-owned per-user
-  state rather than beside the file. Whether the real run also accepts an explicit `--state-dir`
-  (which would weaken single use the same way an `XDG_STATE_HOME` redirect does) is decided when
-  the run path is wired.
+  state rather than beside the file. The real run accepts no `--state-dir` flag (one would weaken
+  single use the same way an `XDG_STATE_HOME` redirect does); `stateDir` is an in-process test
+  seam only.
 
 ## Confirmation
 

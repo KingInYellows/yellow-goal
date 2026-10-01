@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as candidateProfiles from '../../backend/src/cli/candidate-offline-profiles';
 import { RunApprovalError } from '../../backend/src/cli/errors';
 import { main } from '../../backend/src/cli/index';
 import {
@@ -142,6 +143,18 @@ describe('buildRunManifest', () => {
     ['one path for both destinations', { spendLedgerPath: path.join(EVIDENCE_PARENT, 'goal-gen-manifest-bundle') }],
   ])('refuses %s with MANIFEST_INVALID', (_label, override) => {
     manifestInvalid(() => buildRunManifest(inputs(override)));
+  });
+
+  it('lets a profile-lookup failure that is not an unknown profile propagate, not pose as MANIFEST_INVALID', () => {
+    const bug = new TypeError('profile registry is broken');
+    const spy = vi.spyOn(candidateProfiles, 'getCandidateOfflineProfile').mockImplementation(() => {
+      throw bug;
+    });
+    try {
+      expect(() => buildRunManifest(inputs())).toThrow(bug);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('applies RUN_MANIFEST_DEFAULTS when optional settings are omitted — the one default source', () => {
