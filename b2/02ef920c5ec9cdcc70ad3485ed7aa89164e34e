@@ -1,0 +1,25 @@
+goal-gen/AGENTS.md
+  s_c1e36b8311e25e::t_f3f44cbed787b0 21,53-64
+goal-gen/CLAUDE.md
+  s_c1e36b8311e25e::t_887a53f548c976 32,79,89,105-116
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_acd575188e5ec2 257,263
+goal-gen/plans/specs/provider-protocol-v1.md
+  s_c1e36b8311e25e::t_4610fd7d4764a3 7-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "b202ef920c5ec9cdcc70ad3485ed7aa89164e34e",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
