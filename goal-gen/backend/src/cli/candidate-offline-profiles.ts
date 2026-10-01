@@ -103,17 +103,22 @@ export function listCandidateOfflineProfiles(): CandidateOfflineProfile[] {
  */
 export const DEFAULT_CANDIDATE_PROFILE_VERSION = '1';
 
+/** No registered profile has this id, or this id has no such version. */
+export class UnknownCandidateProfileError extends Error {
+  override readonly name = 'UnknownCandidateProfileError';
+}
+
 export function getCandidateOfflineProfile(
   id: string,
   version: string = DEFAULT_CANDIDATE_PROFILE_VERSION,
 ): CandidateOfflineProfile {
   const versions = listCandidateOfflineProfiles().filter((profile) => profile.id === id);
   if (versions.length === 0) {
-    throw new Error(`unknown candidate-offline profile: ${id}`);
+    throw new UnknownCandidateProfileError(`unknown candidate-offline profile: ${id}`);
   }
   const match = versions.find((profile) => profile.version === version);
   if (!match) {
-    throw new Error(`unknown candidate-offline profile version: ${id}@${version}`);
+    throw new UnknownCandidateProfileError(`unknown candidate-offline profile version: ${id}@${version}`);
   }
   return match;
 }

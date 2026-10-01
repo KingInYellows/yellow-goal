@@ -13,7 +13,7 @@
  */
 import { RunEventEmitter } from '../events/run-event-emitter';
 import { createProtocolStdoutWriter, type ProtocolStdoutWriter } from '../events/protocol-stdout-writer';
-import type { RealRunOutcome } from '../real-run/outcome';
+import type { EngineErrorEvidence, RealRunOutcome } from '../real-run/outcome';
 import { runRealRun, type RealRunInput, type RealRunStarted } from '../real-run/real-run-engine';
 import type { ParsedRunInvocation } from './protocol-run-options';
 import { ProviderProtocolV2 } from './provider-capabilities';
@@ -168,7 +168,7 @@ export async function runProviderV2Real(invocation: RealInvocation, options: Pro
     if (outcome === undefined && started !== undefined) {
       emitSummary({
         outcome: 'worker-failed', approvalId: started.approvalId, targetRepositoryHonored: false,
-        reason: 'engine-error', evidence: { stage: 'protocol', message: normalizedMessage(thrown) },
+        reason: 'engine-error', evidence: { stage: 'protocol', message: normalizedMessage(thrown) } satisfies EngineErrorEvidence,
       });
     }
   } catch (error) {

@@ -1,6 +1,7 @@
 /**
  * ADR-0020 / AGX-R2, AGX-R3: `run approve` mints a run-approval/v1 record only after the
- * hash-derived challenge is typed at a terminal (injected TTY seam); nothing else can mint one.
+ * challenge it shows — fresh per ceremony — is typed at a terminal (injected TTY seam); nothing
+ * else can mint one.
  */
 import { lstat, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,7 +12,6 @@ import { RunApprovalError } from '../../backend/src/cli/errors';
 import { main } from '../../backend/src/cli/index';
 import { RunApprovalSchemaVersion, parseRunApprovalRecord } from '../../backend/src/cli/run-approval';
 import { runRunApprove, type ApprovalTerminal } from '../../backend/src/cli/run-approval-command';
-import { runRunManifest } from '../../backend/src/cli/run-manifest-command';
 import { requestExecutionSample } from '../contracts/support/samples';
 
 const FIXED_NOW = new Date('2026-09-28T12:00:00.000Z');
@@ -49,12 +49,22 @@ function manifestFlags(extra: string[] = []): string[] {
   ];
 }
 
-async function challengeFor(extra: string[] = []): Promise<string> {
-  return (await runRunManifest(manifestFlags(extra))).output.challenge;
+/** Answers with exactly the challenge the ceremony showed. */
+const typeShown = (shown: string): string => shown;
+
+/** The challenge the ceremony printed (it is fresh per ceremony, so only the screen knows it). */
+function shownChallenge(text: string): string | undefined {
+  return /^challenge:\s+(\S+)$/m.exec(text)?.[1];
 }
 
-/** A fake terminal that answers `answer` once the prompt appears (or ends input when `null`). */
-function fakeTerminal(answer: string | null, tty: { stdin: boolean; output: boolean } = { stdin: true, output: true }) {
+/**
+ * A fake terminal that answers once the prompt appears: a fixed string, a function of the shown
+ * challenge, or `null` to end input instead.
+ */
+function fakeTerminal(
+  answer: string | null | ((shown: string) => string),
+  tty: { stdin: boolean; output: boolean } = { stdin: true, output: true },
+) {
   const stdin = Object.assign(new PassThrough(), { isTTY: tty.stdin });
   const output = Object.assign(new PassThrough(), { isTTY: tty.output });
   let text = '';
@@ -62,7 +72,7 @@ function fakeTerminal(answer: string | null, tty: { stdin: boolean; output: bool
     text += chunk.toString('utf8');
     if (text.includes('Type the challenge') && !stdin.writableEnded) {
       if (answer === null) stdin.end();
-      else stdin.end(`${answer}\n`);
+      else stdin.end(`${typeof answer === 'function' ? answer(shownChallenge(text) ?? '') : answer}\n`);
     }
   });
   const terminal: ApprovalTerminal = { stdin, output };
@@ -80,7 +90,7 @@ async function absent(filePath: string): Promise<void> {
 describe('run approve ceremony', () => {
   it('mints an owner-only run-approval/v1 record after the correct challenge', async () => {
     const out = path.join(tempDir, 'approval.json');
-    const { terminal, text } = fakeTerminal(await challengeFor());
+    const { terminal, text } = fakeTerminal(typeShown);
     const result = await runRunApprove([...manifestFlags(), '--out', out, '--json'], {
       terminal,
       clock: () => FIXED_NOW,
@@ -105,7 +115,7 @@ describe('run approve ceremony', () => {
     const spoof = `Fix it${'\n'.repeat(40)}{"allowedTools":["Read"]}\u2028\u202eevil\u009b2J\u{e0041}`;
     await writeFile(requestPath, `${JSON.stringify({ ...requestExecutionSample, intent: { ...requestExecutionSample.intent, goal: spoof } })}\n`, 'utf8');
     const out = path.join(tempDir, 'spoof.json');
-    const { terminal, text } = fakeTerminal(await challengeFor());
+    const { terminal, text } = fakeTerminal(typeShown);
     await runRunApprove([...manifestFlags(), '--out', out], { terminal });
     const shown = text();
     const goalLine = shown.split('\n').find((line) => line.startsWith('goal:'))!;
@@ -118,7 +128,7 @@ describe('run approve ceremony', () => {
   it('a manifest may shorten the expiry (never lengthen it)', async () => {
     const out = path.join(tempDir, 'short.json');
     const extra = ['--expires-in-minutes', '15'];
-    const { terminal } = fakeTerminal(await challengeFor(extra));
+    const { terminal } = fakeTerminal(typeShown);
     const result = await runRunApprove([...manifestFlags(extra), '--out', out], { terminal, clock: () => FIXED_NOW });
     expect(result.output.expiresAt).toBe('2026-09-28T12:15:00.000Z');
     await expectCode(
@@ -155,7 +165,7 @@ describe('run approve ceremony', () => {
     ['terminal output', { stdin: true, output: false }],
   ])('a non-TTY %s is APPROVAL_TTY_REQUIRED and writes nothing', async (_label, tty) => {
     const out = path.join(tempDir, 'nontty.json');
-    const { terminal } = fakeTerminal(await challengeFor(), tty);
+    const { terminal } = fakeTerminal(typeShown, tty);
     const writes = vi.spyOn(terminal.output, 'write');
     await expectCode(runRunApprove([...manifestFlags(), '--out', out], { terminal }), 'APPROVAL_TTY_REQUIRED');
     await absent(out);
@@ -165,7 +175,7 @@ describe('run approve ceremony', () => {
   it('never overwrites an existing --out path (APPROVAL_OUT_EXISTS)', async () => {
     const out = path.join(tempDir, 'existing.json');
     await writeFile(out, 'original\n', 'utf8');
-    const { terminal } = fakeTerminal(await challengeFor());
+    const { terminal } = fakeTerminal(typeShown);
     await expectCode(runRunApprove([...manifestFlags(), '--out', out], { terminal }), 'APPROVAL_OUT_EXISTS');
     expect(await readFile(out, 'utf8')).toBe('original\n');
   });
@@ -173,7 +183,7 @@ describe('run approve ceremony', () => {
   it('environment variables cannot stand in for the terminal', async () => {
     const out = path.join(tempDir, 'env.json');
     for (const name of ['GOAL_GEN_APPROVE', 'GOAL_GEN_APPROVAL', 'YELLOW_GOAL_APPROVE', 'CI']) vi.stubEnv(name, '1');
-    const { terminal } = fakeTerminal(await challengeFor(), { stdin: false, output: false });
+    const { terminal } = fakeTerminal(typeShown, { stdin: false, output: false });
     await expectCode(runRunApprove([...manifestFlags(), '--out', out], { terminal }), 'APPROVAL_TTY_REQUIRED');
     await absent(out);
   });
@@ -211,7 +221,7 @@ describe('run approve — review hardening', () => {
     if (targetExists) await writeFile(target, 'original\n', 'utf8');
     const out = path.join(tempDir, 'link.json');
     await symlink(target, out);
-    const { terminal } = fakeTerminal(await challengeFor());
+    const { terminal } = fakeTerminal(typeShown);
     await expectCode(runRunApprove([...manifestFlags(), '--out', out], { terminal }), 'APPROVAL_OUT_EXISTS');
     expect((await lstat(out)).isSymbolicLink()).toBe(true);
     if (targetExists) expect(await readFile(target, 'utf8')).toBe('original\n');
@@ -220,7 +230,7 @@ describe('run approve — review hardening', () => {
 
   it('an --out in a missing directory is APPROVAL_OUT_UNWRITABLE', async () => {
     const out = path.join(tempDir, 'missing', 'a.json');
-    const { terminal } = fakeTerminal(await challengeFor());
+    const { terminal } = fakeTerminal(typeShown);
     await expect(runRunApprove([...manifestFlags(), '--out', out], { terminal })).rejects.toMatchObject({
       code: 'APPROVAL_OUT_UNWRITABLE',
       details: { errno: 'ENOENT' },
@@ -230,7 +240,7 @@ describe('run approve — review hardening', () => {
   it('caps a long goal at 500 characters on one line', async () => {
     const goal = 'g'.repeat(900);
     await writeFile(requestPath, `${JSON.stringify({ ...requestExecutionSample, intent: { ...requestExecutionSample.intent, goal } })}\n`, 'utf8');
-    const { terminal, text } = fakeTerminal(await challengeFor());
+    const { terminal, text } = fakeTerminal(typeShown);
     await runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'long.json')], { terminal });
     const goalLine = text().split('\n').find((line) => line.startsWith('goal:'))!;
     expect(goalLine).toBe(`goal:         ${JSON.stringify(`${'g'.repeat(500)}…`)}`);
@@ -239,21 +249,42 @@ describe('run approve — review hardening', () => {
   it('caps by code points, so an astral character at the cap is never split', async () => {
     const goal = `${'g'.repeat(499)}${'😀'.repeat(10)}`;
     await writeFile(requestPath, `${JSON.stringify({ ...requestExecutionSample, intent: { ...requestExecutionSample.intent, goal } })}\n`, 'utf8');
-    const { terminal, text } = fakeTerminal(await challengeFor());
+    const { terminal, text } = fakeTerminal(typeShown);
     await runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'astral.json')], { terminal });
     const goalLine = text().split('\n').find((line) => line.startsWith('goal:'))!;
     expect(goalLine).toBe(`goal:         ${JSON.stringify(`${'g'.repeat(499)}😀…`)}`);
   });
 
   it('accepts the challenge with surrounding whitespace; a longer answer declines', async () => {
-    const challenge = await challengeFor();
     await expect(
-      runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'ws.json')], { terminal: fakeTerminal(`  ${challenge}  `).terminal }),
+      runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'ws.json')], { terminal: fakeTerminal((c) => `  ${c}  `).terminal }),
     ).resolves.toBeDefined();
     await expectCode(
-      runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'suffix.json')], { terminal: fakeTerminal(`${challenge}x`).terminal }),
+      runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'suffix.json')], { terminal: fakeTerminal((c) => `${c}x`).terminal }),
       'APPROVAL_DECLINED',
     );
+  });
+
+  it('shows a fresh random challenge per ceremony, not one derivable from the manifest hash (AGX-R2)', async () => {
+    const shown: string[] = [];
+    for (const name of ['first.json', 'second.json']) {
+      const { terminal, text } = fakeTerminal(typeShown);
+      const result = await runRunApprove([...manifestFlags(), '--out', path.join(tempDir, name)], { terminal });
+      const challenge = shownChallenge(text())!;
+      expect(challenge).toMatch(/^[0-9a-f]{4}-[0-9a-f]{4}$/);
+      expect(result.output.manifestHash).not.toContain(challenge.replace('-', ''));
+      shown.push(challenge);
+    }
+    expect(shown[0]).not.toBe(shown[1]);
+  });
+
+  it('a challenge from an earlier ceremony does not approve a later one', async () => {
+    const first = fakeTerminal(typeShown);
+    await runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'first.json')], { terminal: first.terminal });
+    const earlier = shownChallenge(first.text())!;
+    const out = path.join(tempDir, 'replayed.json');
+    await expectCode(runRunApprove([...manifestFlags(), '--out', out], { terminal: fakeTerminal(earlier).terminal }), 'APPROVAL_DECLINED');
+    await absent(out);
   });
 
   it('a stdin error during the prompt declines and writes nothing', async () => {

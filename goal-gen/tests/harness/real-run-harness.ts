@@ -37,7 +37,6 @@ import { CliUsageError } from '../../backend/src/cli/errors';
 import { parseRunInvocation } from '../../backend/src/cli/protocol-run-options';
 import { runProviderV2Real } from '../../backend/src/cli/provider-run-v2-real';
 import { runRunApprove, type ApprovalTerminal } from '../../backend/src/cli/run-approval-command';
-import { runRunManifest } from '../../backend/src/cli/run-manifest-command';
 import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
 import type { RunManifest } from '../../backend/src/cli/run-manifest';
 import { RUN_MANIFEST_OPTIONS } from '../../backend/src/cli/run-manifest-command';
@@ -79,14 +78,15 @@ const OUTCOME_EXIT: Record<RealRunOutcome['kind'], number> = {
   refused: 3,
 };
 
-/** A terminal that types `answer` as soon as the ceremony asks for the challenge. */
-function answeringTerminal(answer: string): ApprovalTerminal {
+/** A terminal that types the challenge the ceremony shows, as soon as it asks for it. */
+function answeringTerminal(): ApprovalTerminal {
   const stdin = Object.assign(new PassThrough(), { isTTY: true });
   const output = Object.assign(new PassThrough(), { isTTY: true });
   let text = '';
   output.on('data', (chunk: Buffer) => {
     text += chunk.toString('utf8');
-    if (text.includes('Type the challenge') && !stdin.writableEnded) stdin.end(`${answer}\n`);
+    const shown = /^challenge:\s+(\S+)$/m.exec(text)?.[1];
+    if (shown !== undefined && text.includes('Type the challenge') && !stdin.writableEnded) stdin.write(`${shown}\n`);
   });
   return { stdin, output };
 }
@@ -110,8 +110,7 @@ function splitProductionArgv(argv: string[]): { harness: Record<string, string>;
 
 async function mintApprovalMode(argv: string[]): Promise<number> {
   const { rest } = splitProductionArgv(argv);
-  const { output } = await runRunManifest(rest.filter((arg, index, all) => all[index - 1] !== '--out' && arg !== '--out'));
-  const minted = await runRunApprove(rest, { terminal: answeringTerminal(output.challenge) });
+  const minted = await runRunApprove(rest, { terminal: answeringTerminal() });
   process.stdout.write(`${JSON.stringify({ approvalId: minted.output.approvalId, path: minted.output.path })}\n`);
   return 0;
 }

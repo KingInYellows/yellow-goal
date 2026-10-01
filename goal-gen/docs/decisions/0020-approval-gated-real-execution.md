@@ -26,8 +26,12 @@ deterministic run manifest:
   request hash, model, permission mode, tool allow/deny lists, max turns, USD caps, timeouts,
   auth mode, attempt count (always 1) and expiry.
 - `run approve` mints a `yellow-goal/run-approval/v1` record only after the operator types a
-  hash-derived challenge at a controlling terminal (stdin and stderr are TTYs). No flag,
-  environment variable or piped input can mint one (`APPROVAL_TTY_REQUIRED`). The record is
+  challenge at a controlling terminal (stdin and stderr are TTYs). The challenge is random and
+  fresh per ceremony, shown only on that terminal directly under the manifest it approves, and
+  never stored. *(Amended 2026-10-01: it was the first 8 hex characters of `manifestHash`, which
+  `run manifest` already prints, so a session that had seen the manifest output could relay the
+  answer before the operator reviewed anything. `run manifest` no longer prints a challenge.)* No
+  flag, environment variable or piped input can mint one (`APPROVAL_TTY_REQUIRED`). The record is
   written with exclusive create and owner-only permissions; default expiry is 60 minutes and a
   manifest may shorten but never lengthen it.
 - Before any spawn the engine recomputes the manifest from the actual invocation and refuses
@@ -74,9 +78,9 @@ Requirements are cited outside the spec as `AGX-R<n>` (spec
   `runtime/` concept. The one exception is the consumption-marker directory
   (`$XDG_STATE_HOME/yellow-goal/consumed/`, default `~/.local/state/yellow-goal/`): single use
   must hold across wherever an approval file is copied, so markers live in engine-owned per-user
-  state rather than beside the file. Whether the real run also accepts an explicit `--state-dir`
-  (which would weaken single use the same way an `XDG_STATE_HOME` redirect does) is decided when
-  the run path is wired.
+  state rather than beside the file. The real run accepts no `--state-dir` flag (one would weaken
+  single use the same way an `XDG_STATE_HOME` redirect does); `stateDir` is an in-process test
+  seam only.
 
 ## Confirmation
 
