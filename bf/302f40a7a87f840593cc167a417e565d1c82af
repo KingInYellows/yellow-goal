@@ -1,0 +1,45 @@
+goal-gen/tests/cli/provider-v1-golden.test.ts
+  s_c1e36b8311e25e::t_e1bfa59d443828 1-101
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_016cc65cfc6e3a 127
+goal-gen/tests/golden/provider-v1/capabilities.json
+  s_c1e36b8311e25e::t_b602cafdd91c2c 1
+goal-gen/tests/golden/provider-v1/gate-required.stderr.json
+  s_c1e36b8311e25e::t_6bda0b18e3c8d3 1
+goal-gen/tests/golden/provider-v1/gate-required.stdout.jsonl
+  s_c1e36b8311e25e::t_33a029475670d9 1-5
+goal-gen/tests/golden/provider-v1/stub-await-cancel.stderr.json
+  s_c1e36b8311e25e::t_384189e23fe2a4 1
+goal-gen/tests/golden/provider-v1/stub-await-cancel.stdout.jsonl
+  s_c1e36b8311e25e::t_7afec1f530e5b0 1-4
+goal-gen/tests/golden/provider-v1/stub-budget-exhausted.stderr.json
+  s_c1e36b8311e25e::t_32a5ab4cb38948 1
+goal-gen/tests/golden/provider-v1/stub-budget-exhausted.stdout.jsonl
+  s_c1e36b8311e25e::t_afe1f27e71bf12 1-5
+goal-gen/tests/golden/provider-v1/stub-failed.stderr.json
+  s_c1e36b8311e25e::t_7cb50892f10b02 1
+goal-gen/tests/golden/provider-v1/stub-failed.stdout.jsonl
+  s_c1e36b8311e25e::t_7d9a612ba74167 1-3
+goal-gen/tests/golden/provider-v1/stub-success.stdout.jsonl
+  s_c1e36b8311e25e::t_62c3fadbb450c2 1-8
+goal-gen/tests/golden/provider-v1/usage-unknown-protocol.stderr.json
+  s_c1e36b8311e25e::t_d0b2012fdb3573 1
+goal-gen/tests/golden/provider-v1/usage-v1-claude-code.stderr.json
+  s_c1e36b8311e25e::t_94e3a540e851bc 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bf302f40a7a87f840593cc167a417e565d1c82af",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
