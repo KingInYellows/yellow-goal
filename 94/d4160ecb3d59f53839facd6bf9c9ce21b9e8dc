@@ -1,0 +1,21 @@
+goal-gen/docs/solutions/code-quality/adding-a-non-protocol-cli-verb-to-goal-gen.md
+  s_c1e36b8311e25e::t_af52661dac9b46 105-139
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_2f92a2c287b623 1,3,11-300
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "94d4160ecb3d59f53839facd6bf9c9ce21b9e8dc",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
