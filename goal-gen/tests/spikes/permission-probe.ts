@@ -33,28 +33,18 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { runCandidateOfflineVerify } from '../../backend/src/cli/candidate-offline-command';
-import { candidateProfileDigest, getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
+import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
 import type { RunManifest } from '../../backend/src/cli/run-manifest';
 import { createRealRunExecutor } from '../../backend/src/executors/real-run-executor';
 import { createWorktree, pinnedGit } from '../../backend/src/executors/worktree';
 import type { Action } from '../../backend/src/planner/types';
+import { realRunManifest } from '../real-run/manifest-fixture';
+import { EXECUTOR_FLAGS } from './permission-probe-flags';
 
 const MODES = ['flags', 'edit', 'escape', 'max-turns', 'budget'] as const;
 type Mode = (typeof MODES)[number];
 
 const DEFAULT_ALLOWED_TOOLS = ['Read(./**)', 'Edit(./site.json)', 'Edit(./SITE)', 'Write(./site.json)', 'Write(./SITE)'];
-const EXECUTOR_FLAGS = [
-  '--output-format',
-  '--permission-mode',
-  '--model',
-  '--max-turns',
-  '--allowedTools',
-  '--disallowedTools',
-  '--max-budget-usd',
-  '--tools',
-  '--setting-sources',
-  '--strict-mcp-config',
-];
 const TINY_BUDGET_USD = 0.01;
 
 function isMode(value: string | undefined): value is Mode {
@@ -74,27 +64,14 @@ function probeFlags(): Record<string, unknown> {
 }
 
 function manifestFor(mode: Mode, opts: { model: string; maxBudgetUsd: number; maxTurns: number; allowedTools: string[] }): RunManifest {
-  const profile = getCandidateOfflineProfile('config-repair', '2');
-  return {
-    schemaVersion: 'yellow-goal/run-manifest/v1',
+  return realRunManifest({
     engineVersion: 'permission-probe',
-    protocolId: 'yellow-goal/provider-protocol/v2',
-    profile: { id: profile.id, version: profile.version, digest: candidateProfileDigest(profile) },
     requestHash: '0'.repeat(64),
     model: opts.model,
-    permissionMode: 'acceptEdits',
     allowedTools: opts.allowedTools,
-    disallowedTools: [],
     maxTurns: mode === 'max-turns' ? 1 : opts.maxTurns,
     caps: { perActionUsd: mode === 'budget' ? TINY_BUDGET_USD : opts.maxBudgetUsd, totalUsd: 5 },
-    actionTimeoutMs: 300_000,
-    runWallClockMs: 600_000,
-    authMode: 'subscription',
-    attemptCount: 1,
-    expiresInMinutes: 60,
-    // The executor never reads the evidence destinations; the engine owns them (AGX-R8a).
-    evidence: { bundleDir: '/nonexistent/goal-gen/bundle', spendLedgerPath: '/nonexistent/goal-gen/spend.jsonl' },
-  };
+  });
 }
 
 interface EscapeConfinement {

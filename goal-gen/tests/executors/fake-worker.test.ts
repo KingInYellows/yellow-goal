@@ -10,6 +10,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
 import type { RunManifest } from '../../backend/src/cli/run-manifest';
+import { realRunManifest } from '../real-run/manifest-fixture';
 import { ClaudeCodeExecutor } from '../../backend/src/executors/claude-code-executor';
 import { createRealRunExecutor } from '../../backend/src/executors/real-run-executor';
 import { createWorktree, type WorktreeHandle } from '../../backend/src/executors/worktree';
@@ -17,30 +18,10 @@ import type { Action } from '../../backend/src/planner/types';
 import type { AgentRunFailureClass } from '../../backend/src/types';
 
 const FAKE_WORKER = path.join(__dirname, '..', 'fixtures', 'claude-worker', 'fake-claude.mjs');
-const HEX = 'c'.repeat(64);
 
 function manifest(): RunManifest {
-  return {
-    schemaVersion: 'yellow-goal/run-manifest/v1',
-    engineVersion: '0.2.0',
-    protocolId: 'yellow-goal/provider-protocol/v2',
-    profile: { id: 'config-repair', version: '2', digest: HEX },
-    requestHash: HEX,
-    model: 'sonnet',
-    permissionMode: 'acceptEdits',
-    allowedTools: ['Edit(./SITE)', 'Edit(./site.json)', 'Read(./**)'],
-    disallowedTools: [],
-    maxTurns: 8,
-    caps: { perActionUsd: 0.5, totalUsd: 5 },
-    // Well inside vitest's 30s test timeout, so a hung worker takes the executor's own timeout path.
-    actionTimeoutMs: 5_000,
-    runWallClockMs: 120_000,
-    authMode: 'subscription',
-    attemptCount: 1,
-    expiresInMinutes: 60,
-    // The executor never reads the evidence destinations; the engine owns them (AGX-R8a).
-    evidence: { bundleDir: '/nonexistent/goal-gen/bundle', spendLedgerPath: '/nonexistent/goal-gen/spend.jsonl' },
-  };
+  // Well inside vitest's 30s test timeout, so a hung worker takes the executor's own timeout path.
+  return realRunManifest({ actionTimeoutMs: 5_000, runWallClockMs: 120_000 });
 }
 
 function action(): Action {
