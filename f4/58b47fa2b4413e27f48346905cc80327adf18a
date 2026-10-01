@@ -1,0 +1,31 @@
+goal-gen/backend/src/cli/protocol-run-options.ts
+  s_c1e36b8311e25e::t_e2ed903a3bea67 9-11,57,60-64,77
+goal-gen/backend/src/cli/provider-run-v1.ts
+  s_c1e36b8311e25e::t_71aac0dbd5d0ea 10,12,206
+goal-gen/backend/src/cli/run-command.ts
+  s_c1e36b8311e25e::t_556bc16e690957 149
+goal-gen/tests/cli/protocol-run-options.test.ts
+  s_c1e36b8311e25e::t_c7179e86c244bb 11,34,42-56
+goal-gen/tests/cli/provider-run-v1.test.ts
+  s_c1e36b8311e25e::t_0c427b86ee918e 112,152,178,203,397,431,450
+goal-gen/tests/cli/provider-run-v2-stub.test.ts
+  s_c1e36b8311e25e::t_5c4817a4a6ed38 1-67
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_f259aece6a6420 148,153,156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f458b47fa2b4413e27f48346905cc80327adf18a",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
