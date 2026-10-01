@@ -1,0 +1,25 @@
+goal-gen/docs/operator-real-run.md
+  s_c1e36b8311e25e::t_b5c41c10e4dd5a 9-12,80,82-109,152,154-161,185-268
+goal-gen/package.json
+  s_c1e36b8311e25e::t_4fa362625e9f24 23
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_9cc220625d6232 229,239
+goal-gen/scripts/operator-real-run-recipe.sh
+  s_c1e36b8311e25e::t_4cd6043edf2c66 1-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bc371936454aac613fef9081116e27b0cbece172",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
