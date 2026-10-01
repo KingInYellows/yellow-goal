@@ -1,0 +1,23 @@
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_a11763cae234c8 221
+goal-gen/tests/harness/real-run-harness.process.test.ts
+  s_c1e36b8311e25e::t_00171e57a3754c 104-165
+goal-gen/tests/harness/real-run-harness.ts
+  s_c1e36b8311e25e::t_a8dd2eb743669f 16-26,35-40,64-65,68-70,82-140,142-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "01201f50c679e6d159b8d71067695f8a38b1232f",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
