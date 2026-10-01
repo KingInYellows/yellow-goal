@@ -24,35 +24,16 @@ import type { RunManifest } from '../../backend/src/cli/run-manifest';
 import { ClaudeCodeExecutor, REAL_RUN_DENY_RULES } from '../../backend/src/executors/claude-code-executor';
 import { createRealRunExecutor } from '../../backend/src/executors/real-run-executor';
 import type { Action } from '../../backend/src/planner/types';
-import type { RunContext } from '../../backend/src/types';
+import type { Executor, RunContext } from '../../backend/src/types';
+import { realRunManifest } from '../real-run/manifest-fixture';
+import { EXECUTOR_FLAGS } from '../spikes/permission-probe-flags';
 
 const FAKE_SHA = 'a'.repeat(40);
-const HEX = 'b'.repeat(64);
 
 const SUCCESS_ENVELOPE = { type: 'result', subtype: 'success', is_error: false, result: 'ok', total_cost_usd: 0.08 };
 
 function manifest(overrides: Partial<RunManifest> = {}): RunManifest {
-  return {
-    schemaVersion: 'yellow-goal/run-manifest/v1',
-    engineVersion: '0.2.0',
-    protocolId: 'yellow-goal/provider-protocol/v2',
-    profile: { id: 'config-repair', version: '2', digest: HEX },
-    requestHash: HEX,
-    model: 'sonnet',
-    permissionMode: 'acceptEdits',
-    allowedTools: ['Edit(./SITE)', 'Edit(./site.json)', 'Read(./**)'],
-    disallowedTools: ['Bash', 'WebFetch'],
-    maxTurns: 8,
-    caps: { perActionUsd: 0.5, totalUsd: 5 },
-    actionTimeoutMs: 300_000,
-    runWallClockMs: 900_000,
-    authMode: 'subscription',
-    attemptCount: 1,
-    expiresInMinutes: 60,
-    // The executor never reads the evidence destinations; the engine owns them (AGX-R8a).
-    evidence: { bundleDir: '/nonexistent/goal-gen/bundle', spendLedgerPath: '/nonexistent/goal-gen/spend.jsonl' },
-    ...overrides,
-  };
+  return realRunManifest({ disallowedTools: ['Bash', 'WebFetch'], runWallClockMs: 900_000, ...overrides });
 }
 
 function fakeChild(envelope: unknown = SUCCESS_ENVELOPE): unknown {
@@ -186,6 +167,28 @@ describe('createRealRunExecutor argv (AGX-R11/R12/R15)', () => {
     expect(flagValues(argv, '--setting-sources')).toEqual(['project']);
     expect(argv).toContain('--strict-mcp-config');
     expect(argv).not.toContain('--settings');
+  });
+
+  it("every flag in the argv is one the permission probe checks against `claude --help`", async () => {
+    await createRealRunExecutor(manifest()).run(action(), ctx());
+    const flags = spawnedArgv().filter((arg) => arg.startsWith('--'));
+    expect(flags.length).toBeGreaterThan(0);
+    expect(flags.filter((flag) => !EXECUTOR_FLAGS.includes(flag))).toEqual([]);
+  });
+
+  it('survives a worker that exits without reading stdin (EPIPE on the prompt write)', async () => {
+    spawnMock.mockImplementation(() => {
+      const child = fakeChild() as { stdin: unknown };
+      const stdin = new EventEmitter() as EventEmitter & { end: (text: string) => void };
+      // Like a real pipe whose reader is gone: the write fails asynchronously with EPIPE.
+      stdin.end = () => {
+        process.nextTick(() => stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })));
+      };
+      child.stdin = stdin;
+      return child;
+    });
+    const run = await createRealRunExecutor(manifest()).run(action(), ctx());
+    expect(run.status).toBe('succeeded');
   });
 
   it('sends the prompt on stdin, never argv, so it cannot be parsed as a flag or subcommand', async () => {
@@ -408,7 +411,7 @@ describe('permission mode is only ever acceptEdits (AGX-R11, exhaustive)', () =>
   const candidates: unknown[] = ['acceptEdits', 'plan', 'auto', 'dontAsk', 'manual', 'bypassPermissions', '', undefined, 42];
 
   it.each(candidates.map((mode) => [mode]))('manifest permissionMode %s either refuses or spawns acceptEdits', async (mode) => {
-    let exec: ClaudeCodeExecutor | undefined;
+    let exec: Executor | undefined;
     try {
       exec = createRealRunExecutor({ ...manifest(), permissionMode: mode } as unknown as RunManifest);
     } catch (err) {

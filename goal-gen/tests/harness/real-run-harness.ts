@@ -194,7 +194,7 @@ async function main(): Promise<number> {
       worktreePath: worktree.worktreePath,
       signal: new AbortController().signal,
       budgetUsdRemaining: manifest.caps.totalUsd,
-      ...(worktree.gitDir === undefined ? {} : { gitDir: worktree.gitDir }),
+      gitDir: worktree.gitDir,
     });
     process.stdout.write(
       `${JSON.stringify({

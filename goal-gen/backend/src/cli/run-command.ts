@@ -38,6 +38,7 @@ type EngineDeps = Pick<OrchestratorDeps, 'extractor' | 'executor' | 'verifier' |
 const stubWorktreeProvider: WorktreeProvider = async (opts) => ({
   root: '(stub)',
   worktreePath: '(stub)',
+  gitDir: '(stub)',
   branch: opts.branch ?? 'run',
   initialSha: '0'.repeat(40),
   cleanup: async () => {},

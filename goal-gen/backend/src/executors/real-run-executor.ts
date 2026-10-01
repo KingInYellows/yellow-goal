@@ -9,6 +9,7 @@
  */
 import { RunApprovalError } from '../cli/errors';
 import { type RunManifest, RunManifestSchema } from '../cli/run-manifest';
+import type { Executor } from '../types';
 import { ClaudeCodeExecutor, type WorkerCommand } from './claude-code-executor';
 
 export interface RealRunExecutorOverrides {
@@ -16,7 +17,7 @@ export interface RealRunExecutorOverrides {
   workerCommand?: WorkerCommand;
 }
 
-export function createRealRunExecutor(manifest: RunManifest, opts: RealRunExecutorOverrides = {}): ClaudeCodeExecutor {
+export function createRealRunExecutor(manifest: RunManifest, opts: RealRunExecutorOverrides = {}): Executor {
   const parsed = RunManifestSchema.safeParse(manifest);
   if (!parsed.success) {
     throw new RunApprovalError('MANIFEST_INVALID', `invalid run manifest: ${parsed.error.issues[0]?.message ?? 'unknown'}`, {

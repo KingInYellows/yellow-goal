@@ -19,15 +19,18 @@ import { computeManifestHash, type RunManifest } from './run-manifest';
 /** Tolerated clock skew for a record's `createdAt` being ahead of this host's clock. */
 const CREATED_AT_SKEW_MS = 5 * 60_000;
 
+declare const verifiedApprovalBrand: unique symbol;
+
 /** What a verified approval hands the real run. `approvalId` is carried into `run.start`, the
- *  spend ledger, and the terminal outcome (AGX-R6). */
+ *  spend ledger, and the terminal outcome (AGX-R6). Branded: only `verifyRunApproval` produces
+ *  one, so `consumeRunApproval` cannot be handed an unverified object of the same shape. */
 export type VerifiedApproval = {
   approvalId: string;
   manifestHash: string;
   manifest: RunManifest;
   expiresAt: string;
   approvalPath: string;
-};
+} & { readonly [verifiedApprovalBrand]: true };
 
 /** Where consumption markers live; tests inject a temp dir, production uses the default. */
 export type ApprovalStateOptions = { stateDir?: string };
@@ -124,7 +127,7 @@ export async function verifyRunApproval(input: VerifyRunApprovalInput): Promise<
     manifest: record.manifest,
     expiresAt: record.expiresAt,
     approvalPath,
-  };
+  } as VerifiedApproval;
 }
 
 /**
