@@ -1,0 +1,20 @@
+goal-gen/plans/complete/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_9366da4d53e638::t_08f56ff02f2994 291
+  s_9366da4d53e638::t_bbd8ba280942f0 271-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "91ba54f939635e0e54f2394a340c483e8b0dcd5b",
+  "prompts": {},
+  "sessions": {
+    "s_9366da4d53e638": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "179295f5-4a96-47c1-9c3d-e4105e73b058",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
