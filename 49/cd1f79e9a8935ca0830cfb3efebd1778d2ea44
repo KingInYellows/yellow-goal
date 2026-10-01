@@ -1,0 +1,23 @@
+goal-gen/backend/src/cli/provider-run-v2-real.ts
+  s_c1e36b8311e25e::t_36827627eab957 29-30,73,75,79-89,129,189,198-201
+goal-gen/docs/operator-real-run.md
+  s_c1e36b8311e25e::t_69c2c820777d13 198,202-205
+goal-gen/scripts/operator-real-run-recipe.sh
+  s_c1e36b8311e25e::t_b27790010cbd52 37-43,46-47,54-57,62-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "49cd1f79e9a8935ca0830cfb3efebd1778d2ea44",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
