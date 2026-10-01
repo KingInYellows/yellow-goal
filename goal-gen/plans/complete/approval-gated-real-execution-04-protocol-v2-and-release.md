@@ -266,11 +266,16 @@ autonomous session cuts the release tag — the final release step is operator-e
   Note in `plans/specs/provider-protocol-v1.md` (or its README pointer) that v2 is specified by
   ADR-0020 / the AGX spec; do not edit accepted ADRs.
 - [x] Step 6.4: Gates locally: `npm run typecheck && npm test && npm run eval && bash scripts/install-smoke.sh && npm run test:operator-recipe && npm run test:operator-recipe:real-run`.
-- [ ] Step 6.5 (**operator-executed, not an autonomous session**): after the PR(s) merge, the
+- [x] Step 6.5 (**operator-executed, not an autonomous session**): after the PR(s) merge, the
   operator runs `git tag -a v0.3.0 -m v0.3.0` on the bump commit and pushes the tag; the Release
-  workflow attaches `goal-gen-0.3.0.tgz` + `.sha256`. Hash evidence: download the asset, check
-  `sha256sum` equals the published `.sha256`, and record the release URL + SHA-256 in the PR/handoff
+  workflow attaches `goal-gen-0.3.0.tgz` (no `.sha256` sidecar — `release.yml` publishes the tarball
+  only). Hash evidence: download the asset, check `sha256sum` equals GitHub's asset digest
+  (`gh release view v0.3.0 --json assets`), and record the release URL + SHA-256 in the PR/handoff
   that shell 05 (consumer pin) consumes. Mark this box only after the release is public.
+  Evidence (2026-10-01): annotated tag `v0.3.0` -> `2f336d5` (PR #71); Release run 36896070768 succeeded;
+  https://github.com/KingInYellows/yellow-goal/releases/tag/v0.3.0 ; `goal-gen-0.3.0.tgz` SHA-256
+  `16e9d4b84f8b771ca1c368c886da70ef0d29c5e2af5ba68a51094c20f0a5db23` (downloaded asset equals GitHub's asset digest;
+  no separate `.sha256` asset was published).
 
 ## Verification
 
@@ -283,7 +288,7 @@ autonomous session cuts the release tag — the final release step is operator-e
 - `npm run test:operator-recipe:real-run` -> "operator-real-run-recipe: … passed", all fences run against the harness + fake worker, zero real `claude` (AGX-R33).
 - `bash scripts/install-smoke.sh` -> installed 0.3.0 tarball passes v1 and v2 checks (A8 engine half).
 - `npm run typecheck && npm test && npm run eval` -> green on Node 22.22.3 (`nvm exec 22.22.3 …`).
-- After operator tag: GitHub Release `v0.3.0` has `goal-gen-0.3.0.tgz` whose SHA-256 matches its `.sha256` asset (AGX-R27).
+- After operator tag: GitHub Release `v0.3.0` has `goal-gen-0.3.0.tgz` whose downloaded SHA-256 matches GitHub's asset digest (AGX-R27).
 
 ## Context Files
 
