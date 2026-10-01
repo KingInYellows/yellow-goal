@@ -1,0 +1,25 @@
+goal-gen/backend/src/cli/provider-capabilities.ts
+  s_c1e36b8311e25e::t_71aca3f47d4259 14-18,35-44,46-47,50,55-75,79-82
+goal-gen/backend/src/cli/run-manifest.ts
+  s_c1e36b8311e25e::t_4a2be4d901b301 27,30-31
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_332f3f8105a268 134,139,142
+goal-gen/tests/cli/capabilities-verb.test.ts
+  s_c1e36b8311e25e::t_a93ef28806cf02 59-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "76d49eabae4b5d8b4566b712f35b364c35f12c21",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
