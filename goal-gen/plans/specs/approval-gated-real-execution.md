@@ -78,8 +78,10 @@ legacy `--executor claude-code` path (follow-up after R35).
     `manifestHash`; a fake `claude` records zero invocations.
 - **R2.** When `run approve` is invoked, the engine shall mint an approval only after an
   interactive confirmation on a controlling terminal (stdin and stderr are TTYs) in which the
-  operator types a challenge derived from the manifest hash; a non-TTY invocation shall be refused
-  with `APPROVAL_TTY_REQUIRED` and write nothing.
+  operator types a challenge that is random, fresh per ceremony, and shown only on that terminal
+  (never printed by `run manifest`, never stored); a non-TTY invocation shall be refused with
+  `APPROVAL_TTY_REQUIRED` and write nothing. *(Amended 2026-10-01: previously derived from the
+  manifest hash, which let a session that saw `run manifest` output relay the answer in advance.)*
   - Acceptance: no argv flag, environment variable, or piped stdin can mint an approval (tested via
     the injected TTY seam and a piped-stdin negative test).
 - **R3.** The engine shall write each approval as a `yellow-goal/run-approval/v1` record
@@ -294,7 +296,7 @@ legacy `--executor claude-code` path (follow-up after R35).
 
 1. **Approve (zero spend).** `run manifest` (R1) renders and prints the manifest. The operator runs
    `run approve --out <path>` at a terminal; the ceremony (R2) shows the manifest, asks for the
-   hash-derived challenge, and writes the record (R3).
+   fresh challenge it shows, and writes the record (R3).
 2. **Run.** `run --protocol v2 --executor agx-claude-code --profile config-repair@<new> --approval
    <path> --bundle-dir <dir>`. Order is fixed: recompute manifest → verify approval (R4) → env
    guard (R13) → consume (R5) → seed worktree (R8) → one worker spawn (R9–R12, R14) → ledger (R16)

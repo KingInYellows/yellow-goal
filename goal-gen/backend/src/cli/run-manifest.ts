@@ -162,11 +162,6 @@ export function computeManifestHash(manifest: RunManifest): string {
   return sha256Hex(canonicalJson(manifest));
 }
 
-/** The string the operator types at the approval ceremony (AGX-R2), e.g. `3f9a-01bc`. */
-export function approvalChallenge(manifestHash: string): string {
-  return `${manifestHash.slice(0, 4)}-${manifestHash.slice(4, 8)}`;
-}
-
 /**
  * Resolves `<id>` (version '1', unchanged since before versioning) or `<id>@<version>`, so a real
  * run can select `config-repair@2` (AGX-R7). An unknown id or version is MANIFEST_INVALID.

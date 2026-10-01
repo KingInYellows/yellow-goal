@@ -2,13 +2,14 @@
  * `run approve <request.json> … --out <path>` — the terminal-only approval ceremony (ADR-0020,
  * AGX-R2/R3).
  *
- * An approval is minted only after the operator types the hash-derived challenge at a controlling
- * terminal (stdin AND stderr are TTYs). No flag, environment variable, or piped stdin can mint
+ * An approval is minted only after the operator types a fresh random challenge, shown only on the
+ * controlling terminal (stdin AND stderr are TTYs) directly under the manifest it approves. No flag, environment variable, or piped stdin can mint
  * one: a non-TTY invocation is refused with APPROVAL_TTY_REQUIRED before anything is written. The
  * ceremony is consent, not authentication — it stops agent sessions and piped input.
  *
  * Dynamically imported by the dispatcher before `./run-command` is loaded; never spawns.
  */
+import { randomBytes } from 'node:crypto';
 import { openSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { WriteStream } from 'node:tty';
@@ -70,6 +71,16 @@ async function askChallenge(terminal: ApprovalTerminal): Promise<string | null> 
   }
 }
 
+/**
+ * A fresh challenge per ceremony, e.g. `3f9a-01bc`. It is random rather than derived from the
+ * manifest hash, so no earlier output (`run manifest` prints the hash) lets a session alongside the
+ * operator relay the answer before the manifest has been shown here (AGX-R2).
+ */
+function newChallenge(): string {
+  const hex = randomBytes(4).toString('hex');
+  return `${hex.slice(0, 4)}-${hex.slice(4)}`;
+}
+
 const DISPLAY_MAX_CHARS = 500;
 
 /**
@@ -96,7 +107,7 @@ export async function runRunApprove(argv: string[], options: RunApproveOptions =
   if (typeof values.out !== 'string' || values.out === '') throw new CliUsageError('--out is required');
   const outPath = values.out;
 
-  const { manifest, manifestHash, challenge, request } = await manifestFromFlags(values, positionals, 'run approve');
+  const { manifest, manifestHash, request } = await manifestFromFlags(values, positionals, 'run approve');
 
   const controlling = options.terminal === undefined ? openControllingTerminal() : null;
   const terminal = options.terminal ?? controlling?.terminal;
@@ -107,6 +118,7 @@ export async function runRunApprove(argv: string[], options: RunApproveOptions =
     );
   }
 
+  const challenge = newChallenge();
   try {
     // Request first, manifest last: the approved manifest sits directly above hash and challenge.
     terminal.output.write(

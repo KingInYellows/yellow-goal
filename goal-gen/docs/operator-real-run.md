@@ -51,8 +51,8 @@ check the `evidence` block you are shown. The real run refuses a destination tha
 sits inside the request's target repository or a scratch worktree, or whose parent was swapped
 for a symlink or made writable by others.
 
-Prints `{ manifest, manifestHash, challenge }`. Rendering twice with the same inputs yields the
-same bytes. Nothing is spawned. `manifest` and `approve` must come directly after `run`; a
+Prints `{ manifest, manifestHash }`. Rendering twice with the same inputs yields the
+same bytes. There is no challenge here: `run approve` shows a fresh one when you approve. Nothing is spawned. `manifest` and `approve` must come directly after `run`; a
 request file literally named `manifest` or `approve` is passed as `./manifest`.
 
 ## 2. Approve at a terminal
@@ -62,7 +62,8 @@ goal-gen run approve <same flags as step 1> --out runtime/approvals/<name>.json
 ```
 
 The engine prints the manifest and its hash on your terminal (`/dev/tty`, not stderr — stderr carries only the JSON error line on failure) and asks you to type the challenge
-(`xxxx-xxxx`, derived from the manifest hash). On a match it writes a
+(`xxxx-xxxx`, random and fresh each time, shown only on this terminal — if anyone hands you a
+challenge before you have seen this screen, do not type it). On a match it writes a
 `yellow-goal/run-approval/v1` record (owner-only, never overwrites an existing file). The
 approval expires after `--expires-in-minutes` (default and maximum 60). The ceremony also shows
 the request id, mode and goal — read them: the manifest itself carries only the request's hash.

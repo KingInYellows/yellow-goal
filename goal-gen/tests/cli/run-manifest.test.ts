@@ -14,7 +14,6 @@ import {
   RUN_MANIFEST_DEFAULTS,
   RunManifestSchema,
   RunManifestSchemaVersion,
-  approvalChallenge,
   buildRunManifest,
   computeManifestHash,
   type RunManifest,
@@ -220,7 +219,6 @@ describe('buildRunManifest', () => {
       evidence: { bundleDir: '/var/goal-gen/bundle', spendLedgerPath: '/var/goal-gen/spend.jsonl' },
     };
     expect(computeManifestHash(fixed)).toBe('f5adc396dd15776fd5503da3b159dba709a04c33138b1b3d84bee7bc80e6726e');
-    expect(approvalChallenge(computeManifestHash(fixed))).toMatch(/^[0-9a-f]{4}-[0-9a-f]{4}$/);
   });
 });
 
@@ -263,7 +261,7 @@ describe('run manifest verb', () => {
   /** Evidence flags live in the per-test temp dir, so they are appended per call. */
   const evidenceFlags = () => ['--bundle-dir', path.join(tempDir, 'bundle'), '--spend-ledger', path.join(tempDir, 'spend.jsonl')];
 
-  it('prints one JSON line with manifest, hash and challenge; identical across renders', async () => {
+  it('prints one JSON line with manifest and hash (never a challenge); identical across renders', async () => {
     const req = await requestFile();
     expect(await main(['run', 'manifest', req, ...flags, ...evidenceFlags(), '--json'])).toBe(0);
     const first = stdoutText();
@@ -272,9 +270,9 @@ describe('run manifest verb', () => {
     expect(stdoutText()).toBe(first);
     expect(stderrText()).toBe('');
     expect(first.trim().split('\n')).toHaveLength(1);
-    const output = JSON.parse(first) as { manifest: RunManifest; manifestHash: string; challenge: string };
+    const output = JSON.parse(first) as { manifest: RunManifest; manifestHash: string };
+    expect(Object.keys(output).sort()).toEqual(['manifest', 'manifestHash']);
     expect(output.manifestHash).toBe(computeManifestHash(output.manifest));
-    expect(output.challenge).toBe(approvalChallenge(output.manifestHash));
     expect(output.manifest.actionTimeoutMs).toBe(REAL_RUN_ACTION_TIMEOUT_MS);
     expect(output.manifest.runWallClockMs).toBe(REAL_RUN_WALL_CLOCK_MS);
     expect(output.manifest.evidence).toEqual({

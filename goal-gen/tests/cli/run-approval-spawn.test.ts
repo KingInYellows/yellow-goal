@@ -1,6 +1,8 @@
 /**
- * ADR-0020 / AGX-R1: `run manifest` and `run approve` spend nothing — a sentinel `claude` (and
- * `git`) on PATH records zero invocations when the verbs run as a real process.
+ * ADR-0020 / AGX-R1: the approval verbs spend nothing — a sentinel `claude` (and `git`) on PATH
+ * records zero invocations when they run as a real process. One spawn covers both verbs' code:
+ * `run approve` builds the manifest exactly as `run manifest` does before it refuses a non-TTY
+ * caller. The in-process import-graph and module-mock checks live in run-approval-isolation.test.ts.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -41,8 +43,7 @@ function runCli(args: string[], input?: string) {
     cwd,
     encoding: 'utf8',
     env: { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ''}` },
-    // Two sequential spawns must fit inside vitest's 30s testTimeout.
-    timeout: 12_000,
+    timeout: 20_000,
     ...(input !== undefined ? { input } : {}),
   });
 }
@@ -60,13 +61,8 @@ const flags = [
 ];
 
 describe('approval verbs never spawn', () => {
-  it('run manifest and a run approve refused despite the correct piped challenge record zero claude/git invocations', async () => {
-    const manifest = runCli(['run', 'manifest', requestPath, ...flags, '--json']);
-    expect(manifest.status).toBe(0);
-    expect(manifest.stderr).toBe('');
-    const { challenge } = JSON.parse(manifest.stdout) as { challenge: string };
-
-    const approve = runCli(['run', 'approve', requestPath, ...flags, '--out', path.join(cwd, 'a.json')], `${challenge}\n`);
+  it('run approve, refused despite a piped answer after building the manifest, records zero claude/git invocations', async () => {
+    const approve = runCli(['run', 'approve', requestPath, ...flags, '--out', path.join(cwd, 'a.json')], '0000-0000\n');
     expect(approve.status).toBe(1);
     expect(JSON.parse(approve.stderr)).toMatchObject({ error: { code: 'APPROVAL_TTY_REQUIRED' } });
     expect(approve.stdout).toBe('');

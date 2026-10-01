@@ -12,7 +12,7 @@ import { parseArgs } from 'node:util';
 import { vi } from 'vitest';
 import { runRunApprove, type ApprovalTerminal } from '../../backend/src/cli/run-approval-command';
 import { approvalMarkerPath } from '../../backend/src/cli/run-approval-verifier';
-import { RUN_MANIFEST_OPTIONS, runRunManifest, type ManifestFlagValues } from '../../backend/src/cli/run-manifest-command';
+import { RUN_MANIFEST_OPTIONS, type ManifestFlagValues } from '../../backend/src/cli/run-manifest-command';
 import { createRealRunExecutor } from '../../backend/src/executors/real-run-executor';
 import { runRealRun, type RealRunInput } from '../../backend/src/real-run/real-run-engine';
 import type { RealRunOutcome } from '../../backend/src/real-run/outcome';
@@ -96,22 +96,22 @@ export function flagValues(args: readonly string[]): ManifestFlagValues {
   return parseArgs({ args: [...args], options: RUN_MANIFEST_OPTIONS, allowPositionals: false }).values;
 }
 
-/** A terminal that types `answer` once the challenge prompt appears. */
-function answeringTerminal(answer: string): ApprovalTerminal {
+/** A terminal that types the challenge the ceremony shows, as soon as it asks for it. */
+function answeringTerminal(): ApprovalTerminal {
   const stdin = Object.assign(new PassThrough(), { isTTY: true });
   const output = Object.assign(new PassThrough(), { isTTY: true });
   let text = '';
   output.on('data', (chunk: Buffer) => {
     text += chunk.toString('utf8');
-    if (text.includes('Type the challenge') && !stdin.writableEnded) stdin.end(`${answer}\n`);
+    const shown = /^challenge:\s+(\S+)$/m.exec(text)?.[1];
+    if (shown !== undefined && text.includes('Type the challenge') && !stdin.writableEnded) stdin.write(`${shown}\n`);
   });
   return { stdin, output };
 }
 
 /** Mints an approval for `args` through the `run approve` ceremony (injected TTY seam). */
 export async function mintApproval(fx: Fixture, args: readonly string[], out: string = fx.approvalPath): Promise<string> {
-  const { challenge } = (await runRunManifest([fx.requestPath, ...args])).output;
-  const minted = await runRunApprove([fx.requestPath, ...args, '--out', out], { terminal: answeringTerminal(challenge) });
+  const minted = await runRunApprove([fx.requestPath, ...args, '--out', out], { terminal: answeringTerminal() });
   return minted.output.approvalId;
 }
 

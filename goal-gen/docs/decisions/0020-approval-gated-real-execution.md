@@ -26,8 +26,12 @@ deterministic run manifest:
   request hash, model, permission mode, tool allow/deny lists, max turns, USD caps, timeouts,
   auth mode, attempt count (always 1) and expiry.
 - `run approve` mints a `yellow-goal/run-approval/v1` record only after the operator types a
-  hash-derived challenge at a controlling terminal (stdin and stderr are TTYs). No flag,
-  environment variable or piped input can mint one (`APPROVAL_TTY_REQUIRED`). The record is
+  challenge at a controlling terminal (stdin and stderr are TTYs). The challenge is random and
+  fresh per ceremony, shown only on that terminal directly under the manifest it approves, and
+  never stored. *(Amended 2026-10-01: it was the first 8 hex characters of `manifestHash`, which
+  `run manifest` already prints, so a session that had seen the manifest output could relay the
+  answer before the operator reviewed anything. `run manifest` no longer prints a challenge.)* No
+  flag, environment variable or piped input can mint one (`APPROVAL_TTY_REQUIRED`). The record is
   written with exclusive create and owner-only permissions; default expiry is 60 minutes and a
   manifest may shorten but never lengthen it.
 - Before any spawn the engine recomputes the manifest from the actual invocation and refuses
