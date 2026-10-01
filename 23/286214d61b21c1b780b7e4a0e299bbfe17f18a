@@ -1,0 +1,33 @@
+goal-gen/backend/src/real-run/real-run-engine.ts
+  s_c1e36b8311e25e::t_c06ac5ad01e8c0 71-88,175-184,230-238,269-274,288,298-303,305
+goal-gen/tests/cli/provider-run-v2-stub.test.ts
+  s_c1e36b8311e25e::t_2fafb349e706be 43
+goal-gen/tests/real-run/real-run-hooks.test.ts
+  s_c22a55971bf452::t_3788d58bf39ef3 1-134
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_7dafa00f0cfa6d 162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "23286214d61b21c1b780b7e4a0e299bbfe17f18a",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    },
+    "s_c22a55971bf452": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "346b7ee8-87ce-41ac-9e4c-bd1225aec27a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
