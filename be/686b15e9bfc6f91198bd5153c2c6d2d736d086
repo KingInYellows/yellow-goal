@@ -1,0 +1,29 @@
+goal-gen/backend/src/cli/provider-run-v2-real.ts
+  s_c1e36b8311e25e::t_d2a89046035e05 1-204
+goal-gen/backend/src/cli/protocol-run-options.ts
+  s_c1e36b8311e25e::t_c1f433481fdcd0 5,20-28,35-50,53,62-63,77,81-88,92
+goal-gen/backend/src/cli/run-command.ts
+  s_c1e36b8311e25e::t_9fd39435973e27 141-145
+goal-gen/tests/cli/protocol-run-options.test.ts
+  s_c1e36b8311e25e::t_ac84703b3eab2a 62-91
+goal-gen/tests/cli/provider-run-v2-real.test.ts
+  s_c1e36b8311e25e::t_0c2f9896878257 1-171
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_97a2c6134fc1ce 171,178,195,199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "be686b15e9bfc6f91198bd5153c2c6d2d736d086",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
