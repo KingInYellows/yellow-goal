@@ -1,0 +1,21 @@
+goal-gen/plans/approval-gated-real-execution-04-protocol-v2-and-release.md
+  s_c1e36b8311e25e::t_a130ce413eb4ad 268
+goal-gen/scripts/install-smoke.sh
+  s_c1e36b8311e25e::t_0a606cceb9fb94 224-225,231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "cdd1ccb26bbb80a16cc03bf0b9dd0dc578ce7e54",
+  "prompts": {},
+  "sessions": {
+    "s_c1e36b8311e25e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31d250b1-ce81-468b-9219-b8ae3b40a7fe",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
