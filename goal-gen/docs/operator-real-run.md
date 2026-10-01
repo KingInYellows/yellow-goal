@@ -6,9 +6,10 @@
 
 Decision: [ADR-0020](decisions/0020-approval-gated-real-execution.md). Spec:
 [`plans/specs/approval-gated-real-execution.md`](../plans/specs/approval-gated-real-execution.md)
-(AGX-R1..R35). Status: steps 1–2 are implemented. The real-run engine behind step 3 exists
-(shell 03) but has no command yet: the `run --protocol v2 --executor agx-claude-code` surface lands
-with shell 04. Step 4 lands with a later slice.
+(AGX-R1..R35). Status: steps 1–3 are implemented — step 3 is `run --protocol v2 --executor
+agx-claude-code`, released as goal-gen 0.3.0. Step 4 is yours: reproduce the bundle and decide. CI
+exercises the whole flow only as a zero-spend [rehearsal](#rehearsal-fake-worker-zero-spend) with a
+fake worker; the production command below is never run there.
 
 All paths are operator-supplied arguments; the engine has no `runtime/` concept. In the Yellow
 Harness workspace, put approvals, bundles and ledgers under `runtime/`.
@@ -76,10 +77,36 @@ example above is the probe's default).
 The approval file is consent evidence, not a credential: anything running as you can forge one.
 Never run this step from, or on behalf of, an agent session (ADR-0020 Consequences).
 
-## 3. Run (engine implemented; command lands with shell 04)
+## 3. Run
 
-The real-run command (`run --protocol v2 --executor agx-claude-code <same flags as step 1>
---approval <path>`) lands with shell 04. The engine it will call already runs, in this order:
+```bash
+goal-gen run <request.json> --protocol v2 --executor agx-claude-code \
+  <same flags as step 1> --approval runtime/approvals/<name>.json
+```
+
+Real spend. Pass exactly the flags you approved in step 1 — the manifest is recomputed from them
+and must hash to the approved one. `--yes`/`-y` is a usage error (exit 2): the approval replaces the
+DoD confirmation, so there is no `gate.*` event and no prompt. `--stub-scenario`, `--timeout-ms` and
+`--allow-guardrail-override` are usage errors too, as is `--executor claude-code` under v2 (that
+legacy executor is never reachable from Protocol v2). Discovery: `goal-gen capabilities --json
+--protocol v2` lists `supportedProtocols` and `run.executor.agx-claude-code`; bare `capabilities
+--json` stays byte-identical Protocol v1.
+
+stdout is a run-event/v1 JSON Lines stream, and only after the approval is consumed:
+
+| Event | When | Payload |
+|---|---|---|
+| `run.start` | once, right after consumption | `protocolVersion` (v2), `executor` `agx-claude-code`, `simulation: false`, `targetRepository`, `targetRepositoryHonored: false`, `approvalId`, `manifestHash`, `profile {id, version, digest}`, `caps` |
+| `run.spend` | once per metered worker attempt | `approvalId`, `costUsd` (or `null`), `turns`, `durationMs`, `exitClass` |
+| `run.summary` | once, terminal | `outcome` = `verified` (`bundleDir`, `outOfScopeChanges`) · `verification-rejected` (`bundleDir`, `reasons`, `outOfScopeChanges`) · `worker-failed` (`reason`, `evidence`; no bundle) |
+
+A `refused` invocation emits **no events**: stdout stays empty and stderr carries one
+`{"error":{"code","message","approvalId"?}}` line (`approvalId` only when a valid approval had been
+read, e.g. `AUTH_MODE_MISMATCH`, `APPROVAL_CONSUMED`). Exit codes: `0` verified (awaiting you,
+never accepted); `1` refusal, `worker-failed` (`RUN_WORKER_FAILED`), `verification-rejected`
+(`RUN_VERIFICATION_REJECTED`) or a broken stdout (`RUN_STDOUT_TRANSPORT_FAILED`); `2` usage.
+
+The engine runs, in this order:
 
 1. Recompute the manifest from the invocation's flags and verify the approval against it.
 2. Refuse a mismatched credential (`AUTH_MODE_MISMATCH`), an unscoped allowlist
@@ -122,11 +149,16 @@ Files the worker changed outside the allowed paths are listed in `outOfScopeChan
 They are never part of the candidate and never fail the run. The worker's own exit status and
 narrative never decide success. Nothing is committed, merged or pushed.
 
-## 4. Reproduce and accept (not yet implemented)
+## 4. Reproduce and accept
 
-Placeholder — `acceptance reproduce <bundle-dir>` in a fresh process, then the operator's final
-accept decision recorded as evidence (AGX-R20). No engine verb ever marks a real-run candidate
-accepted.
+```bash
+goal-gen acceptance reproduce <bundle-dir> --json
+```
+
+Run it in a fresh process against the `bundleDir` from `run.summary`. It replays the recorded
+candidate and must reproduce the engine's decision (`decision.accepted: true` for a `verified`
+run). Then read the diff yourself and record your accept decision as evidence (AGX-R20). No engine
+verb ever marks a real-run candidate accepted, and nothing is committed, merged or pushed for you.
 
 ## Refusal codes
 
@@ -150,3 +182,91 @@ accepted.
 | `EVIDENCE_WRITE_FAILED` | The spend ledger or bundle could not be written after the worker ran (including a ledger destination that failed its re-check just before the write); reported as a `worker-failed` outcome (`evidence-write-failed`) with the spend so far, and with the candidate and verifier decision when the bundle was the failed write |
 | `RUN_CANCELLED` | The run was cancelled before the approval was consumed; the approval stays usable and nothing spawned |
 | `TOOLS_UNCONFINED` | An allowed tool is not a filesystem tool path-scoped to the scratch worktree (`Read`/`Edit`/`Write`/`MultiEdit`/`Glob`/`Grep` with a relative in-worktree specifier such as `Edit(./site.json)`, built only from letters, digits, `.`, `_`, `-`, `*` and `/`); `Bash`, unscoped, absolute, `~`, `..`, whitespace and multi-rule specifiers are refused, as are an empty allowlist and write rules naming `.git`, `.claude`, `.mcp.json`, `CLAUDE.local.md` (any case) or a dotfile wildcard. Nothing spawned |
+| `USAGE_ERROR` (real run) | `--yes`/`-y`, `--stub-scenario`, `--timeout-ms` or `--allow-guardrail-override` with `agx-claude-code`; `agx-claude-code` without `--protocol v2`; a missing `--approval`; manifest flags or `--approval` on a stub or legacy run; `--executor claude-code` under `--protocol v2`. Exit 2, nothing read or spawned |
+| `RUN_WORKER_FAILED` | The run ended `worker-failed` (stderr after the terminal `run.summary`); the message names the reason. Exit 1 |
+| `RUN_VERIFICATION_REJECTED` | The verifier rejected the candidate (stderr after the terminal `run.summary`); the bundle holds the reasons. Exit 1 |
+| `RUN_STDOUT_TRANSPORT_FAILED` | stdout could not carry the event stream (closed pipe, overflow); the engine is aborted. Exit 1 |
+
+## Rehearsal (fake worker, zero spend)
+
+CI proves this runbook end to end without a real `claude`: `bash scripts/operator-real-run-recipe.sh`
+(`npm run test:operator-recipe:real-run`) extracts the `recipe:`-marked fences below and runs them
+from `goal-gen/` against the test-only harness and the fake worker. The harness mints its approvals
+through the injected-terminal seam — CI never runs `run approve`, and these fences never touch the
+production real-run path. They are for rehearsing and for CI; as an operator you run steps 1–4
+above instead. `REH` is a scratch directory you own that is not group- or world-writable.
+`harness` is the test-only wrapper (the script defines it read-only; by hand, define it first):
+
+```bash
+harness() { node node_modules/tsx/dist/cli.mjs tests/harness/real-run-harness.ts "$@"; }
+```
+
+<!-- recipe:rehearsal-setup -->
+```bash
+FLAGS=(--profile 'config-repair@2' --model sonnet --max-turns 8 --per-action-usd 0.5 --total-usd 5
+  --auth-mode subscription --allowed-tool 'Edit(./SITE)' --allowed-tool 'Edit(./site.json)'
+  --allowed-tool 'Read(./**)')
+cat > "$REH/request.json" <<'JSON'
+{"schemaVersion":"yellow-goal/request/v1","requestId":"req-rehearsal-001","target":{"repository":"octocat/example","ref":"main"},"intent":{"goal":"Rehearse the approval-gated real run with the fake worker."},"mode":"approved-implementation","pack":"repository-goal-packet@1","orchestration":{"permissionProfile":"implement","orchestrationProfile":"claude-fable-opus-sonnet@1"},"constraints":{"readOnlyTarget":false,"allowTargetEdits":true}}
+JSON
+"$BIN" request validate "$REH/request.json" > "$REH/validate.json"
+```
+
+Each rehearsal run mints a fresh approval (it is bound to the run's own evidence paths), then runs
+the production argv through the harness. `--record` appends one line per fake-worker invocation.
+
+<!-- recipe:rehearsal-success -->
+```bash
+RUNFLAGS=("${FLAGS[@]}" --bundle-dir "$REH/b-success" --spend-ledger "$REH/l-success.jsonl")
+harness --mode mint-approval "$REH/request.json" "${RUNFLAGS[@]}" --out "$REH/a-success.json" > "$REH/mint-success.json"
+rc=0
+harness --mode protocol-v2 "$REH/request.json" --protocol v2 --executor agx-claude-code \
+  "${RUNFLAGS[@]}" --approval "$REH/a-success.json" \
+  --scenario success --record "$REH/worker.jsonl" --state-dir "$REH/state" \
+  > "$REH/out-success.jsonl" 2> "$REH/err-success.txt" || rc=$?
+echo "$rc" > "$REH/exit-success"
+```
+
+<!-- recipe:rehearsal-wrong-repair -->
+```bash
+RUNFLAGS=("${FLAGS[@]}" --bundle-dir "$REH/b-wrong" --spend-ledger "$REH/l-wrong.jsonl")
+harness --mode mint-approval "$REH/request.json" "${RUNFLAGS[@]}" --out "$REH/a-wrong.json" > "$REH/mint-wrong.json"
+rc=0
+harness --mode protocol-v2 "$REH/request.json" --protocol v2 --executor agx-claude-code \
+  "${RUNFLAGS[@]}" --approval "$REH/a-wrong.json" \
+  --scenario wrong-repair --record "$REH/worker.jsonl" --state-dir "$REH/state" \
+  > "$REH/out-wrong.jsonl" 2> "$REH/err-wrong.txt" || rc=$?
+echo "$rc" > "$REH/exit-wrong"
+```
+
+<!-- recipe:rehearsal-budget-stop -->
+```bash
+RUNFLAGS=("${FLAGS[@]}" --bundle-dir "$REH/b-budget" --spend-ledger "$REH/l-budget.jsonl")
+harness --mode mint-approval "$REH/request.json" "${RUNFLAGS[@]}" --out "$REH/a-budget.json" > "$REH/mint-budget.json"
+rc=0
+harness --mode protocol-v2 "$REH/request.json" --protocol v2 --executor agx-claude-code \
+  "${RUNFLAGS[@]}" --approval "$REH/a-budget.json" \
+  --scenario budget-stop --record "$REH/worker.jsonl" --state-dir "$REH/state" \
+  > "$REH/out-budget.jsonl" 2> "$REH/err-budget.txt" || rc=$?
+echo "$rc" > "$REH/exit-budget"
+```
+
+A spent approval is refused with no events and no second worker invocation, even from the same flags:
+
+<!-- recipe:rehearsal-reused-approval -->
+```bash
+RUNFLAGS=("${FLAGS[@]}" --bundle-dir "$REH/b-success" --spend-ledger "$REH/l-success.jsonl")
+rc=0
+harness --mode protocol-v2 "$REH/request.json" --protocol v2 --executor agx-claude-code \
+  "${RUNFLAGS[@]}" --approval "$REH/a-success.json" \
+  --scenario success --record "$REH/worker.jsonl" --state-dir "$REH/state" \
+  > "$REH/out-reused.jsonl" 2> "$REH/err-reused.txt" || rc=$?
+echo "$rc" > "$REH/exit-reused"
+```
+
+Finally, reproduce the verified bundle in a fresh process (step 4):
+
+<!-- recipe:rehearsal-reproduce -->
+```bash
+"$BIN" acceptance reproduce "$REH/b-success" --json > "$REH/reproduce.json"
+```

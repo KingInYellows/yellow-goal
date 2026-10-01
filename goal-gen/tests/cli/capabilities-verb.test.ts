@@ -56,6 +56,34 @@ describe('capabilities verb (PP-01)', () => {
     expect(capabilities.engineVersion).toBe(await artifactVersion());
   });
 
+  it('--protocol v1 is the unchanged v1 object', async () => {
+    expect(await main(['capabilities', '--json'])).toBe(0);
+    const plain = out();
+    stdout.mockClear();
+    expect(await main(['capabilities', '--json', '--protocol', 'v1'])).toBe(0);
+    expect(out()).toBe(plain);
+  });
+
+  it('--protocol v2 advertises both protocols and the agx real-run capability, never the legacy one', async () => {
+    expect(await main(['capabilities', '--json', '--protocol', 'v2'])).toBe(0);
+    expect(err()).toBe('');
+    const result = JSON.parse(out()) as { protocolVersion: string; supportedProtocols: string[]; capabilities: string[]; schemaVersion: string; engineVersion: string };
+    expect(result.protocolVersion).toBe('yellow-goal/provider-protocol/v2');
+    expect(result.supportedProtocols).toEqual(['yellow-goal/provider-protocol/v1', 'yellow-goal/provider-protocol/v2']);
+    expect(result.capabilities).toContain('run.executor.agx-claude-code');
+    expect(result.capabilities).toContain('run.executor.stub');
+    expect(result.capabilities).not.toContain('run.executor.claude-code');
+    expect(new Set(result.capabilities).size).toBe(result.capabilities.length);
+    expect(result.schemaVersion).toBe(ProviderCapabilitiesSchemaVersion);
+    expect(result.engineVersion).toBe(await artifactVersion());
+  });
+
+  it.each([['v3'], ['']])('rejects unsupported --protocol %j with exit 2', async (value) => {
+    expect(await main(['capabilities', '--protocol', value])).toBe(2);
+    expect(out()).toBe('');
+    expect(JSON.parse(err())).toMatchObject({ error: { code: 'USAGE_ERROR' } });
+  });
+
   it('rejects unexpected positionals before producing stdout', async () => {
     expect(await main(['capabilities', 'extra'])).toBe(2);
     expect(out()).toBe('');

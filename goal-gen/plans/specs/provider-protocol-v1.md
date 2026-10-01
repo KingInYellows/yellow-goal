@@ -4,6 +4,11 @@ Status: accepted design; implementation follows this independently reviewed spec
 Date: 2026-09-04. Owner: Yellow Goal. Consumer: Yellow Plugins.
 Decision: [ADR-0017](../../docs/decisions/0017-provider-protocol-v1-stdio.md).
 
+> **Protocol v2.** `yellow-goal/provider-protocol/v2` is a superset of this contract and is specified by
+> [ADR-0020](../../docs/decisions/0020-approval-gated-real-execution.md) and
+> [`approval-gated-real-execution.md`](approval-gated-real-execution.md) (AGX-R22–R27). This v1
+> contract is unchanged and stays byte-identical (`tests/golden/provider-v1/`).
+
 ## Evidence and scope
 
 Re-derived against Yellow Goal main `5fad39d48bf5df179bc80c3ead5185fd01025629`

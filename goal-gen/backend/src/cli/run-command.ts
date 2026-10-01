@@ -138,6 +138,11 @@ export interface RunCommandOptions {
 
 export async function runRunCommand(argv: string[], options: RunCommandOptions = {}): Promise<number> {
   const invocation = parseRunInvocation(argv);
+  // AGX-R24/R26: the approval-gated real run has its own module and never reaches the engines below.
+  if (invocation.mode === 'provider-v2-real') {
+    const { runProviderV2Real } = await import('./provider-run-v2-real');
+    return runProviderV2Real(invocation);
+  }
   const executorKind = invocation.executor;
 
   // Throws IntakeValidationFailure (VALIDATION_FAILED, exit 1) on a malformed request, a
@@ -146,7 +151,7 @@ export async function runRunCommand(argv: string[], options: RunCommandOptions =
   const allowGuardrailOverride = invocation.allowGuardrailOverride;
   const request = await loadRunRequest(invocation.requestPath);
   const inputs: RunInputs = requestToRunInputs(request, { allowGuardrailOverride });
-  if (invocation.mode === 'provider-v1') return runProviderV1(inputs, request, invocation);
+  if (invocation.mode === 'provider-stub') return runProviderV1(inputs, request, invocation);
   // RR19: with the real executor, the DoD gate is where the operator sees every verify command
   // before real spend — a request FILE alone must not skip it; only the invoking operator's
   // CLI --yes may. The zero-spend stub honors the request's autoConfirmDod as before.

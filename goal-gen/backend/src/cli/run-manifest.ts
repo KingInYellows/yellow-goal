@@ -24,11 +24,11 @@ import { canonicalJson } from '../packs/canonical-json';
 import { sha256Hex } from '../packets/checksums';
 import { candidateProfileDigest, getCandidateOfflineProfile, type CandidateOfflineProfile } from './candidate-offline-profiles';
 import { RunApprovalError } from './errors';
+import { ProviderProtocolV2 } from './provider-capabilities';
 
 export const RunManifestSchemaVersion = 'yellow-goal/run-manifest/v1' as const;
-/** Protocol the approved real run will speak. Declared here, not advertised in `capabilities`
- *  until provider-protocol/v2 lands (AGX-R22). */
-export const RealRunProtocolId = 'yellow-goal/provider-protocol/v2' as const;
+/** Protocol the approved real run speaks; owned by `provider-capabilities` (direction: manifest → capabilities). */
+export const RealRunProtocolId = ProviderProtocolV2;
 /** Default and ceiling for approval lifetime; a manifest may shorten it, never lengthen it (AGX-R3). */
 export const RUN_APPROVAL_MAX_EXPIRY_MINUTES = 60;
 

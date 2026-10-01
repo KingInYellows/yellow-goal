@@ -89,3 +89,7 @@ jobs:
       # state analog via the helper the runbook itself invokes. Temporary
       # fixtures only. Does not npm run runner.
       - run: bash scripts/operator-committed-source-paths.sh
+      # AGX-R33: the real-run runbook's rehearsal fences, driven through the test-only harness and
+      # the fake worker. Zero spend: never `run approve`, a real `claude`, or the production
+      # real-run path. Same job, so the ADR-0016/0019 job inventory is unchanged.
+      - run: bash scripts/operator-real-run-recipe.sh

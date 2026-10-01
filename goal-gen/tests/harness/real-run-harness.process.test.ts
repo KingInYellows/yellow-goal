@@ -101,3 +101,65 @@ describe('real-run harness process, engine mode', () => {
     expect(invocations(fx)).toHaveLength(0);
   });
 });
+
+describe('real-run harness process, rehearsal modes (AGX-R33)', () => {
+  function mintArgs(): string[] {
+    return ['--mode', 'mint-approval', fx.requestPath, ...manifestArgs(fx), '--out', fx.approvalPath];
+  }
+  function v2Args(scenario: string, extra: string[] = []): string[] {
+    return [
+      '--mode', 'protocol-v2', fx.requestPath, '--protocol', 'v2', '--executor', 'agx-claude-code',
+      ...manifestArgs(fx), '--approval', fx.approvalPath, '--scenario', scenario, '--record', fx.recordPath, '--state-dir', fx.stateDir, ...extra,
+    ];
+  }
+  const types = (stdout: string): string[] => stdout.trim().split('\n').map((line) => (JSON.parse(line) as { type: string }).type);
+
+  it('mint-approval: mints an approval the production engine accepts, without consuming it', () => {
+    const minted = runHarness(mintArgs());
+    expect(minted.stderr).toBe('');
+    expect(minted.status).toBe(0);
+    const { approvalId, path: approvalPath } = JSON.parse(minted.stdout) as { approvalId: string; path: string };
+    expect(approvalPath).toBe(fx.approvalPath);
+    expect(existsSync(approvalPath)).toBe(true);
+    expect(markerExists(fx, approvalId)).toBe(false);
+  });
+
+  it('mint-approval: a missing --out is a usage error', () => {
+    const args = mintArgs();
+    args.splice(args.indexOf('--out'), 2);
+    expect(runHarness(args).status).toBe(2);
+  });
+
+  it('protocol-v2: the production JSONL stream and exit codes for success, wrong-repair and a reused approval', () => {
+    const { approvalId } = JSON.parse(runHarness(mintArgs()).stdout) as { approvalId: string };
+    const ok = runHarness(v2Args('success'));
+    expect(ok.status).toBe(0);
+    expect(ok.stderr).toBe('');
+    expect(types(ok.stdout)).toEqual(['run.start', 'run.spend', 'run.summary']);
+    expect(JSON.parse(ok.stdout.trim().split('\n')[0]!).payload).toMatchObject({ approvalId, executor: 'agx-claude-code', simulation: false });
+    expect(invocations(fx)).toHaveLength(1);
+
+    const reused = runHarness(v2Args('success'));
+    expect(reused.status).toBe(1);
+    expect(reused.stdout).toBe('');
+    expect(JSON.parse(reused.stderr)).toMatchObject({ error: { code: 'APPROVAL_CONSUMED', approvalId } });
+    expect(invocations(fx)).toHaveLength(1);
+  });
+
+  it('protocol-v2: wrong-repair is verification-rejected with exit 1', () => {
+    runHarness(mintArgs());
+    const rejected = runHarness(v2Args('wrong-repair'));
+    expect(rejected.status).toBe(1);
+    expect(JSON.parse(rejected.stdout.trim().split('\n').at(-1)!).payload).toMatchObject({ outcome: 'verification-rejected' });
+    expect(JSON.parse(rejected.stderr)).toMatchObject({ error: { code: 'RUN_VERIFICATION_REJECTED' } });
+  });
+
+  it('protocol-v2: --yes is a usage error through the production parser (exit 2, nothing spawned)', () => {
+    runHarness(mintArgs());
+    const result = runHarness(v2Args('success', ['--yes']));
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe('');
+    expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: 'USAGE_ERROR' } });
+    expect(invocations(fx)).toHaveLength(0);
+  });
+});

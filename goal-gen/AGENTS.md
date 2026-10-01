@@ -18,7 +18,7 @@ Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction �
 - Committed-source capture: `npm run cli -- acceptance capture-source <profile-id> <repo> <commit> [--json] [--bundle-dir <dir>]` and `npm run cli -- acceptance verify-candidate package-manifest-lockfile <candidate.json> --from-capture <bundle-dir> [--json] [--bundle-dir <dir>]` (VS spec layers 3d/3e; Git object reads of a pinned commit; persist selected bytes; captured-base FILE-CONTENT overlay; not live execution; not verified single-milestone execution completed)
 - Run: `npm run cli -- run <request.json> --executor stub|claude-code` (`stub` only from tests/CI)
 - Real-run approval (ADR-0020): `npm run cli -- run manifest <request.json> …` (offline, zero spend) and `npm run cli -- run approve … --out <path>` (TTY-only human ceremony; never from CI or an autonomous session; not a Protocol v1 capability). Runbook: `docs/operator-real-run.md`.
-- Install gate: `bash scripts/install-smoke.sh` · Operator recipe: `npm run test:operator-recipe` (= `bash scripts/operator-committed-source-paths.sh`; ADR-0019 CI gate) · Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (the migration gate `tests/db/migrations.test.ts` fails otherwise)
+- Install gate: `bash scripts/install-smoke.sh` · Operator recipe: `npm run test:operator-recipe` (= `bash scripts/operator-committed-source-paths.sh`; ADR-0019 CI gate) · Real-run rehearsal: `npm run test:operator-recipe:real-run` (fake worker, zero spend) · Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (the migration gate `tests/db/migrations.test.ts` fails otherwise)
 - Test-only zero-spend run: `npm run cli -- run <request.json> --executor stub`. The M1 runner (`npm run runner -- [--yes] "<goal>"` or `--request <file>`) is human-only: it can invoke real `claude -p`; never copy it into CI or an autonomous session.
 - Lint/format: `TBD` (not configured yet)
 Always run tests + the eval set before declaring a planner or prompt change done.
@@ -50,6 +50,18 @@ v1 = **M1: single executor (Claude Code), serial**, with ground-truth verify + r
 - Protocol v1 is noninteractive and stub-only. Missing required gate consent
   produces structured failure; sign-off is never auto-approved. Real executor
   permission mapping and target-repository execution remain deferred.
+- Protocol v2 (ADR-0020, spec `plans/specs/approval-gated-real-execution.md`) is a superset of v1:
+  `goal-gen capabilities --json --protocol v2` adds `supportedProtocols` and
+  `run.executor.agx-claude-code` (bare `capabilities --json` stays byte-identical v1, pinned by
+  `tests/golden/provider-v1/`); `--protocol v2 --executor stub` is the v1 stub run apart from the
+  protocol id. The real run is `goal-gen run <request.json> --protocol v2 --executor
+  agx-claude-code <run manifest flags> --approval <path>`: it streams `run.start` → `run.spend` →
+  `run.summary` (`outcome` verified | verification-rejected | worker-failed) only after the
+  approval is consumed, a refusal emits no events (one stderr error, exit 1), and `--yes` is a
+  usage error (the approval replaces the DoD gate). `--protocol v2 --executor claude-code` is a
+  usage error — the legacy executor is unreachable from v2. Real spend: human-only, never from CI
+  or an autonomous session; CI rehearses it with the fake worker (`npm run
+  test:operator-recipe:real-run`).
 - The packet compiler's `ENGINE_VERSION` and packet manifest `engineVersion`
   retain their packet-format meaning and are independent of both identities above.
 

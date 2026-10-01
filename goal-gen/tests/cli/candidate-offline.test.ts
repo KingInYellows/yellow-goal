@@ -25,6 +25,11 @@ import {
 import { installedPackageVersion } from '../../backend/src/cli/implementation-revision';
 import { observeFixture, removeObservationRepo } from '../../backend/src/cli/observed-fixture-observer';
 import { runObservedFixtureVerify } from '../../backend/src/cli/observed-fixture-command';
+import { readArtifactVersion } from '../../backend/src/cli/artifact-version';
+
+// The revision is derived from the live package version, so a release bump does not churn this test.
+const LIVE_VERSION = await readArtifactVersion();
+const LIVE_REVISION = new RegExp(`^goal-gen@${LIVE_VERSION.replaceAll('.', '\\.')}#[0-9a-f]{64}$`);
 
 let stdoutSpy: ReturnType<typeof vi.spyOn>;
 let stderrSpy: ReturnType<typeof vi.spyOn>;
@@ -73,8 +78,8 @@ describe('candidate-bound offline milestone', () => {
       expect(alpha.output.outcomes.map((row) => row.status)).toEqual(['passed', 'passed']);
       expect(beta.output.outcomes.map((row) => row.status)).toEqual(['passed', 'passed']);
       expect(alpha.output.identities.candidateTree).not.toBe(beta.output.identities.candidateTree);
-      expect(alpha.output.implementationRevision).toMatch(/^goal-gen@0\.2\.0#[0-9a-f]{64}$/);
-      expect(alpha.output.implementationRevision).not.toBe('goal-gen@0.2.0');
+      expect(alpha.output.implementationRevision).toMatch(LIVE_REVISION);
+      expect(alpha.output.implementationRevision).not.toBe(`goal-gen@${LIVE_VERSION}`);
       expect(alpha.output.implementationRevision).not.toContain(process.execPath);
       expect(alpha.output.runtime).toEqual({
         node: process.version,

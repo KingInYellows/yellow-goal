@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Installed-artifact, zero-spend Provider Protocol v1 smoke. */
+/** Installed-artifact, zero-spend Provider Protocol v1 and v2 smoke (v2 real runs are refused, never spawned). */
 import { execFile, spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -23,6 +23,9 @@ const requiredCapabilities = [
 ];
 const requiredOperations = ['capabilities', 'request.create', 'request.validate', 'run', 'version'];
 const requiredScenarios = ['await-cancel', 'budget-exhausted', 'failed', 'success'];
+
+const V1 = 'yellow-goal/provider-protocol/v1';
+const V2 = 'yellow-goal/provider-protocol/v2';
 
 function assert(value, message) { if (!value) throw new Error(message); }
 
@@ -171,7 +174,7 @@ function assertRun(result, scenario, expected) {
   const starts = events.filter((event) => event.type === 'run.start');
   const summaries = events.filter((event) => event.type === 'run.summary');
   assert(starts.length === 1 && summaries.length === 1 && events[0] === starts[0] && events.at(-1) === summaries[0], `${scenario}: start/terminal cardinality mismatch`);
-  assert(starts[0].payload.protocolVersion === 'yellow-goal/provider-protocol/v1' && starts[0].payload.executor === 'stub' && starts[0].payload.simulation === true && starts[0].payload.targetRepositoryHonored === false && starts[0].payload.stubScenario === expected.scenario, `${scenario}: start payload mismatch`);
+  assert(starts[0].payload.protocolVersion === (expected.protocol ?? V1) && starts[0].payload.executor === 'stub' && starts[0].payload.simulation === true && starts[0].payload.targetRepositoryHonored === false && starts[0].payload.stubScenario === expected.scenario, `${scenario}: start payload mismatch`);
   const summary = summaries[0].payload;
   assert(summary.status === expected.status && typeof summary.goalText === 'string' && typeof summary.costUsd === 'number' && Number.isFinite(summary.costUsd) && summary.costUsd >= 0 && Number.isSafeInteger(summary.replans) && summary.replans >= 0 && Number.isSafeInteger(summary.reextractions) && summary.reextractions >= 0 && Array.isArray(summary.actions) && summary.actions.every((action) => action !== null && typeof action === 'object' && typeof action.actionId === 'string' && (action.status === 'succeeded' || action.status === 'failed') && Number.isSafeInteger(action.attempts) && action.attempts >= 0 && typeof action.costUsd === 'number' && Number.isFinite(action.costUsd) && action.costUsd >= 0) && typeof summary.reason === 'string', `${scenario}: summary contract mismatch`);
   if (expected.terminationReason === undefined) {
@@ -233,6 +236,39 @@ try {
   const signalled = await invoke(['run', requestPath, '--executor', 'stub', '--protocol', 'v1', '--stub-scenario', 'await-cancel', '--timeout-ms', '5000'], { signalAfterWaiting: true });
   assert(signalled.signalled, 'signal scenario never observed stub.waiting');
   assertRun(signalled, 'signal', { scenario: 'await-cancel', status: 'cancelled', terminationReason: 'signal', errorCode: 'RUN_CANCELLED' });
+
+  // --- Provider Protocol v2 (AGX-R22/R23/R26/R27). The v1 assertions above are unchanged. ---
+  const v2Capabilities = await invoke(['capabilities', '--json', '--protocol', 'v2']);
+  assert(v2Capabilities.code === 0 && v2Capabilities.stderr.length === 0, 'v2 capabilities command failed');
+  const v2 = exactlyOneJson(v2Capabilities.stdout, 'v2 capabilities stdout');
+  assert(v2.schemaVersion === 'yellow-goal/provider-capabilities/v1' && v2.protocolVersion === V2 && v2.engineVersion === expectedVersion && v2.requestSchemaVersion === 'yellow-goal/request/v1' && v2.runEventSchemaVersion === 'yellow-goal/run-event/v1', 'v2 capabilities identity mismatch');
+  sameStrings(v2.supportedProtocols, [V1, V2], 'v2 supportedProtocols');
+  sameStrings(v2.operations, requiredOperations, 'v2 capabilities operations');
+  assert(Array.isArray(v2.capabilities) && v2.capabilities.includes('run.executor.agx-claude-code') && v2.capabilities.includes('run.executor.stub') && !v2.capabilities.includes('run.executor.claude-code'), 'v2 capabilities executors mismatch');
+
+  // A v2 stub run equals the v1 stub run apart from the protocol id (AGX-R23).
+  const comparable = (result, protocol) => {
+    const events = parseFramedJsonLines(result.stdout, 'stub parity stdout').map((event) => JSON.parse(JSON.stringify(event, (key, value) => (key === 'runId' || key === 'timestamp' ? '<normalized>' : value === protocol ? '<protocol>' : value))));
+    return JSON.stringify({ code: result.code, events, stderr: result.stderr.toString('utf8') });
+  };
+  const stubV1 = await invoke(['run', requestPath, '--executor', 'stub', '--protocol', 'v1', '--stub-scenario', 'success', '--yes']);
+  const stubV2 = await invoke(['run', requestPath, '--executor', 'stub', '--protocol', 'v2', '--stub-scenario', 'success', '--yes']);
+  assertRun(stubV2, 'v2 stub success', { scenario: 'success', status: 'succeeded', protocol: V2 });
+  assert(comparable(stubV1, V1) === comparable(stubV2, V2), 'v2 stub run differs from the v1 stub run beyond the protocol id');
+
+  // The real run is refused before any spawn when its approval is missing: exit 1, zero stdout bytes.
+  const realFlags = [
+    '--profile', 'config-repair@2', '--max-turns', '8', '--per-action-usd', '0.5', '--total-usd', '5', '--auth-mode', 'subscription',
+    '--allowed-tool', 'Edit(./site.json)', '--bundle-dir', path.join(scratchRoot, 'smoke-bundle'), '--spend-ledger', path.join(scratchRoot, 'smoke-ledger.jsonl'),
+  ];
+  const refused = await invoke(['run', requestPath, '--protocol', 'v2', '--executor', 'agx-claude-code', ...realFlags, '--approval', path.join(scratchRoot, 'missing-approval.json')]);
+  assert(refused.code === 1 && refused.signal === null && refused.stdout.length === 0, 'v2 real run without an approval must exit 1 with zero stdout bytes');
+  assert(errorEnvelope(refused.stderr, 'v2 real run stderr').code === 'APPROVAL_MISSING', 'v2 real run without an approval must be APPROVAL_MISSING');
+
+  // The legacy executor is unreachable from v2 (AGX-R26): usage error, nothing on stdout.
+  const legacy = await invoke(['run', requestPath, '--protocol', 'v2', '--executor', 'claude-code']);
+  assert(legacy.code === 2 && legacy.signal === null && legacy.stdout.length === 0, 'v2 --executor claude-code must exit 2 with zero stdout bytes');
+  assert(errorEnvelope(legacy.stderr, 'v2 legacy executor stderr').code === 'USAGE_ERROR', 'v2 --executor claude-code must be USAGE_ERROR');
 } finally {
   await assertTargetUnchanged(before);
 }

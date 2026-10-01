@@ -34,6 +34,11 @@ import {
   sha256File,
   sha256Hex,
 } from '../../backend/src/cli/implementation-revision';
+import { readArtifactVersion } from '../../backend/src/cli/artifact-version';
+
+// The revision is derived from the live package version, so a release bump does not churn this test.
+const LIVE_VERSION = await readArtifactVersion();
+const LIVE_REVISION = new RegExp(`^goal-gen@${LIVE_VERSION.replaceAll('.', '\\.')}#[0-9a-f]{64}$`);
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const commandSource = readFileSync(
@@ -155,7 +160,7 @@ describe('observed fixture verification', () => {
     expect(result.output.recorder?.exit).toBe(0);
     expect(result.output.recorder?.record?.status).toBe('passed');
     expect(result.output.decision.accepted).toBe(true);
-    expect(result.output.implementationRevision).toMatch(/^goal-gen@0\.2\.0#[0-9a-f]{64}$/);
+    expect(result.output.implementationRevision).toMatch(LIVE_REVISION);
     expect(result.output.implementationRevision).not.toContain(process.version);
     expect(result.output.implementationRevision).not.toContain(process.execPath);
     expect(result.output.runtime).toEqual({
@@ -459,7 +464,7 @@ describe('observed fixture verification', () => {
     }
     const revA = implementationRevision(observedProfileDigest(status));
     const revB = implementationRevision(`${observedProfileDigest(status)}-mutated`);
-    expect(revA).toMatch(/^goal-gen@0\.2\.0#[0-9a-f]{64}$/);
+    expect(revA).toMatch(LIVE_REVISION);
     expect(revA).not.toBe(revB);
     expect(revA).not.toContain(process.version);
     expect(revA).not.toContain(process.execPath);

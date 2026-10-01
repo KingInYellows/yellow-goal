@@ -152,6 +152,7 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: bash scripts/operator-committed-source-paths.sh
+      - run: bash scripts/operator-real-run-recipe.sh
 
   publish:
     name: attach tarball to GitHub Release

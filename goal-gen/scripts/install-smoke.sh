@@ -221,13 +221,14 @@ if (o.schemaVersion !== "yellow-goal/candidate-offline-milestone/v1") {
   throw new Error("unexpected schemaVersion: " + process.argv[1]);
 }
 if (o.decision.accepted !== true) throw new Error("alpha candidate must be accepted: " + process.argv[1]);
-if (!/^goal-gen@0\.2\.0#[0-9a-f]{64}$/.test(o.implementationRevision)) {
+// The revision is `goal-gen@<installed version>#<digest>`; the version comes from the packed artifact.
+if (!new RegExp("^goal-gen@" + process.argv[2].replace(/\./g, "\\.") + "#[0-9a-f]{64}$").test(o.implementationRevision)) {
   throw new Error("implementationRevision must not be a relabeled package version: " + process.argv[1]);
 }
 if (!o.recorder || o.recorder.record.status !== "passed") {
   throw new Error("alpha must write a passed record: " + process.argv[1]);
 }
-' "$out"
+' "$out" "$expected_version"
 test -f "$bundle/COMPLETE"
 out="$("$bin" acceptance verify-candidate config-repair "$cand/beta.json" --json)"
 node -e '

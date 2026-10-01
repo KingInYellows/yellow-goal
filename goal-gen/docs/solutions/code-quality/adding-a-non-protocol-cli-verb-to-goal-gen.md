@@ -102,3 +102,38 @@ pins `docs/operator-committed-source.md` by exact path only.
 12. **`package.json` `files` is a positive allowlist.** It lists `bin/`, `backend/src/`, `packs/`,
     `policies/` and `schemas/`, and there is no `.npmignore`. Anything under `backend/src` ships in
     the tarball, so test-only harnesses and fake workers must live under `tests/`.
+
+## Update — 2026-10-01 (planning shell 04, protocol v2 and release)
+
+13. **An outcome-only engine API needs observer hooks before a protocol layer can stream events.**
+    `runRealRun` (`backend/src/real-run/real-run-engine.ts`) returns only a final outcome, so a
+    protocol layer that must emit `run.start` before the worker spawns has nothing to hook. Add
+    optional observer callbacks at the approval-consume point and at the ledger-write points
+    (the `writeLedger` helper). Hooks are observers: wrap them so a hook throw cannot skip
+    cleanup or the ledger write. `RunEventSchema` is passthrough, so new event types fit
+    `run-event/v1` without a schema bump.
+14. **Capture byte goldens BEFORE changing protocol code.** v1 "byte-identical" was only pinned by
+    field-level `toEqual` assertions, which pass when key order or whitespace drifts. Commit the
+    exact stdout bytes of `capabilities --json`, the stub event streams and the error envelopes
+    first (`tests/golden/provider-v1/`), then change code with a byte-compare test that
+    regenerates them. Related: `capabilities` is strict (`--json` only) and must not import run
+    code (`capabilities-isolation.test.ts`), and `provider-run-v1.ts` hard-codes its
+    `protocolVersion`, so the protocol id must be carried on the parsed invocation and threaded
+    into the start payload.
+15. **CI can never run `run approve`, so rehearsals mint approvals through a test-only harness
+    mode.** `run approve` is a human-only TTY ceremony. Wrap the existing injected-TTY seam
+    (`runRunApprove(..., {terminal})`, as `mintApproval` in `tests/real-run/support.ts` does) in a
+    mode of `tests/harness/real-run-harness.ts`. Keep it under `tests/`, outside `files`, and keep
+    `harness-isolation.test.ts` green so the shipped bin never reaches it. The harness exit codes
+    (0 / failed 1 / usage 2 / refused 3) differ from the CLI contract (0/1/2), so map them
+    deliberately.
+16. **Add a recipe as a second step in the existing operator-recipe job, not a new CI job.**
+    ADR-0016/0019 fix the job inventory (`engine`, `install-smoke`, `operator-recipe`), so a new
+    job would need a superseding ADR. The recipe script extracts `<!-- recipe:NAME -->` fenced
+    bash blocks and evals them, so a new section plus a second script step in the same job gives
+    the coverage with no ADR change.
+17. **Version bumps touch more than `package.json`.** The last bump (09bcd16) changed
+    `package.json`, `package-lock.json`, `CLAUDE.md`, `AGENTS.md` and the release-asset test, and
+    literal `engineVersion: '0.2.0'` fixtures exist in three tests. Replace those literals with
+    `readArtifactVersion()` where they are compared against the live engine. The packet
+    compiler's `ENGINE_VERSION` is packet-format identity and is never bumped with the package.

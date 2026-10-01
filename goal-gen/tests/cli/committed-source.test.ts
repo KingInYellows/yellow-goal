@@ -63,6 +63,11 @@ import {
 } from '../../backend/src/cli/candidate-offline-profiles';
 import { runObservedFixtureVerify } from '../../backend/src/cli/observed-fixture-command';
 import { gitBlobSha1, sha256File, sha256Hex } from '../../backend/src/cli/implementation-revision';
+import { readArtifactVersion } from '../../backend/src/cli/artifact-version';
+
+// The revision is derived from the live package version, so a release bump does not churn this test.
+const LIVE_VERSION = await readArtifactVersion();
+const LIVE_REVISION = new RegExp(`^goal-gen@${LIVE_VERSION.replaceAll('.', '\\.')}#[0-9a-f]{64}$`);
 
 /** Synthetic object name for usage-error cases. Not a live yellow-goal commit. */
 const UNUSED_COMMIT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -731,7 +736,7 @@ describe('committed-source capture', () => {
       expect(result.output.recorder).toBeNull();
       expect(result.output.exclusions).toEqual(['dirty', 'staged', 'untracked', 'ignored']);
       expect(result.output.sourceIntegrity.mutated).toBe(false);
-      expect(result.output.implementationRevision).toMatch(/^goal-gen@0\.2\.0#[0-9a-f]{64}$/);
+      expect(result.output.implementationRevision).toMatch(LIVE_REVISION);
       expect(gitOut(dir, ['rev-parse', 'HEAD'])).toBe(later);
     } finally {
       await rm(dir, { recursive: true, force: true });

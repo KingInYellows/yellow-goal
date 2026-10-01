@@ -109,7 +109,7 @@ describe('provider v1 stub run', () => {
     const code = await runProviderV1(
       inputs,
       canonical,
-      { mode: 'provider-v1', requestPath: 'unused', executor: 'stub', yes: true, allowGuardrailOverride: false, timeoutMs: 1_000, timeoutExplicit: true, scenario: 'success' },
+      { mode: 'provider-stub', protocol: 'v1', requestPath: 'unused', executor: 'stub', yes: true, allowGuardrailOverride: false, timeoutMs: 1_000, timeoutExplicit: true, scenario: 'success' },
       { engineFactory: () => fixture.deps },
     );
     const events = lines();
@@ -149,7 +149,7 @@ describe('provider v1 stub run', () => {
     const code = await runProviderV1(
       inputs,
       canonical,
-      { mode: 'provider-v1', requestPath: 'unused', executor: 'stub', yes: false, allowGuardrailOverride: false, timeoutMs: 1_000, timeoutExplicit: true, scenario: 'success' },
+      { mode: 'provider-stub', protocol: 'v1', requestPath: 'unused', executor: 'stub', yes: false, allowGuardrailOverride: false, timeoutMs: 1_000, timeoutExplicit: true, scenario: 'success' },
       {
         engineFactory: () => fixture.deps,
         confirmFactory: (protocolConfirm) => async (dod, signal, kind) => kind === 'dod' ? true : protocolConfirm(dod, signal, kind),
@@ -175,7 +175,7 @@ describe('provider v1 stub run', () => {
     const code = await runProviderV1(
       inputs,
       canonical,
-      { mode: 'provider-v1', requestPath: 'unused', executor: 'stub', yes: false, allowGuardrailOverride: false, timeoutMs: 1_000, timeoutExplicit: true, scenario: 'success' },
+      { mode: 'provider-stub', protocol: 'v1', requestPath: 'unused', executor: 'stub', yes: false, allowGuardrailOverride: false, timeoutMs: 1_000, timeoutExplicit: true, scenario: 'success' },
       {
         signals,
         writerFactory: () => ({
@@ -200,7 +200,7 @@ describe('provider lifecycle failure and race contract', () => {
   const canonical = requestExecutionSample as RepositoryGoalRequest;
   const inputs = requestToRunInputs(canonical);
   const invocation = {
-    mode: 'provider-v1', requestPath: 'unused', executor: 'stub', yes: true,
+    mode: 'provider-stub', protocol: 'v1', requestPath: 'unused', executor: 'stub', yes: true,
     allowGuardrailOverride: false, timeoutMs: 1000, timeoutExplicit: true, scenario: 'success',
   } as const;
   function recording(onEvent?: (event: Record<string, unknown>) => void) {
@@ -394,7 +394,7 @@ describe('provider repeated signal lifetime', () => {
     });
     const canonical = requestExecutionSample as RepositoryGoalRequest;
     expect(await runProviderV1(requestToRunInputs(canonical), canonical, {
-      mode: 'provider-v1', requestPath: 'unused', executor: 'stub', yes: true,
+      mode: 'provider-stub', protocol: 'v1', requestPath: 'unused', executor: 'stub', yes: true,
       allowGuardrailOverride: false, timeoutMs: 1000, timeoutExplicit: true, scenario: 'success',
     }, {
       signals, writerFactory: () => ({
@@ -428,7 +428,7 @@ describe('provider repeated signal lifetime', () => {
       return 'flushed' as const;
     });
     expect(await runProviderV1(requestToRunInputs(canonical), canonical, {
-      mode: 'provider-v1', requestPath: 'unused', executor: 'stub', yes: true,
+      mode: 'provider-stub', protocol: 'v1', requestPath: 'unused', executor: 'stub', yes: true,
       allowGuardrailOverride: false, timeoutMs: 1000, timeoutExplicit: true, scenario: 'success',
     }, { signals, writerFactory: () => ({ failure: undefined, write() {}, finalize }) })).toBe(0);
     expect(stderr).not.toHaveBeenCalled();
@@ -447,7 +447,7 @@ it('retains both handlers while an active cancellation waits for deferred finali
   const drain = new Promise<void>(resolve => { release = resolve; });
   const finalize = vi.fn(async () => { entered(); await drain; return 'flushed' as const; });
   const running = runProviderV1(requestToRunInputs(canonical), canonical, {
-    mode: 'provider-v1', requestPath: 'unused', executor: 'stub', yes: true,
+    mode: 'provider-stub', protocol: 'v1', requestPath: 'unused', executor: 'stub', yes: true,
     allowGuardrailOverride: false, timeoutMs: 1000, timeoutExplicit: true, scenario: 'await-cancel',
   }, { signals, writerFactory: () => ({
     failure: undefined, finalize,

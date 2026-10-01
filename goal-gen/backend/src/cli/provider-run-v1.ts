@@ -7,9 +7,9 @@ import type { GoalSpec } from '../planner/types';
 import type { RunInputs } from '../run/request-to-run';
 import type { ExtractRequest, LlmExtractor, RunSummary } from '../types';
 import type { ParsedRunInvocation } from './protocol-run-options';
-import { ProviderProtocolVersion } from './provider-capabilities';
+import { ProviderProtocolV2, ProviderProtocolVersion } from './provider-capabilities';
 
-type ProviderInvocation = Extract<ParsedRunInvocation, { mode: 'provider-v1' }>;
+type ProviderInvocation = Extract<ParsedRunInvocation, { mode: 'provider-stub' }>;
 type TerminationReason = 'signal' | 'timeout' | 'gate-required';
 export type ProviderEngineDeps = Pick<OrchestratorDeps, 'extractor' | 'executor' | 'verifier' | 'worktreeProvider'>;
 
@@ -203,7 +203,7 @@ export async function runProviderV1(
     events.next('run.start', {
       goalText: inputs.goalText, executor: 'stub', autoConfirm, allowGuardrailOverride: invocation.allowGuardrailOverride,
       runConfig: inputs.runConfig, targetRepository: request.target.repository, targetRepositoryHonored: false,
-      protocolVersion: ProviderProtocolVersion, stubScenario: invocation.scenario, simulation: true,
+      protocolVersion: invocation.protocol === 'v2' ? ProviderProtocolV2 : ProviderProtocolVersion, stubScenario: invocation.scenario, simulation: true,
     });
     if (!transportFailed && activeWriter.failure === undefined) {
       if (controller.signal.aborted) {

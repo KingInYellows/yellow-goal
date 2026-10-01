@@ -1,6 +1,6 @@
 {
   "name": "goal-gen",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Self-hosted GOAL generator — see docs/prd.md. This is the initial scaffold (eval harness first, per ADR-0013).",
@@ -20,6 +20,7 @@
   "scripts": {
     "test": "vitest run",
     "test:operator-recipe": "bash scripts/operator-committed-source-paths.sh",
+    "test:operator-recipe:real-run": "bash scripts/operator-real-run-recipe.sh",
     "test:watch": "vitest",
     "eval": "vitest run tests/evals",
     "eval:planner": "vitest run tests/evals/planner",

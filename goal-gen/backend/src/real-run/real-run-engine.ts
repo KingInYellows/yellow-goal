@@ -68,6 +68,24 @@ export type RealRunInput = {
    * afterwards the worker is killed and the outcome is `worker-failed` `cancel`.
    */
   signal?: AbortSignal;
+  /**
+   * Observer, called once immediately after the approval is consumed — so only when every pre-spawn
+   * refusal passed. A throw never skips cleanup: it surfaces as `worker-failed` `engine-error`.
+   */
+  onStarted?: (info: RealRunStarted) => void;
+  /**
+   * Observer, called exactly where a ledger entry is recorded (one per spawn, and for an executor
+   * that threw), whether or not the ledger write succeeded, before the outcome resolves. Same
+   * throw contract as `onStarted`.
+   */
+  onSpend?: (spend: RealRunSpend) => void;
+};
+
+export type RealRunStarted = {
+  approvalId: string;
+  manifestHash: string;
+  manifest: RunManifest;
+  targetRepository: string;
 };
 
 /** Executor failure classes that mean no worker process was ever started. */
@@ -154,6 +172,16 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Runs an observer hook; a throw is returned (never rethrown) so cleanup and the outcome proceed. */
+function observe(hook: () => void): string | undefined {
+  try {
+    hook();
+    return undefined;
+  } catch (err) {
+    return errorMessage(err);
+  }
+}
+
 export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
   const clock = input.clock ?? (() => new Date());
   let approvalId: string | undefined;
@@ -199,6 +227,15 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
   for (const sig of TERMINATION_SIGNALS) process.on(sig, onCallerAbort);
 
   try {
+    const startedError = observe(() =>
+      input.onStarted?.({
+        approvalId: verified.approvalId,
+        manifestHash: verified.manifestHash,
+        manifest,
+        targetRepository: prepared.targetRepository,
+      }),
+    );
+    if (startedError !== undefined) return failed('engine-error', { stage: 'onStarted', message: startedError });
     try {
       worktree = await createWorktree({ seedFiles: profile.baseFiles, prefix: REAL_RUN_WORKTREE_PREFIX });
       assertEvidenceDestinations(manifest.evidence, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
@@ -229,7 +266,12 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         () => true,
         () => false,
       );
-      return failed('engine-error', { stage: 'worker', message: errorMessage(err), spendLedgerWritten: ledgered }, spend);
+      const hookError = observe(() => input.onSpend?.(spend));
+      return failed(
+        'engine-error',
+        { stage: 'worker', message: errorMessage(err), spendLedgerWritten: ledgered, ...(hookError === undefined ? {} : { onSpendError: hookError }) },
+        spend,
+      );
     }
 
     const workerEvidence = {
@@ -243,6 +285,7 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     // One ledger entry for the one spawn, whatever its outcome (AGX-R16). A `spawn-error` is
     // metered too: the attempt was made, and its cost is recorded as unknown (null).
     const spend = spendOf(run, reason);
+    let ledgerFailure: Record<string, unknown> | undefined;
     try {
       // Each destination is re-checked just before its own write, so a problem with the bundle
       // path can never keep this spend out of the ledger.
@@ -252,12 +295,14 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
       });
       await writeLedger(spend, run.startedAt, run.endedAt ?? run.startedAt);
     } catch (err) {
-      return failed(
-        'evidence-write-failed',
-        { code: 'EVIDENCE_WRITE_FAILED', path: manifest.evidence.spendLedgerPath, message: errorMessage(err), worker: workerEvidence },
-        spend,
-      );
+      ledgerFailure = { code: 'EVIDENCE_WRITE_FAILED', path: manifest.evidence.spendLedgerPath, message: errorMessage(err), worker: workerEvidence };
     }
+    // The observer sees the spend whether or not the ledger write succeeded.
+    const spendHookError = observe(() => input.onSpend?.(spend));
+    if (ledgerFailure !== undefined) {
+      return failed('evidence-write-failed', { ...ledgerFailure, ...(spendHookError === undefined ? {} : { onSpendError: spendHookError }) }, spend);
+    }
+    if (spendHookError !== undefined) return failed('engine-error', { stage: 'onSpend', message: spendHookError }, spend);
     if (reason !== 'success') return failed(reason, workerEvidence, spend);
 
     // An abort (wall-clock expiry, caller cancel, termination signal) that landed while extraction
