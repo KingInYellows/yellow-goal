@@ -1,0 +1,35 @@
+goal-gen/tests/orchestrator/orchestrator-gitdir.test.ts
+  s_85a7632990e61c::t_5c81d7de0205c6 1-68
+goal-gen/tests/spikes/permission-probe-flags.ts
+  s_85a7632990e61c::t_a2441870b08cb6 1-17
+goal-gen/tests/real-run/manifest-fixture.ts
+  s_85a7632990e61c::t_f09718f98c800e 1-31
+goal-gen/tests/cli/write-file-exclusive.test.ts
+  s_85a7632990e61c::t_664f881cfb1092 1-85
+goal-gen/tests/executors/real-run-construction-static.test.ts
+  s_85a7632990e61c::t_48365212157aff 1-45
+goal-gen/tests/executors/fake-worker.test.ts
+  s_85a7632990e61c::t_06ee93f58605e3 13,23-24
+goal-gen/tests/executors/real-run-executor.test.ts
+  s_85a7632990e61c::t_ba2c8206d4107d 28-29,36,172-193
+goal-gen/tests/harness/real-run-harness.test.ts
+  s_85a7632990e61c::t_998c12bc31cff7 10,27-28
+goal-gen/tests/spikes/permission-probe.ts
+  s_85a7632990e61c::t_75cd635820fc36 36,41-42,67,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3cb1fbdb3805b61e8403615281d603297caab5d9",
+  "prompts": {},
+  "sessions": {
+    "s_85a7632990e61c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2061451-99e5-4e5f-90be-06fd28d8dc4a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
