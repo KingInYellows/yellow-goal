@@ -579,7 +579,7 @@ export class Orchestrator {
           worktreePath: handle.worktreePath,
           signal: this.signal,
           budgetUsdRemaining: Math.max(0, this.config.maxBudgetUsd - state.accumulatedCostUsd),
-          ...(handle.gitDir === undefined ? {} : { gitDir: handle.gitDir }),
+          gitDir: handle.gitDir,
         };
         const agentRun = await this.executor.run(action, ctx);
         agentRun.planId = planId; // the executor cannot know the plan id; stamp it (spec: AgentRun.planId)

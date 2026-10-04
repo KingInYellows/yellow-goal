@@ -128,9 +128,10 @@ export interface WorktreeHandle {
   initialSha: string;
   /**
    * The worktree's git dir, resolved at creation before any agent ran (it lives under `root`,
-   * outside `worktreePath`). Post-run git calls pin to it via `pinnedGit`.
+   * outside `worktreePath`). Post-run git calls pin to it via `pinnedGit`. Required, so no
+   * provider can silently skip the pin.
    */
-  gitDir?: string;
+  gitDir: string;
   /** Idempotent teardown: worktree remove --force → prune → rm scratch root. */
   cleanup(): Promise<void>;
 }

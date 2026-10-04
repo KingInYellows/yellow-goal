@@ -7,8 +7,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { candidateProfileDigest, getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
-import type { RunManifest } from '../../backend/src/cli/run-manifest';
+import { realRunManifest } from '../real-run/manifest-fixture';
 
 const packageRoot = path.join(__dirname, '..', '..');
 const tsx = path.join(packageRoot, 'node_modules/tsx/dist/cli.mjs');
@@ -25,28 +24,8 @@ afterEach(async () => {
 });
 
 async function writeManifest(): Promise<string> {
-  const profile = getCandidateOfflineProfile('config-repair', '2');
-  const manifest: RunManifest = {
-    schemaVersion: 'yellow-goal/run-manifest/v1',
-    engineVersion: '0.2.0',
-    protocolId: 'yellow-goal/provider-protocol/v2',
-    profile: { id: profile.id, version: profile.version, digest: candidateProfileDigest(profile) },
-    requestHash: 'd'.repeat(64),
-    model: 'sonnet',
-    permissionMode: 'acceptEdits',
-    allowedTools: ['Edit(./SITE)', 'Edit(./site.json)', 'Read(./**)'],
-    disallowedTools: [],
-    maxTurns: 8,
-    caps: { perActionUsd: 0.5, totalUsd: 5 },
-    // Nested inside the spawnSync timeout below, so the executor times out first and cleans up.
-    actionTimeoutMs: 10_000,
-    runWallClockMs: 120_000,
-    authMode: 'subscription',
-    attemptCount: 1,
-    expiresInMinutes: 60,
-    // The executor never reads the evidence destinations; the engine owns them (AGX-R8a).
-    evidence: { bundleDir: '/nonexistent/goal-gen/bundle', spendLedgerPath: '/nonexistent/goal-gen/spend.jsonl' },
-  };
+  // Nested inside the spawnSync timeout below, so the executor times out first and cleans up.
+  const manifest = realRunManifest({ actionTimeoutMs: 10_000, runWallClockMs: 120_000 });
   const file = path.join(dir, 'manifest.json');
   await writeFile(file, JSON.stringify(manifest), 'utf8');
   return file;

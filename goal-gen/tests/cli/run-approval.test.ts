@@ -227,13 +227,33 @@ describe('run approve — review hardening', () => {
     });
   });
 
-  it('caps a long goal at 500 characters on one line', async () => {
+  it('caps a long goal at 500 characters on one line after scanning only 501 code points', async () => {
     const goal = 'g'.repeat(900);
     await writeFile(requestPath, `${JSON.stringify({ ...requestExecutionSample, intent: { ...requestExecutionSample.intent, goal } })}\n`, 'utf8');
-    const { terminal, text } = fakeTerminal(await challengeFor());
-    await runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'long.json')], { terminal });
+    const { terminal, text } = fakeTerminal(null);
+    const originalIterator = String.prototype[Symbol.iterator];
+    let scanned = 0;
+    vi.spyOn(String.prototype, Symbol.iterator).mockImplementation(function* (this: string) {
+      const isGoal = String(this) === goal;
+      for (const codePoint of originalIterator.call(this)) {
+        if (isGoal && ++scanned > 501) throw new Error('goal iteration exceeded the display bound');
+        yield codePoint;
+      }
+      return undefined;
+    });
+    await expectCode(runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'long.json')], { terminal }), 'APPROVAL_DECLINED');
+    expect(scanned).toBe(501);
     const goalLine = text().split('\n').find((line) => line.startsWith('goal:'))!;
     expect(goalLine).toBe(`goal:         ${JSON.stringify(`${'g'.repeat(500)}…`)}`);
+  });
+
+  it('caps by code points, so an astral character at the cap is never split', async () => {
+    const goal = `${'g'.repeat(499)}${'😀'.repeat(10)}`;
+    await writeFile(requestPath, `${JSON.stringify({ ...requestExecutionSample, intent: { ...requestExecutionSample.intent, goal } })}\n`, 'utf8');
+    const { terminal, text } = fakeTerminal(await challengeFor());
+    await runRunApprove([...manifestFlags(), '--out', path.join(tempDir, 'astral.json')], { terminal });
+    const goalLine = text().split('\n').find((line) => line.startsWith('goal:'))!;
+    expect(goalLine).toBe(`goal:         ${JSON.stringify(`${'g'.repeat(499)}😀…`)}`);
   });
 
   it('accepts the challenge with surrounding whitespace; a longer answer declines', async () => {

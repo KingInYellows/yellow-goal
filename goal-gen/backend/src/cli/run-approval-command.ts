@@ -81,7 +81,13 @@ function displayText(value: string): string {
   // DEL/C1 (U+009B is CSI on some terminals), soft hyphen, bidi marks/overrides, zero-width and
   // line separators, variation selectors, BOM, and Unicode tag characters ("ASCII smuggling").
   const cleaned = value.replace(/[\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufe00-\ufe0f\ufeff\u{e0000}-\u{e007f}]/gu, '?');
-  const capped = cleaned.length > DISPLAY_MAX_CHARS ? `${cleaned.slice(0, DISPLAY_MAX_CHARS)}…` : cleaned;
+  // Cap by code points, not UTF-16 units, so the cut never leaves a lone surrogate.
+  const codePoints: string[] = [];
+  for (const codePoint of cleaned) {
+    codePoints.push(codePoint);
+    if (codePoints.length > DISPLAY_MAX_CHARS) break;
+  }
+  const capped = codePoints.length > DISPLAY_MAX_CHARS ? `${codePoints.slice(0, DISPLAY_MAX_CHARS).join('')}…` : cleaned;
   return JSON.stringify(capped);
 }
 
