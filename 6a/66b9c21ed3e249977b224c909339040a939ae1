@@ -1,0 +1,42 @@
+goal-gen/tests/cli/run-approval-main.test.ts
+  s_85a7632990e61c::t_d3a9736d763f67 1-110,112
+  s_85a7632990e61c::t_3c8029d9241522 111,113-118
+goal-gen/backend/src/cli/candidate-offline-profiles.ts
+  s_85a7632990e61c::t_d96ca88f162a6d 106-110,117,121
+goal-gen/backend/src/cli/provider-run-v2-real.ts
+  s_85a7632990e61c::t_69dea12f92600d 16,171
+goal-gen/backend/src/cli/run-approval-verifier.ts
+  s_85a7632990e61c::t_d2fd886ec9059a 15,92,137
+goal-gen/backend/src/cli/run-approval.ts
+  s_85a7632990e61c::t_10e69e1e710e87 11,26-27,34-41,43,48-58,72
+goal-gen/backend/src/cli/run-manifest.ts
+  s_85a7632990e61c::t_c1701ceaa659f9 25-30,172-173,181-182
+goal-gen/backend/src/real-run/outcome.ts
+  s_85a7632990e61c::t_3b6eacdada8664 8,11,29-77,88-93
+goal-gen/backend/src/real-run/real-run-engine.ts
+  s_85a7632990e61c::t_60f2456fdb0c68 51-60,184-193,218-223,258,263-264,269,291-294,299,305,310,320,325-331,333-334,338,344-347,349-352,361-366,374-381,390,399,406
+goal-gen/docs/decisions/0020-approval-gated-real-execution.md
+  s_85a7632990e61c::t_a9652c60778154 81-83
+goal-gen/tests/cli/run-approval-verifier.test.ts
+  s_85a7632990e61c::t_67015112a527e8 132-138
+goal-gen/tests/cli/run-manifest.test.ts
+  s_85a7632990e61c::t_55ca6df865a2a9 10,148-159
+goal-gen/tests/real-run/real-run-engine.test.ts
+  s_85a7632990e61c::t_7a2e2db9d4a633 390-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6a66b9c21ed3e249977b224c909339040a939ae1",
+  "prompts": {},
+  "sessions": {
+    "s_85a7632990e61c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d2061451-99e5-4e5f-90be-06fd28d8dc4a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
