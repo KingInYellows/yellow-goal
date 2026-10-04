@@ -129,6 +129,13 @@ describe('verifyRunApproval', () => {
     await expectCode(verify(), 'APPROVAL_INVALID');
   });
 
+  it('MANIFEST_INVALID: minting re-validates the manifest instead of trusting its type', () => {
+    const widened = { ...manifest(), permissionMode: 'plan' } as unknown as RunManifest;
+    expect(() => mintRunApprovalRecord(widened, { clock: () => MINTED_AT })).toThrow(
+      expect.objectContaining({ code: 'MANIFEST_INVALID' }),
+    );
+  });
+
   it('APPROVAL_INVALID: expiresAt lengthened by hand', async () => {
     await rewrite((value) => {
       value.expiresAt = '2026-09-28T14:00:00.000Z';

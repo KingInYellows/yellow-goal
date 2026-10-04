@@ -12,8 +12,7 @@
 import { access, mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { RunApprovalError, type RunApprovalErrorCode } from './errors';
-import { errnoDetails, fsyncDirectory, isErrnoCode, parseRunApprovalRecord, writeFileExclusive } from './run-approval';
+import { errnoDetails, fsyncDirectory, isErrnoCode, parseRunApprovalRecord, refuseApproval as refuse, systemClock, writeFileExclusive } from './run-approval';
 import { computeManifestHash, type RunManifest } from './run-manifest';
 
 /** Tolerated clock skew for a record's `createdAt` being ahead of this host's clock. */
@@ -58,10 +57,6 @@ export function approvalMarkerPath(approvalId: string, options: ApprovalStateOpt
   return path.join(options.stateDir ?? defaultApprovalStateDir(), 'consumed', approvalId.toLowerCase());
 }
 
-function refuse(code: RunApprovalErrorCode, message: string, details?: unknown): never {
-  throw new RunApprovalError(code, message, details);
-}
-
 /** A state-dir that cannot be read or written refuses the run (fail closed) with its own code. */
 function stateUnavailable(filePath: string, err: unknown): never {
   refuse('APPROVAL_STATE_UNAVAILABLE', `approval state at ${filePath} is unavailable: ${err instanceof Error ? err.message : String(err)}`, errnoDetails(filePath, err));
@@ -94,7 +89,7 @@ export async function verifyRunApproval(input: VerifyRunApprovalInput): Promise<
     refuse('APPROVAL_INVALID', `cannot read approval ${approvalPath}: ${err instanceof Error ? err.message : String(err)}`, errnoDetails(approvalPath, err));
   }
   const record = parseRunApprovalRecord(raw);
-  const now = (input.clock ?? (() => new Date()))().getTime();
+  const now = (input.clock ?? systemClock)().getTime();
 
   // A record dated in the future would otherwise stay valid past the 60-minute ceiling (the record
   // parser already pins expiresAt = createdAt + expiresInMinutes <= 60).
@@ -139,7 +134,7 @@ export async function consumeRunApproval(
   verified: VerifiedApproval,
   options: ApprovalStateOptions & { clock?: () => Date } = {},
 ): Promise<void> {
-  const now = (options.clock ?? (() => new Date()))();
+  const now = (options.clock ?? systemClock)();
   assertUnexpired(now.getTime(), verified.expiresAt);
   const markerPath = approvalMarkerPath(verified.approvalId, options);
   const consumedDir = path.dirname(markerPath);

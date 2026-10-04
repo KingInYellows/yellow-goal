@@ -32,12 +32,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { PassThrough } from 'node:stream';
 import { CliUsageError } from '../../backend/src/cli/errors';
 import { parseRunInvocation } from '../../backend/src/cli/protocol-run-options';
 import { runProviderV2Real } from '../../backend/src/cli/provider-run-v2-real';
-import { runRunApprove, type ApprovalTerminal } from '../../backend/src/cli/run-approval-command';
-import { runRunManifest } from '../../backend/src/cli/run-manifest-command';
+import { runRunApprove } from '../../backend/src/cli/run-approval-command';
 import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
 import type { RunManifest } from '../../backend/src/cli/run-manifest';
 import { RUN_MANIFEST_OPTIONS } from '../../backend/src/cli/run-manifest-command';
@@ -46,6 +44,7 @@ import { createWorktree } from '../../backend/src/executors/worktree';
 import { buildFixedAction } from '../../backend/src/real-run/fixed-goal';
 import { runRealRun } from '../../backend/src/real-run/real-run-engine';
 import type { RealRunOutcome } from '../../backend/src/real-run/outcome';
+import { answeringTerminal } from '../real-run/answering-terminal';
 
 const FAKE_WORKER = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'claude-worker', 'fake-claude.mjs');
 
@@ -79,18 +78,6 @@ const OUTCOME_EXIT: Record<RealRunOutcome['kind'], number> = {
   refused: 3,
 };
 
-/** A terminal that types `answer` as soon as the ceremony asks for the challenge. */
-function answeringTerminal(answer: string): ApprovalTerminal {
-  const stdin = Object.assign(new PassThrough(), { isTTY: true });
-  const output = Object.assign(new PassThrough(), { isTTY: true });
-  let text = '';
-  output.on('data', (chunk: Buffer) => {
-    text += chunk.toString('utf8');
-    if (text.includes('Type the challenge') && !stdin.writableEnded) stdin.end(`${answer}\n`);
-  });
-  return { stdin, output };
-}
-
 /** Splits `--mode <m>`, `--scenario`, `--record`, `--state-dir` off the argv, leaving production argv. */
 function splitProductionArgv(argv: string[]): { harness: Record<string, string>; rest: string[] } {
   const { tokens } = parseArgs({
@@ -110,8 +97,7 @@ function splitProductionArgv(argv: string[]): { harness: Record<string, string>;
 
 async function mintApprovalMode(argv: string[]): Promise<number> {
   const { rest } = splitProductionArgv(argv);
-  const { output } = await runRunManifest(rest.filter((arg, index, all) => all[index - 1] !== '--out' && arg !== '--out'));
-  const minted = await runRunApprove(rest, { terminal: answeringTerminal(output.challenge) });
+  const minted = await runRunApprove(rest, { terminal: answeringTerminal() });
   process.stdout.write(`${JSON.stringify({ approvalId: minted.output.approvalId, path: minted.output.path })}\n`);
   return 0;
 }

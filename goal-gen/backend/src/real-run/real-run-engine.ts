@@ -48,7 +48,16 @@ import type { AgentRun, AgentRunFailureClass, Executor } from '../types';
 import { buildRealRunCandidate } from './candidate-builder';
 import { assertEvidenceDestination, assertEvidenceDestinations, REAL_RUN_WORKTREE_PREFIX } from './evidence-destinations';
 import { buildFixedAction } from './fixed-goal';
-import type { RealRunOutcome, RealRunSpend, RealRunWorkerFailureReason, SpendExitClass } from './outcome';
+import type {
+  DestinationRefusedEvidence,
+  EvidenceWriteFailedEvidence,
+  RealRunOutcome,
+  RealRunSpend,
+  RealRunWorkerFailure,
+  SpendExitClass,
+  VerifierDecisionEvidence,
+  WorkerRunEvidence,
+} from './outcome';
 import { createSpendLedger, SpendLedgerSchemaVersion } from './spend-ledger';
 
 export type RealRunInput = {
@@ -172,6 +181,16 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Evidence for a destination that failed its post-consumption re-check. */
+function destinationRefused(err: unknown): DestinationRefusedEvidence {
+  return { code: err instanceof RunApprovalError ? err.code : 'EVIDENCE_DESTINATION_REFUSED', message: errorMessage(err) };
+}
+
+/** Evidence for an evidence file (spend ledger or bundle) that could not be written. */
+function writeFailed(filePath: string, err: unknown): EvidenceWriteFailedEvidence {
+  return { code: 'EVIDENCE_WRITE_FAILED', path: filePath, message: errorMessage(err) };
+}
+
 /** Runs an observer hook; a throw is returned (never rethrown) so cleanup and the outcome proceed. */
 function observe(hook: () => void): string | undefined {
   try {
@@ -196,11 +215,12 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
   }
   const { manifest, verified, profile, action, executor } = prepared;
   const after = { approvalId: verified.approvalId, targetRepositoryHonored: false as const };
-  const failed = (
-    reason: RealRunWorkerFailureReason,
-    evidence: Record<string, unknown>,
-    spend?: RealRunSpend,
-  ): RealRunOutcome => ({ ...after, kind: 'worker-failed', reason, evidence, ...(spend === undefined ? {} : { spend }) });
+  const failed = (failure: RealRunWorkerFailure, spend?: RealRunSpend): RealRunOutcome => ({
+    ...after,
+    kind: 'worker-failed',
+    ...failure,
+    ...(spend === undefined ? {} : { spend }),
+  });
   const writeLedger = (spend: RealRunSpend, startedAt: string, endedAt: string): Promise<void> =>
     createSpendLedger(manifest.evidence.spendLedgerPath, {
       schemaVersion: SpendLedgerSchemaVersion,
@@ -235,18 +255,18 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         targetRepository: prepared.targetRepository,
       }),
     );
-    if (startedError !== undefined) return failed('engine-error', { stage: 'onStarted', message: startedError });
+    if (startedError !== undefined) return failed({ reason: 'engine-error', evidence: { stage: 'onStarted', message: startedError } });
     try {
       worktree = await createWorktree({ seedFiles: profile.baseFiles, prefix: REAL_RUN_WORKTREE_PREFIX });
       assertEvidenceDestinations(manifest.evidence, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
     } catch (err) {
-      if (err instanceof RunApprovalError) return failed('evidence-destination-refused', { code: err.code, message: err.message });
-      return failed('worktree-refused', { message: errorMessage(err) });
+      if (err instanceof RunApprovalError) return failed({ reason: 'evidence-destination-refused', evidence: destinationRefused(err) });
+      return failed({ reason: 'worktree-refused', evidence: { message: errorMessage(err) } });
     }
 
     // Cancelled or out of time before the worker started: spend nothing (no spawn, no ledger).
     // Nothing awaits between this check and the spawn, so no abort can land in between.
-    if (controller.signal.aborted) return failed(wallClockExpired ? 'wall-clock' : 'cancel', { spawned: false });
+    if (controller.signal.aborted) return failed({ reason: wallClockExpired ? 'wall-clock' : 'cancel', evidence: { spawned: false } });
 
     let run: AgentRun;
     try {
@@ -268,24 +288,26 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
       );
       const hookError = observe(() => input.onSpend?.(spend));
       return failed(
-        'engine-error',
-        { stage: 'worker', message: errorMessage(err), spendLedgerWritten: ledgered, ...(hookError === undefined ? {} : { onSpendError: hookError }) },
+        {
+          reason: 'engine-error',
+          evidence: { stage: 'worker', message: errorMessage(err), spendLedgerWritten: ledgered, ...(hookError === undefined ? {} : { onSpendError: hookError }) },
+        },
         spend,
       );
     }
 
-    const workerEvidence = {
+    const workerEvidence: WorkerRunEvidence = {
       failureClass: run.failureClass ?? null,
       exitCode: run.exitCode ?? null,
       stderrTail: (run.stderr ?? '').slice(-STDERR_EVIDENCE_CHARS),
     };
     const reason: SpendExitClass = run.status === 'succeeded' ? 'success' : workerFailureReason(run, wallClockExpired);
-    if (reason !== 'success' && NOT_SPAWNED.has(run.failureClass ?? 'error-result')) return failed(reason, workerEvidence);
+    if (reason !== 'success' && NOT_SPAWNED.has(run.failureClass ?? 'error-result')) return failed({ reason, evidence: workerEvidence });
 
     // One ledger entry for the one spawn, whatever its outcome (AGX-R16). A `spawn-error` is
     // metered too: the attempt was made, and its cost is recorded as unknown (null).
     const spend = spendOf(run, reason);
-    let ledgerFailure: Record<string, unknown> | undefined;
+    let ledgerFailure: EvidenceWriteFailedEvidence | undefined;
     try {
       // Each destination is re-checked just before its own write, so a problem with the bundle
       // path can never keep this spend out of the ledger.
@@ -295,27 +317,39 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
       });
       await writeLedger(spend, run.startedAt, run.endedAt ?? run.startedAt);
     } catch (err) {
-      ledgerFailure = { code: 'EVIDENCE_WRITE_FAILED', path: manifest.evidence.spendLedgerPath, message: errorMessage(err), worker: workerEvidence };
+      ledgerFailure = writeFailed(manifest.evidence.spendLedgerPath, err);
     }
     // The observer sees the spend whether or not the ledger write succeeded.
     const spendHookError = observe(() => input.onSpend?.(spend));
     if (ledgerFailure !== undefined) {
-      return failed('evidence-write-failed', { ...ledgerFailure, ...(spendHookError === undefined ? {} : { onSpendError: spendHookError }) }, spend);
+      return failed(
+        {
+          reason: 'evidence-write-failed',
+          evidence: { ...ledgerFailure, worker: workerEvidence, ...(spendHookError === undefined ? {} : { onSpendError: spendHookError }) },
+        },
+        spend,
+      );
     }
-    if (spendHookError !== undefined) return failed('engine-error', { stage: 'onSpend', message: spendHookError }, spend);
-    if (reason !== 'success') return failed(reason, workerEvidence, spend);
+    if (spendHookError !== undefined) return failed({ reason: 'engine-error', evidence: { stage: 'onSpend', message: spendHookError } }, spend);
+    if (reason !== 'success') return failed({ reason, evidence: workerEvidence }, spend);
 
     // An abort (wall-clock expiry, caller cancel, termination signal) that landed while extraction
     // or verification ran must not be accepted as a result.
-    const abortedReason = (): RealRunWorkerFailureReason => (wallClockExpired ? 'wall-clock' : 'cancel');
+    const abortedReason = (): 'wall-clock' | 'cancel' => (wallClockExpired ? 'wall-clock' : 'cancel');
 
     let built: ReturnType<typeof buildRealRunCandidate> | undefined;
     let bundle: CandidateOfflineBundle;
     try {
       built = buildRealRunCandidate(worktree.worktreePath, profile, worktree.gitDir);
-      if (!built.ok) return failed(built.reason, built.evidence, spend);
+      if (!built.ok) {
+        const { ok: _ok, ...failure } = built;
+        return failed(failure, spend);
+      }
       if (controller.signal.aborted) {
-        return failed(abortedReason(), { stage: 'extract', candidate: built.candidate, outOfScopeChanges: built.outOfScopeChanges }, spend);
+        return failed(
+          { reason: abortedReason(), evidence: { stage: 'extract', candidate: built.candidate, outOfScopeChanges: built.outOfScopeChanges } },
+          spend,
+        );
       }
       // The approved profile version is passed explicitly — never the verifier's default (AGX-R18).
       bundle = await verifyCandidateDocument(profile, built.candidate);
@@ -323,24 +357,28 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
       // The worktree is removed on return, so keep the bounded candidate and the out-of-scope
       // paths (if a candidate was built).
       return failed(
-        'engine-error',
         {
-          stage: 'verify',
-          message: errorMessage(err),
-          ...(built?.ok ? { candidate: built.candidate, outOfScopeChanges: built.outOfScopeChanges } : {}),
+          reason: 'engine-error',
+          evidence: {
+            stage: 'verify',
+            message: errorMessage(err),
+            ...(built?.ok ? { candidate: built.candidate, outOfScopeChanges: built.outOfScopeChanges } : {}),
+          },
         },
         spend,
       );
     }
     if (controller.signal.aborted) {
       return failed(
-        abortedReason(),
         {
-          stage: 'verify',
-          accepted: bundle.decision.accepted,
-          reasons: bundle.decision.reasons,
-          candidate: built.candidate,
-          outOfScopeChanges: built.outOfScopeChanges,
+          reason: abortedReason(),
+          evidence: {
+            stage: 'verify',
+            accepted: bundle.decision.accepted,
+            reasons: bundle.decision.reasons,
+            candidate: built.candidate,
+            outOfScopeChanges: built.outOfScopeChanges,
+          },
         },
         spend,
       );
@@ -349,7 +387,7 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     const { bundleDir } = manifest.evidence;
     // The worktree is removed on return, so a bundle that cannot be written keeps the (bounded)
     // candidate and the verifier's decision in the outcome instead.
-    const unpersisted = {
+    const unpersisted: VerifierDecisionEvidence = {
       accepted: bundle.decision.accepted,
       reasons: bundle.decision.reasons,
       candidate: built.candidate,
@@ -358,15 +396,14 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     try {
       assertEvidenceDestination(bundleDir, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
     } catch (err) {
-      const code = err instanceof RunApprovalError ? err.code : 'EVIDENCE_DESTINATION_REFUSED';
-      return failed('evidence-destination-refused', { code, message: errorMessage(err), ...unpersisted }, spend);
+      return failed({ reason: 'evidence-destination-refused', evidence: { ...destinationRefused(err), ...unpersisted } }, spend);
     }
     try {
       // Created exclusively through the held parent directory: nothing that appeared since, and no
       // swapped parent, is written into.
       persistCandidateBundleExclusive(bundleDir, bundle);
     } catch (err) {
-      return failed('evidence-write-failed', { code: 'EVIDENCE_WRITE_FAILED', path: bundleDir, message: errorMessage(err), ...unpersisted }, spend);
+      return failed({ reason: 'evidence-write-failed', evidence: { ...writeFailed(bundleDir, err), ...unpersisted } }, spend);
     }
     if (bundle.decision.accepted === true) {
       return { ...after, kind: 'verified', bundleDir, spend, outOfScopeChanges: built.outOfScopeChanges };

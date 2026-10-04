@@ -8,7 +8,7 @@ import { open, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { z } from 'zod';
-import { RunApprovalError } from './errors';
+import { RunApprovalError, type RunApprovalErrorCode } from './errors';
 import { RunManifestSchema, computeManifestHash, type RunManifest } from './run-manifest';
 
 export const RunApprovalSchemaVersion = 'yellow-goal/run-approval/v1' as const;
@@ -23,20 +23,39 @@ const RunApprovalRecordSchema = z
     manifest: RunManifestSchema,
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
+    // Also inside `manifest`: R3 lists it as a record field so a reader need not open the manifest,
+    // and `parseRunApprovalRecord` refuses a record whose two copies disagree.
     engineVersion: z.string().min(1),
   })
   .strict();
 
 export type RunApprovalRecord = z.infer<typeof RunApprovalRecordSchema>;
 
+/** The production clock behind every injectable approval `clock` — never inline `Date.now()`. */
+export const systemClock = (): Date => new Date();
+
+/** Throws the coded approval refusal; shared by the record parser and the verifier. */
+export function refuseApproval(code: RunApprovalErrorCode, message: string, details?: unknown): never {
+  throw new RunApprovalError(code, message, details);
+}
+
 export type MintOptions = {
-  /** Injectable clock — never inline `Date.now()`. */
+  /** Injectable clock; defaults to `systemClock`. */
   clock?: () => Date;
   newId?: () => string;
 };
 
-export function mintRunApprovalRecord(manifest: RunManifest, options: MintOptions = {}): RunApprovalRecord {
-  const createdAt = (options.clock ?? (() => new Date()))();
+/** Mints a record for `manifest`. The manifest is re-validated here rather than trusted from its
+ *  compile-time type, so a hand-built or spread object can never be approved unchecked. */
+export function mintRunApprovalRecord(candidate: RunManifest, options: MintOptions = {}): RunApprovalRecord {
+  const parsed = RunManifestSchema.safeParse(candidate);
+  if (!parsed.success) {
+    refuseApproval('MANIFEST_INVALID', `invalid run manifest: ${parsed.error.issues[0]?.message ?? 'unknown'}`, {
+      issues: parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+    });
+  }
+  const manifest = parsed.data;
+  const createdAt = (options.clock ?? systemClock)();
   const expiresAt = new Date(createdAt.getTime() + manifest.expiresInMinutes * MINUTE_MS);
   return {
     schemaVersion: RunApprovalSchemaVersion,
@@ -50,7 +69,7 @@ export function mintRunApprovalRecord(manifest: RunManifest, options: MintOption
 }
 
 function invalid(message: string, details?: unknown): never {
-  throw new RunApprovalError('APPROVAL_INVALID', message, details);
+  refuseApproval('APPROVAL_INVALID', message, details);
 }
 
 /**

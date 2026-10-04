@@ -22,7 +22,12 @@ import {
 } from '../orchestrator/guardrails';
 import { canonicalJson } from '../packs/canonical-json';
 import { sha256Hex } from '../packets/checksums';
-import { candidateProfileDigest, getCandidateOfflineProfile, type CandidateOfflineProfile } from './candidate-offline-profiles';
+import {
+  candidateProfileDigest,
+  getCandidateOfflineProfile,
+  UnknownCandidateProfileError,
+  type CandidateOfflineProfile,
+} from './candidate-offline-profiles';
 import { RunApprovalError } from './errors';
 import { ProviderProtocolV2 } from './provider-capabilities';
 
@@ -162,14 +167,10 @@ export function computeManifestHash(manifest: RunManifest): string {
   return sha256Hex(canonicalJson(manifest));
 }
 
-/** The string the operator types at the approval ceremony (AGX-R2), e.g. `3f9a-01bc`. */
-export function approvalChallenge(manifestHash: string): string {
-  return `${manifestHash.slice(0, 4)}-${manifestHash.slice(4, 8)}`;
-}
-
 /**
  * Resolves `<id>` (version '1', unchanged since before versioning) or `<id>@<version>`, so a real
- * run can select `config-repair@2` (AGX-R7). An unknown id or version is MANIFEST_INVALID.
+ * run can select `config-repair@2` (AGX-R7). An unknown id or version is MANIFEST_INVALID; any
+ * other failure is a bug and propagates unchanged rather than posing as bad input.
  */
 function resolveProfile(profileId: string): CandidateOfflineProfile {
   const at = profileId.indexOf('@');
@@ -177,7 +178,8 @@ function resolveProfile(profileId: string): CandidateOfflineProfile {
     if (at === -1) return getCandidateOfflineProfile(profileId);
     return getCandidateOfflineProfile(profileId.slice(0, at), profileId.slice(at + 1));
   } catch (err) {
-    throw new RunApprovalError('MANIFEST_INVALID', err instanceof Error ? err.message : String(err), { profileId });
+    if (!(err instanceof UnknownCandidateProfileError)) throw err;
+    throw new RunApprovalError('MANIFEST_INVALID', err.message, { profileId });
   }
 }
 

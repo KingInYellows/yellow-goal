@@ -387,7 +387,8 @@ describe('real-run engine failures after consumption: exactly one outcome each',
     await mintApproval(fx, args);
     const outcome = await runEngine(fx, 'stdout-flood', args);
     expect(outcome).toMatchObject({ kind: 'worker-failed', reason: 'malformed-output' });
-    if (outcome.kind === 'worker-failed') expect(String(outcome.evidence.stderrTail)).toMatch(/stdout exceeded/);
+    const evidence = outcome.kind === 'worker-failed' ? outcome.evidence : undefined;
+    expect(evidence !== undefined && 'stderrTail' in evidence ? evidence.stderrTail : '').toMatch(/stdout exceeded/);
   });
 
   it('a descendant that escapes the process group is killed before runRealRun returns', async () => {

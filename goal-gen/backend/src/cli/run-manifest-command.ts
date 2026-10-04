@@ -11,7 +11,6 @@ import { readArtifactVersion } from './artifact-version';
 import type { CommandOutput } from './commands';
 import { CliUsageError } from './errors';
 import {
-  approvalChallenge,
   buildRunManifest,
   computeManifestHash,
   type RunManifest,
@@ -39,7 +38,9 @@ export const RUN_MANIFEST_OPTIONS = {
 /** Derived from the options table, so a flag added there is typed here automatically. */
 export type ManifestFlagValues = ReturnType<typeof parseArgs<{ options: typeof RUN_MANIFEST_OPTIONS }>>['values'];
 
-export type RunManifestOutput = { manifest: RunManifest; manifestHash: string; challenge: string };
+/** No approval challenge: `run approve` mints a fresh one per ceremony and shows it only on the
+ *  controlling terminal, so nothing printed here can stand in for the operator's review (AGX-R2). */
+export type RunManifestOutput = { manifest: RunManifest; manifestHash: string };
 
 type RequiredFlag = 'profile' | 'max-turns' | 'per-action-usd' | 'total-usd' | 'auth-mode' | 'bundle-dir' | 'spend-ledger';
 type OptionalIntegerFlag = 'action-timeout-ms' | 'run-wall-clock-ms' | 'expires-in-minutes';
@@ -97,11 +98,11 @@ export async function manifestFromFlags(
     spendLedgerPath: required(values, 'spend-ledger'),
   });
   const manifestHash = computeManifestHash(manifest);
-  return { manifest, manifestHash, challenge: approvalChallenge(manifestHash), request };
+  return { manifest, manifestHash, request };
 }
 
 export async function runRunManifest(argv: string[]): Promise<CommandOutput<RunManifestOutput>> {
   const { values, positionals } = parseArgs({ args: argv, options: RUN_MANIFEST_OPTIONS, allowPositionals: true });
-  const { manifest, manifestHash, challenge } = await manifestFromFlags(values, positionals, 'run manifest');
-  return { json: values.json === true, output: { manifest, manifestHash, challenge } };
+  const { manifest, manifestHash } = await manifestFromFlags(values, positionals, 'run manifest');
+  return { json: values.json === true, output: { manifest, manifestHash } };
 }

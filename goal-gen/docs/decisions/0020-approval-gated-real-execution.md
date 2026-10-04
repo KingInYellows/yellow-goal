@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0021
 date: 2026-09-28
 decision-makers: KingInYellow
 ---
@@ -95,3 +95,5 @@ Requirements are cited outside the spec as `AGX-R<n>` (spec
 - ADR-0010 (guardrail defaults), ADR-0011 (single-admin trust), ADR-0015 (fail-closed
   permissions), ADR-0017 (Protocol v1 stub-only), ADR-0018 (verified single-milestone
   execution), ADR-0019 (operator-recipe CI gate)
+- Superseded by [ADR-0021](0021-fresh-approval-challenge-and-no-state-dir.md) for challenge
+  derivation and `--state-dir`

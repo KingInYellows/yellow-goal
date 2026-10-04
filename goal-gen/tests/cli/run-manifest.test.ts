@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as candidateProfiles from '../../backend/src/cli/candidate-offline-profiles';
 import { RunApprovalError } from '../../backend/src/cli/errors';
 import { main } from '../../backend/src/cli/index';
 import {
@@ -14,7 +15,6 @@ import {
   RUN_MANIFEST_DEFAULTS,
   RunManifestSchema,
   RunManifestSchemaVersion,
-  approvalChallenge,
   buildRunManifest,
   computeManifestHash,
   type RunManifest,
@@ -145,6 +145,18 @@ describe('buildRunManifest', () => {
     manifestInvalid(() => buildRunManifest(inputs(override)));
   });
 
+  it('lets a profile-lookup failure that is not an unknown profile propagate, not pose as MANIFEST_INVALID', () => {
+    const bug = new TypeError('profile registry is broken');
+    const spy = vi.spyOn(candidateProfiles, 'getCandidateOfflineProfile').mockImplementation(() => {
+      throw bug;
+    });
+    try {
+      expect(() => buildRunManifest(inputs())).toThrow(bug);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('applies RUN_MANIFEST_DEFAULTS when optional settings are omitted — the one default source', () => {
     const { model: _m, disallowedTools: _d, actionTimeoutMs: _a, runWallClockMs: _r, expiresInMinutes: _e, ...required } = inputs();
     const manifest = buildRunManifest(required);
@@ -220,7 +232,6 @@ describe('buildRunManifest', () => {
       evidence: { bundleDir: '/var/goal-gen/bundle', spendLedgerPath: '/var/goal-gen/spend.jsonl' },
     };
     expect(computeManifestHash(fixed)).toBe('f5adc396dd15776fd5503da3b159dba709a04c33138b1b3d84bee7bc80e6726e');
-    expect(approvalChallenge(computeManifestHash(fixed))).toMatch(/^[0-9a-f]{4}-[0-9a-f]{4}$/);
   });
 });
 
@@ -263,7 +274,7 @@ describe('run manifest verb', () => {
   /** Evidence flags live in the per-test temp dir, so they are appended per call. */
   const evidenceFlags = () => ['--bundle-dir', path.join(tempDir, 'bundle'), '--spend-ledger', path.join(tempDir, 'spend.jsonl')];
 
-  it('prints one JSON line with manifest, hash and challenge; identical across renders', async () => {
+  it('prints one JSON line with manifest and hash (never a challenge); identical across renders', async () => {
     const req = await requestFile();
     expect(await main(['run', 'manifest', req, ...flags, ...evidenceFlags(), '--json'])).toBe(0);
     const first = stdoutText();
@@ -272,9 +283,9 @@ describe('run manifest verb', () => {
     expect(stdoutText()).toBe(first);
     expect(stderrText()).toBe('');
     expect(first.trim().split('\n')).toHaveLength(1);
-    const output = JSON.parse(first) as { manifest: RunManifest; manifestHash: string; challenge: string };
+    const output = JSON.parse(first) as { manifest: RunManifest; manifestHash: string };
+    expect(Object.keys(output).sort()).toEqual(['manifest', 'manifestHash']);
     expect(output.manifestHash).toBe(computeManifestHash(output.manifest));
-    expect(output.challenge).toBe(approvalChallenge(output.manifestHash));
     expect(output.manifest.actionTimeoutMs).toBe(REAL_RUN_ACTION_TIMEOUT_MS);
     expect(output.manifest.runWallClockMs).toBe(REAL_RUN_WALL_CLOCK_MS);
     expect(output.manifest.evidence).toEqual({
