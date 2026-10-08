@@ -132,6 +132,12 @@ export interface WorktreeHandle {
    * provider can silently skip the pin.
    */
   gitDir: string;
+  /** Set only for a captured-base seed. Absent on the config-repair scratch seed. */
+  profileId?: string;
+  /** Pinned `source.commit` for a captured-base seed. */
+  commit?: string;
+  /** Selected `source.overlay.files` actually written. Not the owner checkout. */
+  overlayFiles?: Record<string, string>;
   /** Idempotent teardown: worktree remove --force → prune → rm scratch root. */
   cleanup(): Promise<void>;
 }
@@ -143,6 +149,33 @@ export interface CreateWorktreeOptions {
   seedFiles?: Record<string, string>;
   /** tmp-dir prefix for the scratch repo (default `goal-gen-run-`). */
   prefix?: string;
+  /** Captured-base profile id. With `commit` and `overlayFiles`, these are the seed. */
+  profileId?: string;
+  /** Pinned `source.commit`. */
+  commit?: string;
+  /** Selected file bytes. When any captured field is set, these are written and `seedFiles` is ignored. */
+  overlayFiles?: Record<string, string>;
+}
+
+const COMMIT_OBJECT_ID = /^[0-9a-f]{40}$/;
+
+/**
+ * A captured-base seed must carry profile id, pinned commit, and overlay bytes together.
+ * Any one of them present without the others is a dropped argument, not a fallback to `seedFiles`.
+ */
+function capturedSeedFiles(opts: CreateWorktreeOptions): Record<string, string> | undefined {
+  const present = opts.profileId !== undefined || opts.commit !== undefined || opts.overlayFiles !== undefined;
+  if (!present) return undefined;
+  if (opts.profileId === undefined || opts.profileId === '') {
+    throw new Error('scratch seed dropped profile id');
+  }
+  if (opts.commit === undefined || !COMMIT_OBJECT_ID.test(opts.commit)) {
+    throw new Error('scratch seed dropped pinned commit');
+  }
+  if (opts.overlayFiles === undefined) {
+    throw new Error('scratch seed dropped selected file bytes');
+  }
+  return opts.overlayFiles;
 }
 
 /** ORDER MATTERS — remove the worktree before deleting the root (data-loss hazard). Best-effort. */
@@ -164,13 +197,15 @@ async function teardown(root: string, worktreePath: string): Promise<void> {
  */
 export async function createWorktree(opts: CreateWorktreeOptions = {}): Promise<WorktreeHandle> {
   const branch = opts.branch ?? 'run';
+  const captured = capturedSeedFiles(opts);
+  const files = captured ?? opts.seedFiles ?? {};
   const root = await mkdtemp(join(tmpdir(), opts.prefix ?? 'goal-gen-run-'));
   let worktreePath = '';
   try {
     gitOrThrow(['init', '-q'], root);
     git(['worktree', 'prune'], root); // crash backstop (no-op on a fresh repo; safe if root is reused)
     const resolvedRoot = resolve(root);
-    for (const [rel, content] of Object.entries(opts.seedFiles ?? {})) {
+    for (const [rel, content] of Object.entries(files)) {
       const target = resolve(root, rel);
       // Reject path-traversal keys (e.g. "../escape") that resolve outside the scratch root.
       if (!target.startsWith(resolvedRoot + sep)) {
@@ -185,7 +220,17 @@ export async function createWorktree(opts: CreateWorktreeOptions = {}): Promise<
     worktreePath = join(root, 'wt');
     gitOrThrow(['worktree', 'add', worktreePath, '-b', branch], root);
     const gitDir = realpathSync(gitOrThrow(['rev-parse', '--absolute-git-dir'], worktreePath).trim());
-    return { root, worktreePath, branch, initialSha, gitDir, cleanup: () => teardown(root, worktreePath) };
+    return {
+      root,
+      worktreePath,
+      branch,
+      initialSha,
+      gitDir,
+      ...(captured === undefined
+        ? {}
+        : { profileId: opts.profileId, commit: opts.commit, overlayFiles: opts.overlayFiles }),
+      cleanup: () => teardown(root, worktreePath),
+    };
   } catch (e) {
     await teardown(root, worktreePath).catch(() => {});
     throw e;

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { CliUsageError, ObservedFixtureError } from './errors';
 import { gitBlobSha1, sha256FileIfPresent, sha256Hex } from './implementation-revision';
@@ -697,6 +697,69 @@ export function captureGitObjects(
 
 export function rereadCanary(gitDir: string): SourceCanary {
   return readCanary(gitDir);
+}
+
+/**
+ * Whether the owner checkout may supply a scratch seed.
+ *
+ * `mixed`: not a coherent checkout of `commit` — HEAD is a different commit,
+ * the worktree path is missing, or the index canary is `missing` (HEAD bytes
+ * without an index are not source identity).
+ * `dirty`: HEAD is `commit` and the index exists, but the worktree is not that
+ * commit's tree (edited, deleted, or untracked bytes). Capture excludes those.
+ * `clean`: no owner worktree (`worktree === null`) or a checkout of `commit`.
+ * Does not return worktree bytes; a seed must use the capture overlay instead.
+ */
+export type OwnerWorktreeSeedClass = 'clean' | 'dirty' | 'mixed';
+
+export function classifyOwnerWorktreeForSeed(input: {
+  identity: SourceIdentity;
+  commit: string;
+}): OwnerWorktreeSeedClass {
+  const { identity, commit } = input;
+  if (identity.worktree === null) return 'clean';
+  if (!existsSync(identity.worktree)) return 'mixed';
+  const head = runGitUtf8(withGitDir(identity.gitDir, ['rev-parse', 'HEAD']));
+  if (head !== commit) return 'mixed';
+  if (rereadCanary(identity.gitDir).indexSha256 === 'missing') return 'mixed';
+  const live = worktreeFileBytes(identity.worktree);
+  if (live === 'dirty') return 'dirty';
+  const pinned = commitTreeBytes(identity.gitDir, commit);
+  if (live.size !== pinned.size) return 'dirty';
+  for (const [rel, bytes] of pinned) {
+    const found = live.get(rel);
+    if (found === undefined || !found.equals(bytes)) return 'dirty';
+  }
+  return 'clean';
+}
+
+function worktreeFileBytes(root: string): Map<string, Buffer> | 'dirty' {
+  const out = new Map<string, Buffer>();
+  const entries = readdirSync(root, { recursive: true, encoding: 'utf8' });
+  for (const rel of entries) {
+    const posix = rel.split(path.sep).join('/');
+    if (posix === '.git' || posix.startsWith('.git/')) continue;
+    const full = path.join(root, rel);
+    const st = lstatSync(full);
+    if (st.isSymbolicLink()) return 'dirty';
+    if (!st.isFile()) continue;
+    out.set(posix, readFileSync(full));
+  }
+  return out;
+}
+
+function commitTreeBytes(gitDir: string, commit: string): Map<string, Buffer> {
+  const listing = runGitUtf8(withGitDir(gitDir, ['ls-tree', '-r', '--name-only', commit]));
+  const out = new Map<string, Buffer>();
+  if (listing === '') return out;
+  for (const rel of listing.split('\n')) {
+    if (rel === '') continue;
+    const line = runGitUtf8(withGitDir(gitDir, ['ls-tree', '--full-tree', commit, '--', rel]));
+    const parsed = parseLsTree(line, rel);
+    if (parsed === undefined || parsed.type !== 'blob') continue;
+    out.set(rel, runGitBuffer(withGitDir(gitDir, ['cat-file', 'blob', parsed.sha]), 1024 * 1024));
+  }
+  return out;
 }
 
 export function snapshotFiles(blobs: CapturedBlobWithBytes[]): Record<string, Buffer> {

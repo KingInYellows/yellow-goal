@@ -34,7 +34,9 @@ This spec defines VS **layer 4a**: one human-approved, budget-capped, single-att
 run in an engine-owned scratch worktree seeded from the `config-repair` profile, verified by the
 existing candidate verifier, exposed through a new `provider-protocol/v2` (a superset of v1), and
 consumed by a user-only command in yellow-plugins. It proves the approval → spend → verification
-loop on a toy profile before any real repository is touched (captured-base is 4b; target-bound is
+loop on a toy profile before any real repository is touched (captured-base 4b is only a scratch
+seed from the capture bundle's profile id, pinned commit, and selected file bytes, refusing a dirty
+or mixed owner worktree with no worker spawn and `targetRepositoryHonored` false; target-bound is
 later still and needs its own safety review).
 
 ## Users
@@ -63,9 +65,12 @@ Verified against yellow-goal `072882d` and yellow-plugins `c58af0b`:
 | User-only command precedent (`disable-model-invocation: true`) | yellow-plugins `plugins/yellow-ci/commands/ci/runner-cleanup.md:9` |
 | Headless cost/auth facts (~$0.08 floor, `total_cost_usd` authoritative, API key overrides subscription, only bypass proven headless) | `tests/spikes/executor-spike-findings.md` |
 
-Out of scope: `target.repository` execution, captured-base real runs (4b), multi-worker/M2
+Out of scope: `target.repository` execution, multi-worker/M2
 routing, DB persistence and crash-resume (RR15), HTTP/SSE, auto-merge/publish/deploy, retiring the
-legacy `--executor claude-code` path (follow-up after R35).
+legacy `--executor claude-code` path (follow-up after R35). Captured-base (4b) is only the scratch
+seed: profile id, pinned commit (`source.commit`), and selected file bytes (`source.overlay.files`),
+refusing a dirty or mixed owner worktree before any worker spawn, with `targetRepositoryHonored`
+false. It does not authorize target execution, retries, or a live spend run.
 
 ## Requirements
 
@@ -393,9 +398,11 @@ validators (R28, R29, R31) → P2 command (R30) → A1 live run (R35).
 
 ## MVP Scope
 
-Everything above is the MVP for step 6. Deferred: captured-base real runs (4b), target-bound
-execution, bounded retries, in-process sign-off gate, remote gate resolution, retiring the legacy
-`--executor claude-code` path (follow-up after R35).
+Everything above is the MVP for step 6. Captured-base (4b) is only the scratch seed: profile id,
+pinned commit (`source.commit`), and selected file bytes (`source.overlay.files`), refusing a dirty
+or mixed owner worktree before any worker spawn, with `targetRepositoryHonored` false. Deferred:
+target-bound execution, bounded retries, in-process sign-off gate, remote gate resolution, retiring
+the legacy `--executor claude-code` path (follow-up after R35). Not a live spend run.
 
 ## Open Questions
 

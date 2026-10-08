@@ -3,16 +3,18 @@
  * stdout, and `--yes` as a usage error. The worker is the fake `claude`, injected through the
  * `executorFactory` seam; approvals are minted through the `run approve` TTY seam.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main } from '../../backend/src/cli/index';
 import { parseRunInvocation } from '../../backend/src/cli/protocol-run-options';
 import { runProviderV2Real, type ProviderRunV2RealOptions } from '../../backend/src/cli/provider-run-v2-real';
+import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
+import { seedScratchFromCapture, type ScratchSeed } from '../../backend/src/real-run/real-run-engine';
 import { RunEventSchema } from '../../backend/src/contracts/run-event';
 import { createProtocolStdoutWriter } from '../../backend/src/events/protocol-stdout-writer';
 import {
-  createFixture, fakeWorkerFactory, invocations, ledgerEntries, manifestArgs, markerExists, mintApproval, removeFixture,
-  stubCleanCredentials, type Fixture,
+  createFixture, fakeWorkerFactory, invocations, ledgerEntries, manifestArgs, markerExists, mintApproval, plantOwnerRepo,
+  removeFixture, stubCleanCredentials, type Fixture, type PlantedOwner,
 } from '../real-run/support';
 
 let fx: Fixture;
@@ -156,6 +158,70 @@ describe('provider v2 real run: refusals emit no events', () => {
     expect(await run('success', { signals, executorFactory })).toBe(1);
     await expectRefusal('RUN_CANCELLED', true);
     expect(markerExists(fx, approvalId)).toBe(false);
+  });
+});
+
+describe('captured-base v2 attempt', () => {
+  function captureOf(owner: PlantedOwner) {
+    return {
+      profileId: owner.profileId,
+      commit: owner.commit,
+      overlayFiles: owner.overlayFiles,
+      identity: owner.identity,
+    };
+  }
+
+  it('starts one agx-claude-code attempt seeded from the capture, with targetRepositoryHonored false', async () => {
+    const owner = plantOwnerRepo(fx, 'clean');
+    await mintApproval(fx, manifestArgs(fx));
+    const seen: ScratchSeed[] = [];
+    let scratchNames: string[] = [];
+    expect(await run('success', {
+      capture: captureOf(owner),
+      seedWorktree: async (seed) => {
+        seen.push({ profileId: seed.profileId, commit: seed.commit, files: { ...seed.files } });
+        const handle = await seedScratchFromCapture(seed);
+        scratchNames = readdirSync(handle.worktreePath).filter((name) => name !== '.git').sort();
+        return handle;
+      },
+    })).toBe(0);
+    const list = events();
+    expect(list.map((event) => event.type)).toEqual(['run.start', 'run.spend', 'run.summary']);
+    expect(list[0]!.payload).toMatchObject({
+      executor: 'agx-claude-code', simulation: false, targetRepositoryHonored: false,
+    });
+    expect(list[2]!.payload).toMatchObject({ outcome: 'verified', targetRepositoryHonored: false });
+    expect(seen).toEqual([{ profileId: owner.profileId, commit: owner.commit, files: owner.overlayFiles }]);
+    expect(seen[0]!.files).not.toEqual(getCandidateOfflineProfile('config-repair', '2').baseFiles);
+    expect(scratchNames).toEqual(['pkg.json']);
+    expect(scratchNames).not.toContain('only-in-owner.txt');
+    expect(invocations(fx)).toHaveLength(1);
+  });
+
+  it.each(['dirty', 'mixed'] as const)('refuses a %s owner worktree before any worker spawn', async (kind) => {
+    const owner = plantOwnerRepo(fx, kind);
+    const approvalId = await mintApproval(fx, manifestArgs(fx));
+    let seeded = false;
+    expect(await run('success', {
+      capture: captureOf(owner),
+      seedWorktree: async () => {
+        seeded = true;
+        throw new Error('seed must not run');
+      },
+    })).toBe(1);
+    expect(seeded).toBe(false);
+    const list = events();
+    expect(list.map((event) => event.type)).toEqual(['run.start', 'run.summary']);
+    expect(list[1]!.payload).toMatchObject({
+      outcome: 'worker-failed',
+      reason: 'worktree-refused',
+      approvalId,
+      targetRepositoryHonored: false,
+      evidence: { message: `owner worktree is ${kind}` },
+    });
+    expect(list.some((event) => event.type === 'run.spend')).toBe(false);
+    expect(invocations(fx)).toHaveLength(0);
+    expect(existsSync(fx.ledgerPath)).toBe(false);
   });
 });
 

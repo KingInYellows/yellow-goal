@@ -3,12 +3,14 @@
  * and an approval state dir; approvals minted through the `run approve` TTY seam; and an executor
  * factory that injects the fake worker (never PATH or an environment variable, AGX-R15).
  */
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { vi } from 'vitest';
+import { resolveSourceIdentity, type SourceIdentity } from '../../backend/src/cli/committed-source-git';
 import { runRunApprove } from '../../backend/src/cli/run-approval-command';
 import { approvalMarkerPath } from '../../backend/src/cli/run-approval-verifier';
 import { RUN_MANIFEST_OPTIONS, type ManifestFlagValues } from '../../backend/src/cli/run-manifest-command';
@@ -152,4 +154,72 @@ export function ledgerEntries(fx: Fixture): Array<Record<string, unknown>> {
 /** The scratch repo root the worker ran in (the parent of its `wt` worktree). */
 export function scratchRoot(invocation: Invocation): string {
   return path.dirname(invocation.cwd);
+}
+
+export const CAPTURE_PROFILE_ID = 'package-manifest-lockfile';
+export const CAPTURE_OVERLAY = { 'pkg.json': '{"name":"captured"}\n' } as const;
+
+export type PlantedOwner = {
+  profileId: string;
+  commit: string;
+  overlayFiles: Record<string, string>;
+  identity: SourceIdentity;
+  repo: string;
+};
+
+function gitOwner(repo: string, home: string, args: string[]): string {
+  mkdirSync(home, { recursive: true });
+  writeFileSync(
+    path.join(home, '.gitconfig'),
+    '[user]\n\tname = seed-test\n\temail = seed-test@invalid\n[commit]\n\tgpgsign = false\n',
+  );
+  const result = spawnSync('git', ['-C', repo, ...args], {
+    encoding: 'utf8',
+    env: {
+      HOME: home,
+      GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig'),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_AUTHOR_NAME: 'seed-test',
+      GIT_AUTHOR_EMAIL: 'seed-test@invalid',
+      GIT_COMMITTER_NAME: 'seed-test',
+      GIT_COMMITTER_EMAIL: 'seed-test@invalid',
+      PATH: process.env.PATH,
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `git ${args.join(' ')} failed`);
+  }
+  return (result.stdout ?? '').trim();
+}
+
+/**
+ * An owner checkout under the fixture dir. `clean` matches the pinned commit.
+ * `dirty` edits a tracked file without committing. `mixed` moves HEAD off the pin.
+ * The git home sits outside the checkout so it is not an untracked owner file.
+ */
+export function plantOwnerRepo(fx: Fixture, kind: 'clean' | 'dirty' | 'mixed'): PlantedOwner {
+  const repo = path.join(fx.dir, `owner-${kind}`);
+  const home = path.join(fx.dir, `git-home-${kind}`);
+  mkdirSync(repo, { recursive: true });
+  gitOwner(repo, home, ['init', '-q']);
+  writeFileSync(path.join(repo, 'pkg.json'), CAPTURE_OVERLAY['pkg.json']);
+  writeFileSync(path.join(repo, 'only-in-owner.txt'), 'owner\n');
+  gitOwner(repo, home, ['add', '-A']);
+  gitOwner(repo, home, ['commit', '-q', '-m', 'pin']);
+  const commit = gitOwner(repo, home, ['rev-parse', 'HEAD']);
+  if (kind === 'dirty') {
+    writeFileSync(path.join(repo, 'pkg.json'), `${CAPTURE_OVERLAY['pkg.json']}dirty\n`);
+  }
+  if (kind === 'mixed') {
+    writeFileSync(path.join(repo, 'pkg.json'), '{"name":"moved"}\n');
+    gitOwner(repo, home, ['add', '-A']);
+    gitOwner(repo, home, ['commit', '-q', '-m', 'move']);
+  }
+  return {
+    profileId: CAPTURE_PROFILE_ID,
+    commit,
+    overlayFiles: { ...CAPTURE_OVERLAY },
+    identity: resolveSourceIdentity(repo),
+    repo,
+  };
 }

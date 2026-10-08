@@ -14,7 +14,7 @@
 import { RunEventEmitter } from '../events/run-event-emitter';
 import { createProtocolStdoutWriter, type ProtocolStdoutWriter } from '../events/protocol-stdout-writer';
 import type { EngineErrorEvidence, RealRunOutcome } from '../real-run/outcome';
-import { runRealRun, type RealRunInput, type RealRunStarted } from '../real-run/real-run-engine';
+import { runRealRun, type CapturedBaseSeed, type RealRunInput, type RealRunStarted } from '../real-run/real-run-engine';
 import type { ParsedRunInvocation } from './protocol-run-options';
 import { ProviderProtocolV2 } from './provider-capabilities';
 
@@ -22,6 +22,9 @@ type RealInvocation = Extract<ParsedRunInvocation, { mode: 'provider-v2-real' }>
 
 /** Test-only seams; none is argv or environment authority and production passes none. */
 export interface ProviderRunV2RealOptions {
+  /** Captured-base seed for this one attempt. Production passes none; the CLI has no capture flag. */
+  capture?: CapturedBaseSeed;
+  seedWorktree?: RealRunInput['seedWorktree'];
   executorFactory?: RealRunInput['executorFactory'];
   writerFactory?: (onFailure: () => void) => ProtocolStdoutWriter;
   /** Deterministic signal source for tests; production uses the process signal events. */
@@ -148,6 +151,8 @@ export async function runProviderV2Real(invocation: RealInvocation, options: Pro
         manifestFlags: invocation.manifestFlags,
         approvalPath: invocation.approvalPath,
         signal: controller.signal,
+        ...(options.capture === undefined ? {} : { capture: options.capture }),
+        ...(options.seedWorktree === undefined ? {} : { seedWorktree: options.seedWorktree }),
         ...(options.executorFactory === undefined ? {} : { executorFactory: options.executorFactory }),
         ...(options.stateDir === undefined ? {} : { stateDir: options.stateDir }),
         ...(options.env === undefined ? {} : { env: options.env }),
