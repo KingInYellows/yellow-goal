@@ -3,7 +3,7 @@
  * and approvals minted through the `run approve` TTY seam. Every row checks the worker invocation
  * count, the consumption marker, the spend ledger, the bundle, and that the scratch worktree is gone.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,7 +11,7 @@ import * as offlineCommand from '../../backend/src/cli/candidate-offline-command
 import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
 import { mintRunApprovalRecord, writeFileExclusive } from '../../backend/src/cli/run-approval';
 import { manifestFromFlags } from '../../backend/src/cli/run-manifest-command';
-import type { RealRunInput } from '../../backend/src/real-run/real-run-engine';
+import { seedScratchFromCapture, type RealRunInput, type ScratchSeed } from '../../backend/src/real-run/real-run-engine';
 import type { RealRunOutcome } from '../../backend/src/real-run/outcome';
 import {
   createFixture,
@@ -22,11 +22,13 @@ import {
   manifestArgs,
   markerExists,
   mintApproval,
+  plantOwnerRepo,
   removeFixture,
   runEngine,
   scratchRoot,
   stubCleanCredentials,
   type Fixture,
+  type PlantedOwner,
 } from './support';
 
 vi.mock('../../backend/src/cli/candidate-offline-command', async (importOriginal) => {
@@ -418,5 +420,71 @@ describe('real-run engine failures after consumption: exactly one outcome each',
         }
       }
     }
+  });
+});
+
+describe('captured-base scratch seed', () => {
+  function captureOf(owner: PlantedOwner): NonNullable<RealRunInput['capture']> {
+    return {
+      profileId: owner.profileId,
+      commit: owner.commit,
+      overlayFiles: owner.overlayFiles,
+      identity: owner.identity,
+    };
+  }
+
+  it('seeds profile id, pinned commit, and overlay bytes, not baseFiles or the owner tree', async () => {
+    const owner = plantOwnerRepo(fx, 'clean');
+    const args = manifestArgs(fx);
+    const approvalId = await mintApproval(fx, args);
+    const seen: ScratchSeed[] = [];
+    let scratchNames: string[] = [];
+    let written: { profileId?: string; commit?: string; overlayFiles?: Record<string, string> } = {};
+    const outcome = await runEngine(fx, 'success', args, {
+      capture: captureOf(owner),
+      seedWorktree: async (seed) => {
+        seen.push({ profileId: seed.profileId, commit: seed.commit, files: { ...seed.files } });
+        const handle = await seedScratchFromCapture(seed);
+        written = { profileId: handle.profileId, commit: handle.commit, overlayFiles: handle.overlayFiles };
+        scratchNames = readdirSync(handle.worktreePath).filter((name) => name !== '.git').sort();
+        return handle;
+      },
+    });
+    expect(seen).toEqual([
+      { profileId: owner.profileId, commit: owner.commit, files: owner.overlayFiles },
+    ]);
+    expect(written).toEqual({ profileId: owner.profileId, commit: owner.commit, overlayFiles: owner.overlayFiles });
+    expect(seen[0]!.files).not.toEqual(getCandidateOfflineProfile('config-repair', '2').baseFiles);
+    expect(scratchNames).toEqual(['pkg.json']);
+    expect(scratchNames).not.toContain('only-in-owner.txt');
+    expect(readFileSync(path.join(owner.repo, 'only-in-owner.txt'), 'utf8')).toBe('owner\n');
+    expect(outcome).toMatchObject({ kind: 'verified', approvalId, targetRepositoryHonored: false });
+    expect(invocations(fx)).toHaveLength(1);
+  });
+
+  it.each(['dirty', 'mixed'] as const)('refuses a %s owner worktree with no worker spawn', async (kind) => {
+    const owner = plantOwnerRepo(fx, kind);
+    const args = manifestArgs(fx);
+    const approvalId = await mintApproval(fx, args);
+    let seeded = false;
+    const outcome = await runEngine(fx, 'success', args, {
+      capture: captureOf(owner),
+      seedWorktree: async (seed) => {
+        seeded = true;
+        return seedScratchFromCapture(seed);
+      },
+    });
+    expect(seeded).toBe(false);
+    expect(outcome).toMatchObject({
+      kind: 'worker-failed',
+      reason: 'worktree-refused',
+      approvalId,
+      targetRepositoryHonored: false,
+      evidence: { message: `owner worktree is ${kind}` },
+    });
+    expect(outcome).not.toHaveProperty('spend');
+    expect(invocations(fx)).toHaveLength(0);
+    expect(existsSync(fx.ledgerPath)).toBe(false);
+    expect(existsSync(fx.bundleDir)).toBe(false);
   });
 });

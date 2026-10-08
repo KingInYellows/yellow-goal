@@ -36,6 +36,7 @@
 import { getCandidateOfflineProfile, type CandidateOfflineProfile } from '../cli/candidate-offline-profiles';
 import { persistCandidateBundleExclusive, type CandidateOfflineBundle } from '../cli/candidate-offline-bundle';
 import { verifyCandidateDocument } from '../cli/candidate-offline-command';
+import { classifyOwnerWorktreeForSeed, type SourceIdentity } from '../cli/committed-source-git';
 import { RunApprovalError } from '../cli/errors';
 import { consumeRunApproval, verifyRunApproval, type VerifiedApproval } from '../cli/run-approval-verifier';
 import type { RunManifest } from '../cli/run-manifest';
@@ -60,11 +61,50 @@ import type {
 } from './outcome';
 import { createSpendLedger, SpendLedgerSchemaVersion } from './spend-ledger';
 
+/** Arguments of the one captured-base scratch seed. Not `profile.baseFiles` and not the owner tree. */
+export type ScratchSeed = {
+  profileId: string;
+  commit: string;
+  files: Record<string, string>;
+};
+
+/**
+ * A consumed v2 attempt's capture bundle. The engine does not call `acceptance capture-source`.
+ * `overlayFiles` are the selected bytes written into the scratch seed.
+ */
+export type CapturedBaseSeed = {
+  profileId: string;
+  commit: string;
+  overlayFiles: Record<string, string>;
+  identity: SourceIdentity;
+};
+
+/**
+ * Write the capture overlay into a fresh scratch worktree. Passes profile id, pinned commit, and
+ * selected bytes through to `createWorktree` and does not read the owner checkout.
+ */
+export async function seedScratchFromCapture(seed: ScratchSeed): Promise<WorktreeHandle> {
+  return createWorktree({
+    prefix: REAL_RUN_WORKTREE_PREFIX,
+    profileId: seed.profileId,
+    commit: seed.commit,
+    overlayFiles: seed.files,
+  });
+}
+
 export type RealRunInput = {
   requestPath: string;
   /** The `run manifest` flag values of this invocation; the manifest is recomputed from them. */
   manifestFlags: ManifestFlagValues;
   approvalPath: string | undefined;
+  /**
+   * When set, the scratch seed is this capture (profile id, `source.commit`, `source.overlay.files`).
+   * A dirty or mixed owner worktree is refused before the seed write and before any worker spawn.
+   * Absent: the config-repair attempt still seeds `profile.baseFiles`.
+   */
+  capture?: CapturedBaseSeed;
+  /** Test seam for the captured-base seed write. Production uses `seedScratchFromCapture`. */
+  seedWorktree?: (seed: ScratchSeed) => Promise<WorktreeHandle>;
   /** Builds the worker executor from the approved manifest (default `createRealRunExecutor`). */
   executorFactory?: (manifest: RunManifest) => Executor;
   /** The environment the auth guard checks (default `process.env`). */
@@ -257,7 +297,20 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     );
     if (startedError !== undefined) return failed({ reason: 'engine-error', evidence: { stage: 'onStarted', message: startedError } });
     try {
-      worktree = await createWorktree({ seedFiles: profile.baseFiles, prefix: REAL_RUN_WORKTREE_PREFIX });
+      if (input.capture !== undefined) {
+        const owner = classifyOwnerWorktreeForSeed({ identity: input.capture.identity, commit: input.capture.commit });
+        if (owner === 'dirty' || owner === 'mixed') {
+          throw new Error(`owner worktree is ${owner}`);
+        }
+        const seed: ScratchSeed = {
+          profileId: input.capture.profileId,
+          commit: input.capture.commit,
+          files: input.capture.overlayFiles,
+        };
+        worktree = await (input.seedWorktree ?? seedScratchFromCapture)(seed);
+      } else {
+        worktree = await createWorktree({ seedFiles: profile.baseFiles, prefix: REAL_RUN_WORKTREE_PREFIX });
+      }
       assertEvidenceDestinations(manifest.evidence, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
     } catch (err) {
       if (err instanceof RunApprovalError) return failed({ reason: 'evidence-destination-refused', evidence: destinationRefused(err) });
