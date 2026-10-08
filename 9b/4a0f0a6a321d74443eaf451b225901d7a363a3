@@ -1,0 +1,30 @@
+goal-gen/backend/src/cli/committed-source-git.ts
+  h_6000354274ce50 2,702-764
+goal-gen/backend/src/cli/provider-run-v2-real.ts
+  h_6000354274ce50 17,25-27,154-155
+goal-gen/backend/src/executors/worktree.ts
+  h_6000354274ce50 135-140,152-178,200-201,208,223-233
+goal-gen/backend/src/real-run/real-run-engine.ts
+  h_6000354274ce50 39,64-94,100-107,300-313
+goal-gen/plans/specs/approval-gated-real-execution.md
+  h_6000354274ce50 37-39,68,70-73,401-405
+goal-gen/plans/specs/verified-single-milestone-execution.md
+  h_6000354274ce50 23
+goal-gen/tests/cli/provider-run-v2-real.test.ts
+  h_6000354274ce50 6,11-12,16-17,164-227
+goal-gen/tests/real-run/real-run-engine.test.ts
+  h_6000354274ce50 6,14,25,31,425-490
+goal-gen/tests/real-run/support.ts
+  h_6000354274ce50 6-7,13,158-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b4a0f0a6a321d74443eaf451b225901d7a363a3",
+  "prompts": {},
+  "humans": {
+    "h_6000354274ce50": {
+      "author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
