@@ -1,0 +1,16 @@
+goal-gen/backend/src/real-run/evidence-destinations.ts
+  h_6000354274ce50 15-21,103,105,122-136,192-193,196
+goal-gen/tests/real-run/real-run-engine.test.ts
+  h_6000354274ce50 14,202-226,297-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a88ddfa8cdd87f289e441cea00f532ad6455759",
+  "prompts": {},
+  "humans": {
+    "h_6000354274ce50": {
+      "author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
