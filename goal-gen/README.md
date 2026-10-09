@@ -2,10 +2,10 @@
 
 Self-hosted, single-user system with two subsystems:
 
-1. **Execution core (M1, shipped):** a plain-English goal becomes an inspectable **GOAP plan** that is **executed by a real coding agent**. An LLM extracts a structured action graph; a deterministic **A\*** planner orders it into a valid, lowest-cost plan; an orchestrator dispatches each step to headless `claude -p`; real results drive ground-truth verification and replanning.
+1. **Execution core (M1, core loop shipped):** a plain-English goal becomes an inspectable **GOAP plan** that is **executed by a real coding agent**. An LLM extracts a structured action graph; a deterministic **A\*** planner orders it into a valid, lowest-cost plan; an orchestrator dispatches each step to headless `claude -p`; real results drive ground-truth verification and replanning.
 2. **Universal Repository Goal Packet Compiler (shipped):** a **read-only** pipeline that takes any supported Git repository plus a plain-English goal, deterministically inspects it without mutating it, builds an append-only evidence ledger, produces a schema-constrained assessment and goal resolution, selects exactly one milestone, and compiles a schema-valid, tamper-evident, verified ZIP implementation packet (`repository-goal-packet@1`). See [`.claude/specs/packet-compiler.md`](.claude/specs/packet-compiler.md).
 
-**Status:** M0 (deterministic planner + evals) and M1 (single-executor core: extract → plan → confirm → execute → verify → replan, with persistence and control gates) are implemented and green. The packet compiler is implemented with contracts, fixtures, adversarial validation, and golden packets. Milestones: [`docs/prd.md`](docs/prd.md) §12.
+**Status:** M0 (deterministic planner + evals) is implemented and green. M1 is partial: the single-executor core (extract → plan → confirm → execute → verify → replan, with persistence and control gates) has shipped, but the async event pipeline, HTTP API and minimal live view have not, and the one-time real-`claude` end-to-end acceptance run is still open. The packet compiler is implemented with contracts, fixtures, adversarial validation, and golden packets. Milestones: [`docs/prd.md`](docs/prd.md) §12.
 
 ## Compiler quick journey
 

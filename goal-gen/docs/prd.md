@@ -1,7 +1,7 @@
 # PRD — GOAL Generator (self-hosted)
 
 **Status:** Draft v0.2 · **Owner:** KingInYellow · **Last updated:** 2026-09-19
-M0/M1 remain implemented; the next named outcome is **verified single-milestone execution** (Yellow Harness), specified separately from M2/M3.
+M0 is implemented and M1 is partial (see §12); the next named outcome is **verified single-milestone execution** (Yellow Harness), specified separately from M2/M3.
 **Source of truth.** This PRD governs scope. Component contracts live in [`.claude/specs/`](../.claude/specs/); architecture in [`../../docs/05-self-hosted-build-blueprint.md`](../../docs/05-self-hosted-build-blueprint.md); rationale in [`../../docs/06-fork-vs-build-decision.md`](../../docs/06-fork-vs-build-decision.md).
 
 ---
