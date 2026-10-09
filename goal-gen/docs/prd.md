@@ -161,7 +161,10 @@ The instance is **single-user**: reachable only on your own network (or via Tail
 - **M2 — Multi-executor + dashboard (fast-follow):** add Codex + Antigravity; per-step routing; dependency-graph parallelism with **per-run container isolation**; full multi-agent dashboard + reassign. *(Phase 3)*
 - **M3 — Memory + hardening:** pgvector plan/trajectory memory + retrieval-augmented extraction; historical cost dashboards. *(Phase 4)*
 
-**Status:** M0 and M1 are implemented and green; M2/M3 remain future work.
+**Status:** M0 is implemented and green. M1 is partial: the serial CLI loop (extract → plan →
+confirm → execute → verify → replan) and the persistence and gate-control foundations have
+shipped, but the async event pipeline, HTTP API and minimal live view have not, and the one-time
+real-`claude` end-to-end acceptance run is still open. M2/M3 remain future work.
 
 **Verified single-milestone execution (Yellow Harness, post-M1, not M2):** the eventual
 product outcome — given one explicitly approved milestone, one named repository, and one
