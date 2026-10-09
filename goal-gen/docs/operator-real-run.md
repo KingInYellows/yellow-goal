@@ -135,7 +135,9 @@ The engine runs, in this order:
 6. Run exactly one worker attempt on the profile's milestone, bounded by the action timeout, the
    run wall-clock and cancellation. Each kills the worker's whole process group.
 7. Write one entry to the spend ledger (`yellow-goal/real-run-spend/v1` JSON Lines: `approvalId`,
-   `model`, `costUsd` or `null`, `turns`, `durationMs`, `exitClass`, `startedAt`, `endedAt`).
+   `model`, `costUsd` or `null`, `turns`, `durationMs`, `exitClass`, `startedAt`, `endedAt`),
+   through the reservation's held parent descriptor. An executor rejection is metered the same way,
+   and is not written when that parent no longer names the reserved directory.
    `durationMs` is the worker-reported duration when the result envelope carried one, else the
    engine-measured time.
 8. Read only the allowed paths into the candidate. A symlink, FIFO, device or oversize entry is

@@ -12,6 +12,7 @@ import {
   assertEvidenceDestinations,
   assertReservationStillBound,
   releaseEvidenceReservation,
+  reservationParentFd,
   reserveEvidenceDestinations,
 } from '../../backend/src/real-run/evidence-destinations';
 import { requestExecutionSample } from '../contracts/support/samples';
@@ -231,6 +232,27 @@ describe('bundle persistence', () => {
     persistCandidateBundleExclusive(fx.bundleDir, bundle);
     expect(bundleComplete(fx.bundleDir)).toBe(true);
     expect(statSync(fx.bundleDir).mode & 0o777).toBe(0o700);
+  });
+
+  it('the exclusive writer uses a held parent descriptor instead of a replacement directory', async () => {
+    const { persistCandidateBundleExclusive } = await import('../../backend/src/cli/candidate-offline-bundle');
+    const { bundle } = await verifiedBundle(fx.dir);
+    const parent = path.join(fx.dir, 'evidence');
+    await mkdir(parent);
+    const bundleDir = path.join(parent, 'bundle');
+    const reservation = reserveEvidenceDestinations({ bundleDir, spendLedgerPath: path.join(parent, 'spend.jsonl') });
+    const moved = `${parent}-moved`;
+    try {
+      await rename(parent, moved);
+      await mkdir(parent);
+      expect(() => persistCandidateBundleExclusive(bundleDir, bundle, reservationParentFd(reservation, bundleDir))).toThrow(/now resolves to/);
+      expect(existsSync(path.join(parent, 'bundle'))).toBe(false);
+      expect(existsSync(path.join(moved, 'bundle'))).toBe(false);
+    } finally {
+      releaseEvidenceReservation(reservation);
+    }
+    expect(existsSync(path.join(moved, 'bundle.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(parent, 'bundle.goal-gen-reserved'))).toBe(false);
   });
 
   it('the exclusive writer refuses a parent swapped for a symlink', async () => {

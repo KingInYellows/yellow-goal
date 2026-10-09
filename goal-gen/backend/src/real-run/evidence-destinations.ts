@@ -4,8 +4,8 @@
  * scratch worktree exists, and again just before each one is written, the engine refuses a
  * destination that could be confused with, or reached through, the worker's side of the run, or
  * whose parent another local user could swap or pre-fill. Every refusal is
- * EVIDENCE_DESTINATION_REFUSED. The bundle is then created through a held parent descriptor
- * (`persistCandidateBundleExclusive`), which closes the window after the last check.
+ * EVIDENCE_DESTINATION_REFUSED. The ledger and the bundle are then created through the
+ * reservation's held parent descriptor, which closes the window after the last check.
  *
  * The existence check does not itself hold the path. After consumption and before spawn, the
  * engine exclusively creates a `<destination>.goal-gen-reserved` sentinel beside each destination
@@ -312,6 +312,16 @@ export function assertReservationStillBound(reservation: EvidenceReservation | u
       if (pathFd !== undefined) closeQuiet(pathFd);
     }
   }
+}
+
+/**
+ * The parent descriptor held for `destination`. Release closes it; a writer must not.
+ * Creating the ledger or bundle through this descriptor keeps a replaced pathname from receiving them.
+ */
+export function reservationParentFd(reservation: EvidenceReservation, destination: string): number {
+  const held = reservation.held.find((entry) => entry.destination === destination);
+  if (held === undefined) throw new Error(`evidence reservation is missing ${destination}`);
+  return held.parentFd;
 }
 
 /** Drops a hold this run created. A missing sentinel is already released. Never throws. */

@@ -54,6 +54,7 @@ import {
   assertEvidenceDestinations,
   assertReservationStillBound,
   releaseEvidenceReservation,
+  reservationParentFd,
   reserveEvidenceDestinations,
   REAL_RUN_WORKTREE_PREFIX,
   type EvidenceReservation,
@@ -271,15 +272,19 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     ...failure,
     ...(spend === undefined ? {} : { spend }),
   });
-  const writeLedger = (spend: RealRunSpend, startedAt: string, endedAt: string): Promise<void> =>
-    createSpendLedger(manifest.evidence.spendLedgerPath, {
-      schemaVersion: SpendLedgerSchemaVersion,
-      approvalId: verified.approvalId,
-      model: manifest.model,
-      ...spend,
-      startedAt,
-      endedAt,
-    });
+  const writeLedger = (spend: RealRunSpend, startedAt: string, endedAt: string, parentFd: number): Promise<void> =>
+    createSpendLedger(
+      manifest.evidence.spendLedgerPath,
+      {
+        schemaVersion: SpendLedgerSchemaVersion,
+        approvalId: verified.approvalId,
+        model: manifest.model,
+        ...spend,
+        startedAt,
+        endedAt,
+      },
+      parentFd,
+    );
 
   // The approval is consumed from here on; every path below ends in exactly one outcome.
   let worktree: WorktreeHandle | undefined;
@@ -352,10 +357,18 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
       // attempt is metered as unknown spend rather than left out of the ledger.
       const now = clock().toISOString();
       const spend: RealRunSpend = { costUsd: null, turns: null, durationMs: 0, exitClass: 'engine-error' };
-      const ledgered = await writeLedger(spend, now, now).then(
-        () => true,
-        () => false,
-      );
+      // Same binding check as a resolved result. The ledger is created through the held parent, so a
+      // directory swapped in at the approved path is not written.
+      const ledgered = await Promise.resolve()
+        .then(() => {
+          assertReservationStillBound(reservation);
+          if (reservation === undefined) throw new Error('evidence reservation is missing');
+          return writeLedger(spend, now, now, reservationParentFd(reservation, manifest.evidence.spendLedgerPath));
+        })
+        .then(
+          () => true,
+          () => false,
+        );
       const hookError = observe(() => input.onSpend?.(spend));
       return failed(
         {
@@ -386,7 +399,13 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         worktreeRoot: worktree.root,
       });
       assertReservationStillBound(reservation);
-      await writeLedger(spend, run.startedAt, run.endedAt ?? run.startedAt);
+      if (reservation === undefined) throw new Error('evidence reservation is missing');
+      await writeLedger(
+        spend,
+        run.startedAt,
+        run.endedAt ?? run.startedAt,
+        reservationParentFd(reservation, manifest.evidence.spendLedgerPath),
+      );
     } catch (err) {
       ledgerFailure = writeFailed(manifest.evidence.spendLedgerPath, err);
     }
@@ -471,9 +490,10 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
       return failed({ reason: 'evidence-destination-refused', evidence: { ...destinationRefused(err), ...unpersisted } }, spend);
     }
     try {
-      // Created exclusively through the held parent directory: nothing that appeared since, and no
-      // swapped parent, is written into.
-      persistCandidateBundleExclusive(bundleDir, bundle);
+      // Created exclusively through the reservation's held parent: a pathname opened again here could
+      // be a directory swapped in after the binding check.
+      if (reservation === undefined) throw new Error('evidence reservation is missing');
+      persistCandidateBundleExclusive(bundleDir, bundle, reservationParentFd(reservation, bundleDir));
     } catch (err) {
       return failed({ reason: 'evidence-write-failed', evidence: { ...writeFailed(bundleDir, err), ...unpersisted } }, spend);
     }

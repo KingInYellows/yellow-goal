@@ -449,6 +449,38 @@ describe('real-run engine refusals: no spawn, no ledger, no bundle (AGX-R4/R5/R8
     expect(existsSync(path.join(moved, 'bundle.goal-gen-reserved'))).toBe(false);
   });
 
+  it('an executor rejection does not ledger into a replaced evidence parent', async () => {
+    const parent = path.join(fx.dir, 'evidence');
+    await mkdir(parent);
+    const bundleDir = path.join(parent, 'bundle');
+    const ledgerPath = path.join(parent, 'spend.jsonl');
+    const args = manifestArgs(fx, { bundleDir, ledgerPath });
+    const approvalId = await mintApproval(fx, args);
+    const moved = `${parent}-moved`;
+    const outcome = await runEngine(fx, 'success', args, {
+      executorFactory: () => ({
+        kind: 'claude-code',
+        run: async () => {
+          await rename(parent, moved);
+          await mkdir(parent);
+          throw new Error('executor exploded');
+        },
+      }),
+    });
+    expect(outcome).toMatchObject({
+      kind: 'worker-failed',
+      reason: 'engine-error',
+      approvalId,
+      evidence: { stage: 'worker', message: 'executor exploded', spendLedgerWritten: false },
+    });
+    expect(markerExists(fx, approvalId)).toBe(true);
+    expect(existsSync(path.join(parent, 'spend.jsonl'))).toBe(false);
+    expect(existsSync(path.join(parent, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(moved, 'spend.jsonl'))).toBe(false);
+    expect(existsSync(path.join(moved, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(moved, 'bundle.goal-gen-reserved'))).toBe(false);
+  });
+
   it('EVIDENCE_DESTINATION_REFUSED: the bundle directory already exists', async () => {
     const approvalId = await mintApproval(fx, manifestArgs(fx));
     await writeFile(fx.bundleDir, 'planted', 'utf8');

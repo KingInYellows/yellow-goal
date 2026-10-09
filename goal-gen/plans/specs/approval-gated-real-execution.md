@@ -372,9 +372,10 @@ false. It does not authorize target execution, retries, or a live spend run.
   sibling would exceed the 255-byte file-name limit, and a destination whose own path ends with
   `.goal-gen-reserved` (that path is another run's sentinel; reserving the unsuffixed path would
   create it and the later release would unlink it). The check is
-  repeated once the scratch worktree exists and just before each evidence write (a
-  failure then is `worker-failed`, the approval already consumed), and the bundle is created
-  through a held parent directory descriptor. After consumption and before spawn the engine also
+  repeated once the scratch worktree exists and just before each evidence write, including the
+  spend ledger written when the executor rejects (a failure then is `worker-failed`, the approval
+  already consumed). The ledger and the bundle are created through the reservation's held parent
+  descriptor rather than by reopening the approved pathname. After consumption and before spawn the engine also
   exclusively creates `<destination>.goal-gen-reserved` beside each destination (sorted path
   order) through the parent's held descriptor, and removes those sentinels the same way when the
   run finishes. Before spawn, and again before each evidence write, the approved parent path must
