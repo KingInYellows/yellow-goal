@@ -368,7 +368,10 @@ false. It does not authorize target execution, retries, or a live spend run.
   consumption the engine also refuses (`EVIDENCE_DESTINATION_REFUSED`) a destination that already
   exists, sits inside the request's target repository or a real-run scratch worktree, or whose
   parent no longer resolves to itself, is owned by another user or is group/world-writable. The
-  check is repeated once the scratch worktree exists and just before each evidence write (a
+  same pre-consumption refusal covers a destination whose `<destination>.goal-gen-reserved`
+  sibling would exceed the 255-byte file-name limit: the destination itself can be created, but
+  reserving it would fail with `ENAMETOOLONG` only after the approval was consumed. The check is
+  repeated once the scratch worktree exists and just before each evidence write (a
   failure then is `worker-failed`, the approval already consumed), and the bundle is created
   through a held parent directory descriptor. After consumption and before spawn the engine also
   exclusively creates `<destination>.goal-gen-reserved` beside each destination (sorted path

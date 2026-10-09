@@ -17,8 +17,10 @@
  * approval is consumed and again before any sentinel is created: reserving it would exclusive-create
  * the other destination, the post-seed check would report that the path already exists, and
  * releasing the sentinel would unlink it. A retry would otherwise burn another approval and leave
- * nothing for the operator to inspect. A crash leaves the sentinels in place; the next run consumes
- * its approval and then fails the reservation without spawning until the operator removes them.
+ * nothing for the operator to inspect. A destination basename at the file-name limit can itself be
+ * created, but the sentinel sibling cannot (`ENAMETOOLONG`). That name is refused before consumption
+ * too, so a retry does not spend the approval. A crash leaves the sentinels in place; the next run
+ * consumes its approval and then fails the reservation without spawning until the operator removes them.
  */
 import { closeSync, constants as fsConstants, fchmodSync, fsyncSync, lstatSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -110,6 +112,9 @@ export function assertEvidenceDestinations(evidence: EvidenceDestinations, conte
 /** Sibling of an evidence path. Not the path itself — the bundle and ledger are created later. */
 const RESERVATION_SUFFIX = '.goal-gen-reserved';
 
+/** `NAME_MAX` on common local filesystems. The reservation sibling is one directory entry. */
+const SENTINEL_NAME_MAX_BYTES = 255;
+
 const RESERVATION_BODY = 'yellow-goal/evidence-reservation/v1\n';
 
 /** Sentinels this run created. Only these may be removed; a peer's sentinel must be left alone. */
@@ -122,7 +127,9 @@ function sentinelPath(destination: string): string {
 /**
  * The manifest rejects equal or nested paths only, so one destination can be named the other's
  * sentinel. Refuse before creating anything: an exclusive create at that path is the other
- * evidence file, and releasing the sentinel would unlink it.
+ * evidence file, and releasing the sentinel would unlink it. Also refuse a sentinel basename over
+ * `NAME_MAX`: the destination itself can still be created, and discovering `ENAMETOOLONG` only
+ * inside `reserveEvidenceDestinations` would spend the approval with nothing spawned.
  */
 function assertSentinelDoesNotAliasDestination(evidence: EvidenceDestinations): void {
   const destinations = new Set([evidence.bundleDir, evidence.spendLedgerPath]);
@@ -130,6 +137,10 @@ function assertSentinelDoesNotAliasDestination(evidence: EvidenceDestinations): 
     const sentinel = sentinelPath(destination);
     if (destinations.has(sentinel)) {
       refuse(destination, `its reservation path ${sentinel} is the other evidence destination`);
+    }
+    const bytes = Buffer.byteLength(path.basename(sentinel));
+    if (bytes > SENTINEL_NAME_MAX_BYTES) {
+      refuse(destination, `its reservation name is ${bytes} bytes, over the ${SENTINEL_NAME_MAX_BYTES}-byte file-name limit`);
     }
   }
 }

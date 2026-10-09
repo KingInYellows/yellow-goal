@@ -11,7 +11,7 @@ import * as offlineCommand from '../../backend/src/cli/candidate-offline-command
 import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
 import { mintRunApprovalRecord, writeFileExclusive } from '../../backend/src/cli/run-approval';
 import { manifestFromFlags } from '../../backend/src/cli/run-manifest-command';
-import { reserveEvidenceDestinations } from '../../backend/src/real-run/evidence-destinations';
+import { releaseEvidenceReservation, reserveEvidenceDestinations } from '../../backend/src/real-run/evidence-destinations';
 import { seedScratchFromCapture, type RealRunInput, type ScratchSeed } from '../../backend/src/real-run/real-run-engine';
 import type { RealRunOutcome } from '../../backend/src/real-run/outcome';
 import {
@@ -331,6 +331,50 @@ describe('real-run engine refusals: no spawn, no ledger, no bundle (AGX-R4/R5/R8
     expect(invocations(fx)).toHaveLength(0);
     expect(existsSync(base)).toBe(false);
     expect(existsSync(aliased)).toBe(false);
+  });
+
+  it('a reservation name over the file-name limit is refused before consumption', async () => {
+    // A 255-byte destination basename can be created; the `.goal-gen-reserved` sibling cannot.
+    const bundleDir = path.join(fx.dir, 'b'.repeat(255));
+    expect(Buffer.byteLength(path.basename(`${bundleDir}.goal-gen-reserved`))).toBeGreaterThan(255);
+    expect(() => reserveEvidenceDestinations({ bundleDir, spendLedgerPath: fx.ledgerPath })).toThrow(
+      /reservation name is \d+ bytes, over the 255-byte file-name limit/,
+    );
+    expect(existsSync(bundleDir)).toBe(false);
+    expect(existsSync(`${bundleDir}.goal-gen-reserved`)).toBe(false);
+    expect(existsSync(`${fx.ledgerPath}.goal-gen-reserved`)).toBe(false);
+
+    const args = manifestArgs(fx, { bundleDir });
+    const approvalId = await mintApproval(fx, args);
+    const outcome = await runEngine(fx, 'success', args);
+    expect(outcome).toMatchObject({
+      kind: 'refused',
+      code: 'EVIDENCE_DESTINATION_REFUSED',
+      approvalId,
+      message: expect.stringMatching(/255-byte file-name limit/) as unknown as string,
+    });
+    expect(markerExists(fx, approvalId)).toBe(false);
+    expect(invocations(fx)).toHaveLength(0);
+
+    const retry = await runEngine(fx, 'success', args);
+    expect(retry).toMatchObject({ kind: 'refused', code: 'EVIDENCE_DESTINATION_REFUSED', approvalId });
+    expect(markerExists(fx, approvalId)).toBe(false);
+    expect(invocations(fx)).toHaveLength(0);
+    expect(existsSync(`${bundleDir}.goal-gen-reserved`)).toBe(false);
+    expect(existsSync(`${fx.ledgerPath}.goal-gen-reserved`)).toBe(false);
+  });
+
+  it('a reservation name of exactly 255 bytes can still be reserved', () => {
+    const bundleDir = path.join(fx.dir, 'c'.repeat(255 - '.goal-gen-reserved'.length));
+    expect(Buffer.byteLength(path.basename(`${bundleDir}.goal-gen-reserved`))).toBe(255);
+    const reservation = reserveEvidenceDestinations({ bundleDir, spendLedgerPath: fx.ledgerPath });
+    expect(existsSync(`${bundleDir}.goal-gen-reserved`)).toBe(true);
+    expect(existsSync(`${fx.ledgerPath}.goal-gen-reserved`)).toBe(true);
+    releaseEvidenceReservation(reservation);
+    expect(existsSync(`${bundleDir}.goal-gen-reserved`)).toBe(false);
+    expect(existsSync(`${fx.ledgerPath}.goal-gen-reserved`)).toBe(false);
+    expect(existsSync(bundleDir)).toBe(false);
+    expect(existsSync(fx.ledgerPath)).toBe(false);
   });
 
   it('EVIDENCE_DESTINATION_REFUSED: the bundle directory already exists', async () => {

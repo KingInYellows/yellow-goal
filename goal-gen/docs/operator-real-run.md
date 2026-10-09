@@ -51,10 +51,12 @@ owned by you, and is not group- or world-writable (so not directly in `/tmp`). T
 manifest stores them as canonical absolute paths (the parent resolved through any symlink), so
 check the `evidence` block you are shown. The real run refuses a destination that exists by then,
 sits inside the request's target repository or a scratch worktree, or whose parent was swapped
-for a symlink or made writable by others. While a run holds the destinations it also keeps a
-`<path>.goal-gen-reserved` file beside each one, so a second approval of the same manifest cannot
-spawn; the file is removed when the run finishes. Delete a leftover sentinel before reusing those
-paths — the next run consumes its approval and then stops without a spawn.
+for a symlink or made writable by others. A destination whose `<path>.goal-gen-reserved` file name
+would exceed 255 bytes is refused before the approval is consumed. While a run holds the
+destinations it also keeps a `<path>.goal-gen-reserved` file beside each one, so a second approval
+of the same manifest cannot spawn; the file is removed when the run finishes. Delete a leftover
+sentinel before reusing those paths — the next run consumes its approval and then stops without a
+spawn.
 
 Prints `{ manifest, manifestHash }`. Rendering twice with the same inputs yields the
 same bytes. There is no challenge here: `run approve` shows a fresh one when you approve. Nothing is spawned. `manifest` and `approve` must come directly after `run`; a
@@ -189,7 +191,7 @@ verb ever marks a real-run candidate accepted, and nothing is committed, merged 
 | `APPROVAL_CONSUMED` | The approval (by `approvalId`, even via a copied file) was already used |
 | `APPROVAL_STATE_UNAVAILABLE` | The consumption-marker directory could not be read or written; the run is refused |
 | `AUTH_MODE_MISMATCH` | The environment's credential contradicts the manifest's auth mode: `ANTHROPIC_API_KEY` is set but the auth mode is not `api-key` (it would silently override the subscription), or it is unset under `api-key` (the CLI would silently fall back to the subscription); or `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_CUSTOM_HEADERS`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_BASE_URL` or a `CLAUDE_CODE_USE_*` provider toggle is set, which would substitute another credential or provider. Nothing spawned |
-| `EVIDENCE_DESTINATION_REFUSED` | A bundle or ledger destination already exists, is inside the request's target repository or a real-run scratch worktree, or its parent now resolves through a symlink, is owned by another user, or is group- or world-writable. Checked before consumption (outcome `refused`; nothing spawned). The same checks run again once the scratch worktree exists and just before each evidence file is written; failing them then is `worker-failed` with reason `evidence-destination-refused` (the approval is already consumed; a verified candidate is kept in the outcome). After consumption the engine also reserves each destination (`<path>.goal-gen-reserved`); losing that reservation to a concurrent approval of the same manifest, or finding a leftover sentinel, is the same `worker-failed` reason and does not spawn |
+| `EVIDENCE_DESTINATION_REFUSED` | A bundle or ledger destination already exists, is inside the request's target repository or a real-run scratch worktree, or its parent now resolves through a symlink, is owned by another user, or is group- or world-writable. A `<path>.goal-gen-reserved` name longer than 255 bytes is refused here too. Checked before consumption (outcome `refused`; nothing spawned). The same checks run again once the scratch worktree exists and just before each evidence file is written; failing them then is `worker-failed` with reason `evidence-destination-refused` (the approval is already consumed; a verified candidate is kept in the outcome). After consumption the engine also reserves each destination (`<path>.goal-gen-reserved`); losing that reservation to a concurrent approval of the same manifest, or finding a leftover sentinel, is the same `worker-failed` reason and does not spawn |
 | `EVIDENCE_WRITE_FAILED` | The spend ledger or bundle could not be written after the worker ran (including a ledger destination that failed its re-check just before the write); reported as a `worker-failed` outcome (`evidence-write-failed`) with the spend so far, and with the candidate and verifier decision when the bundle was the failed write |
 | `RUN_CANCELLED` | The run was cancelled before the approval was consumed; the approval stays usable and nothing spawned |
 | `TOOLS_UNCONFINED` | An allowed tool is not a filesystem tool path-scoped to the scratch worktree (`Read`/`Edit`/`Write`/`MultiEdit`/`Glob`/`Grep` with a relative in-worktree specifier such as `Edit(./site.json)`, built only from letters, digits, `.`, `_`, `-`, `*` and `/`); `Bash`, unscoped, absolute, `~`, `..`, whitespace and multi-rule specifiers are refused, as are an empty allowlist and write rules naming `.git`, `.claude`, `.mcp.json`, `CLAUDE.local.md` (any case) or a dotfile wildcard. Nothing spawned |
