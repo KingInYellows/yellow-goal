@@ -17,16 +17,21 @@
  * approval is consumed and again before any sentinel is created: reserving it would exclusive-create
  * the other destination, the post-seed check would report that the path already exists, and
  * releasing the sentinel would unlink it. A retry would otherwise burn another approval and leave
- * nothing for the operator to inspect. A destination basename at the file-name limit can itself be
- * created, but the sentinel sibling cannot (`ENAMETOOLONG`). That name is refused before consumption
- * too, so a retry does not spend the approval. A crash leaves the sentinels in place; the next run
- * consumes its approval and then fails the reservation without spawning until the operator removes them.
+ * nothing for the operator to inspect. The same collision exists across runs: a destination whose
+ * own path ends with `.goal-gen-reserved` is some other run's sentinel. That name is refused before
+ * consumption, not only when it aliases the sibling in this manifest. A destination basename at the
+ * file-name limit can itself be created, but the sentinel sibling cannot (`ENAMETOOLONG`). That name
+ * is refused before consumption too, so a retry does not spend the approval. The sentinel is created
+ * and removed through a parent directory opened `O_DIRECTORY|O_NOFOLLOW` and held until release, the
+ * same way the evidence files are written, so swapping an ancestor for a symlink cannot redirect the
+ * reservation. A crash leaves the sentinels in place; the next run consumes its approval and then
+ * fails the reservation without spawning until the operator removes them.
  */
 import { closeSync, constants as fsConstants, fchmodSync, fsyncSync, lstatSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { RunApprovalError } from '../cli/errors';
-import { O_NOFOLLOW_FLAG } from '../cli/fd-path';
+import { DIRECTORY_NOFOLLOW_FLAGS, O_NOFOLLOW_FLAG, pathThroughFd } from '../cli/fd-path';
 import { isErrnoCode } from '../cli/run-approval';
 import { isSameOrInside } from '../cli/run-manifest';
 
@@ -102,7 +107,7 @@ export function assertEvidenceDestination(destination: string, context: Evidence
   }
 }
 
-/** Refuses unless both destinations are fresh paths under a symlink-free, engine-unrelated parent, and neither reservation path is the other destination. */
+/** Refuses unless both destinations are fresh paths under a symlink-free, engine-unrelated parent, neither is a reservation name, and neither reservation path is the other destination. */
 export function assertEvidenceDestinations(evidence: EvidenceDestinations, context: EvidenceDestinationContext = {}): void {
   assertSentinelDoesNotAliasDestination(evidence);
   assertEvidenceDestination(evidence.bundleDir, context);
@@ -117,8 +122,14 @@ const SENTINEL_NAME_MAX_BYTES = 255;
 
 const RESERVATION_BODY = 'yellow-goal/evidence-reservation/v1\n';
 
-/** Sentinels this run created. Only these may be removed; a peer's sentinel must be left alone. */
-export type EvidenceReservation = { readonly sentinels: readonly string[] };
+/**
+ * One sentinel this run created. `parentFd` is the approved parent, held until release so create
+ * and unlink stay on that directory after an ancestor is renamed. Only these may be removed.
+ */
+type HeldSentinel = { readonly parentFd: number; readonly parent: string; readonly name: string };
+
+/** Sentinels this run created. A peer's sentinel must be left alone. */
+export type EvidenceReservation = { readonly held: readonly HeldSentinel[] };
 
 function sentinelPath(destination: string): string {
   return `${destination}${RESERVATION_SUFFIX}`;
@@ -127,102 +138,148 @@ function sentinelPath(destination: string): string {
 /**
  * The manifest rejects equal or nested paths only, so one destination can be named the other's
  * sentinel. Refuse before creating anything: an exclusive create at that path is the other
- * evidence file, and releasing the sentinel would unlink it. Also refuse a sentinel basename over
- * `NAME_MAX`: the destination itself can still be created, and discovering `ENAMETOOLONG` only
- * inside `reserveEvidenceDestinations` would spend the approval with nothing spawned.
+ * evidence file, and releasing the sentinel would unlink it. A destination that merely ends with
+ * the reservation suffix is the same collision against some other run, so it is refused even when
+ * this manifest's other path is unrelated. Also refuse a sentinel basename over `NAME_MAX`: the
+ * destination itself can still be created, and discovering `ENAMETOOLONG` only inside
+ * `reserveEvidenceDestinations` would spend the approval with nothing spawned.
  */
 function assertSentinelDoesNotAliasDestination(evidence: EvidenceDestinations): void {
   const destinations = new Set([evidence.bundleDir, evidence.spendLedgerPath]);
+  // The pair check first: one path being the other's sentinel has the more specific refusal.
   for (const destination of destinations) {
     const sentinel = sentinelPath(destination);
     if (destinations.has(sentinel)) {
       refuse(destination, `its reservation path ${sentinel} is the other evidence destination`);
     }
-    const bytes = Buffer.byteLength(path.basename(sentinel));
+  }
+  for (const destination of destinations) {
+    if (destination.endsWith(RESERVATION_SUFFIX)) {
+      refuse(destination, `it ends with the reservation suffix ${RESERVATION_SUFFIX}, so it is another run's sentinel path`);
+    }
+    const bytes = Buffer.byteLength(path.basename(sentinelPath(destination)));
     if (bytes > SENTINEL_NAME_MAX_BYTES) {
       refuse(destination, `its reservation name is ${bytes} bytes, over the ${SENTINEL_NAME_MAX_BYTES}-byte file-name limit`);
     }
   }
 }
 
-function fsyncDirectorySync(dirPath: string): void {
-  const fd = openSync(dirPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | O_NOFOLLOW_FLAG);
+function closeQuiet(fd: number): void {
   try {
-    fsyncSync(fd);
-  } finally {
     closeSync(fd);
+  } catch {
+    // Already closed, or never a live descriptor. Release must not mask the outcome.
   }
 }
 
-/** Exclusive-creates one sentinel. On a failure after the create, removes it and rethrows the raw error. */
-function createSentinelSync(sentinel: string): void {
-  const fd = openSync(sentinel, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | O_NOFOLLOW_FLAG, 0o600);
+/** Opens `dirname(destination)` and refuses unless that descriptor is still the approved parent. */
+function openReservationParent(destination: string): number {
+  const parent = path.dirname(destination);
+  let parentFd: number;
   try {
-    fchmodSync(fd, 0o600);
-    writeFileSync(fd, RESERVATION_BODY, 'utf8');
-    fsyncSync(fd);
+    parentFd = openSync(parent, DIRECTORY_NOFOLLOW_FLAGS);
   } catch (err) {
-    closeSync(fd);
-    try {
-      unlinkSync(sentinel);
-    } catch (cleanupErr) {
-      throw new Error(`write to ${sentinel} failed and the partial file could not be removed`, {
-        cause: new AggregateError([err, cleanupErr]),
-      });
+    if (isErrnoCode(err, 'ELOOP') || isErrnoCode(err, 'ENOTDIR')) {
+      refuse(destination, 'its parent resolves through a symlink');
     }
     throw err;
   }
-  closeSync(fd);
   try {
-    fsyncDirectorySync(path.dirname(sentinel));
+    const held = realpathSync(pathThroughFd(parentFd, parent));
+    if (held !== parent) refuse(destination, `its parent now resolves to ${held}`);
+    return parentFd;
   } catch (err) {
-    try {
-      unlinkSync(sentinel);
-    } catch {
-      // A leftover sentinel fails closed on the next run; the original error still surfaces.
-    }
+    closeQuiet(parentFd);
     throw err;
   }
 }
 
-function releaseSentinels(sentinels: readonly string[]): void {
+/**
+ * Exclusive-creates one sentinel through the held parent. On a failure after the create, removes
+ * it through that descriptor and rethrows. The caller closes `parentFd` unless it is returned.
+ */
+function createSentinelSync(destination: string): HeldSentinel {
+  const parent = path.dirname(destination);
+  const name = `${path.basename(destination)}${RESERVATION_SUFFIX}`;
+  const parentFd = openReservationParent(destination);
+  const parentPath = pathThroughFd(parentFd, parent);
+  const target = path.join(parentPath, name);
+  try {
+    const fd = openSync(target, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | O_NOFOLLOW_FLAG, 0o600);
+    try {
+      fchmodSync(fd, 0o600);
+      writeFileSync(fd, RESERVATION_BODY, 'utf8');
+      fsyncSync(fd);
+    } catch (err) {
+      closeSync(fd);
+      try {
+        unlinkSync(target);
+      } catch (cleanupErr) {
+        throw new Error(`write to ${path.join(parent, name)} failed and the partial file could not be removed`, {
+          cause: new AggregateError([err, cleanupErr]),
+        });
+      }
+      throw err;
+    }
+    closeSync(fd);
+    try {
+      fsyncSync(parentFd);
+    } catch (err) {
+      try {
+        unlinkSync(target);
+      } catch {
+        // A leftover sentinel fails closed on the next run; the original error still surfaces.
+      }
+      throw err;
+    }
+    return { parentFd, parent, name };
+  } catch (err) {
+    closeQuiet(parentFd);
+    throw err;
+  }
+}
+
+function releaseSentinels(sentinels: readonly HeldSentinel[]): void {
   for (const sentinel of [...sentinels].reverse()) {
     try {
-      unlinkSync(sentinel);
+      const parentPath = pathThroughFd(sentinel.parentFd, sentinel.parent);
+      unlinkSync(path.join(parentPath, sentinel.name));
     } catch (err) {
       if (!isErrnoCode(err, 'ENOENT')) {
         // Leave the sentinel. The next run fails closed, and release must not mask the outcome.
       }
+    } finally {
+      closeQuiet(sentinel.parentFd);
     }
   }
 }
 
 /**
  * Holds both destinations before spawn. Lock order is the sorted destination path, so two runs
- * cannot each take one sentinel and both lose. `EEXIST` / `ELOOP` means another run (or a leftover
- * sentinel) already holds the path. A partial hold is released before the refusal. A sentinel that
- * is either destination is refused before any create, so the other evidence path is never written.
+ * cannot each take one sentinel and both lose. `EEXIST` / `ELOOP` on the sentinel means another
+ * run (or a leftover sentinel) already holds the path. A partial hold is released before the
+ * refusal. A sentinel that is either destination, or a destination that is itself a sentinel name,
+ * is refused before any create, so an evidence path is never written or unlinked as a reservation.
  */
 export function reserveEvidenceDestinations(evidence: EvidenceDestinations): EvidenceReservation {
   assertSentinelDoesNotAliasDestination(evidence);
   const destinations = [evidence.bundleDir, evidence.spendLedgerPath].slice().sort();
-  const sentinels: string[] = [];
+  const sentinels: HeldSentinel[] = [];
   for (const destination of destinations) {
-    const sentinel = sentinelPath(destination);
     try {
-      createSentinelSync(sentinel);
+      sentinels.push(createSentinelSync(destination));
     } catch (err) {
       releaseSentinels(sentinels);
+      if (err instanceof RunApprovalError) throw err;
       const held = isErrnoCode(err, 'EEXIST') || isErrnoCode(err, 'ELOOP');
       refuse(destination, held ? 'it is reserved by another real run' : `it could not be reserved (${errnoCode(err)})`);
     }
-    sentinels.push(sentinel);
   }
-  return { sentinels };
+  return { held: sentinels };
 }
 
 /** Drops a hold this run created. A missing sentinel is already released. Never throws. */
 export function releaseEvidenceReservation(reservation: EvidenceReservation | undefined): void {
   if (reservation === undefined) return;
-  releaseSentinels(reservation.sentinels);
+  releaseSentinels(reservation.held);
 }

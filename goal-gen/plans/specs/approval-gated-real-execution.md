@@ -369,13 +369,15 @@ false. It does not authorize target execution, retries, or a live spend run.
   exists, sits inside the request's target repository or a real-run scratch worktree, or whose
   parent no longer resolves to itself, is owned by another user or is group/world-writable. The
   same pre-consumption refusal covers a destination whose `<destination>.goal-gen-reserved`
-  sibling would exceed the 255-byte file-name limit: the destination itself can be created, but
-  reserving it would fail with `ENAMETOOLONG` only after the approval was consumed. The check is
+  sibling would exceed the 255-byte file-name limit, and a destination whose own path ends with
+  `.goal-gen-reserved` (that path is another run's sentinel; reserving the unsuffixed path would
+  create it and the later release would unlink it). The check is
   repeated once the scratch worktree exists and just before each evidence write (a
   failure then is `worker-failed`, the approval already consumed), and the bundle is created
   through a held parent directory descriptor. After consumption and before spawn the engine also
   exclusively creates `<destination>.goal-gen-reserved` beside each destination (sorted path
-  order) and removes those sentinels when the run finishes. Losing that reservation, or finding a
+  order) through the parent's held descriptor, and removes those sentinels the same way when the
+  run finishes. Losing that reservation, or finding a
   leftover sentinel, is `worker-failed` `evidence-destination-refused` with nothing spawned (the
   approval is already consumed). A crash leaves the sentinels; the operator deletes them before
   another approval of those paths can run. Two concurrent approvals of one manifest therefore

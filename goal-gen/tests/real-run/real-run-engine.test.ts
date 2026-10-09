@@ -377,6 +377,38 @@ describe('real-run engine refusals: no spawn, no ledger, no bundle (AGX-R4/R5/R8
     expect(existsSync(fx.ledgerPath)).toBe(false);
   });
 
+  it('a destination that is itself a reservation name is refused before consumption', async () => {
+    // Not this manifest's other sentinel. Another run whose destination is `bundle` would create
+    // this path, and releasing that run would unlink this one.
+    const bundleDir = path.join(fx.dir, 'bundle.goal-gen-reserved');
+    expect(`${fx.ledgerPath}.goal-gen-reserved`).not.toBe(bundleDir);
+    expect(() => reserveEvidenceDestinations({ bundleDir, spendLedgerPath: fx.ledgerPath })).toThrow(
+      /ends with the reservation suffix/,
+    );
+    expect(existsSync(bundleDir)).toBe(false);
+    expect(existsSync(`${bundleDir}.goal-gen-reserved`)).toBe(false);
+    expect(existsSync(`${fx.ledgerPath}.goal-gen-reserved`)).toBe(false);
+
+    const args = manifestArgs(fx, { bundleDir });
+    const approvalId = await mintApproval(fx, args);
+    const outcome = await runEngine(fx, 'success', args);
+    expect(outcome).toMatchObject({
+      kind: 'refused',
+      code: 'EVIDENCE_DESTINATION_REFUSED',
+      approvalId,
+      message: expect.stringMatching(/ends with the reservation suffix/) as unknown as string,
+    });
+    expect(markerExists(fx, approvalId)).toBe(false);
+    expect(invocations(fx)).toHaveLength(0);
+
+    const retry = await runEngine(fx, 'success', args);
+    expect(retry).toMatchObject({ kind: 'refused', code: 'EVIDENCE_DESTINATION_REFUSED', approvalId });
+    expect(markerExists(fx, approvalId)).toBe(false);
+    expect(invocations(fx)).toHaveLength(0);
+    expect(existsSync(bundleDir)).toBe(false);
+    expect(existsSync(`${bundleDir}.goal-gen-reserved`)).toBe(false);
+  });
+
   it('EVIDENCE_DESTINATION_REFUSED: the bundle directory already exists', async () => {
     const approvalId = await mintApproval(fx, manifestArgs(fx));
     await writeFile(fx.bundleDir, 'planted', 'utf8');
