@@ -155,6 +155,51 @@ describe('real-run engine outcomes (AGX-R19)', () => {
     expect(outcomes.find((outcome) => outcome.kind === 'refused')).toMatchObject({ code: 'APPROVAL_CONSUMED', approvalId });
     expectOneConsumedAttempt(approvalId);
   });
+
+  it('two concurrent approvals of one manifest spawn exactly one worker', async () => {
+    const args = manifestArgs(fx);
+    const firstPath = path.join(fx.dir, 'approval-a.json');
+    const secondPath = path.join(fx.dir, 'approval-b.json');
+    const firstId = await mintApproval(fx, args, firstPath);
+    const secondId = await mintApproval(fx, args, secondPath);
+    expect(firstId).not.toBe(secondId);
+
+    // The first spawn waits here so its peer still sees unreserved destinations. A peer refused
+    // before spawn never arrives; the wait is bounded so that case can finish.
+    let arrived = 0;
+    let releaseBoth = (): void => undefined;
+    const bothAtSpawn = new Promise<void>((resolve) => {
+      releaseBoth = resolve;
+    });
+    const executorFactory: RealRunInput['executorFactory'] = (manifest) => {
+      const inner = fakeWorkerFactory(fx, 'success')!(manifest);
+      return {
+        kind: inner.kind,
+        run: async (action, ctx) => {
+          arrived += 1;
+          if (arrived >= 2) releaseBoth();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            bothAtSpawn,
+            new Promise<void>((resolve) => {
+              timer = setTimeout(resolve, 10_000);
+            }),
+          ]).finally(() => clearTimeout(timer));
+          return inner.run(action, ctx);
+        },
+      };
+    };
+
+    const outcomes = await Promise.all([
+      runEngine(fx, 'success', args, { approvalPath: firstPath, executorFactory }),
+      runEngine(fx, 'success', args, { approvalPath: secondPath, executorFactory }),
+    ]);
+    expect(invocations(fx)).toHaveLength(1);
+    expect(arrived).toBe(1);
+    const verified = outcomes.filter((outcome) => outcome.kind === 'verified');
+    expect(verified).toHaveLength(1);
+    expect([firstId, secondId]).toContain(verified[0]?.kind === 'verified' ? verified[0].approvalId : undefined);
+  });
 });
 
 describe('real-run engine refusals: no spawn, no ledger, no bundle (AGX-R4/R5/R8a/R13)', () => {

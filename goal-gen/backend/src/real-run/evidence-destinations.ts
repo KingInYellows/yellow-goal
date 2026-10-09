@@ -6,11 +6,20 @@
  * whose parent another local user could swap or pre-fill. Every refusal is
  * EVIDENCE_DESTINATION_REFUSED. The bundle is then created through a held parent descriptor
  * (`persistCandidateBundleExclusive`), which closes the window after the last check.
+ *
+ * The existence check does not itself hold the path. After consumption and before spawn, the
+ * engine exclusively creates a `<destination>.goal-gen-reserved` sentinel beside each destination
+ * (sorted path order) and releases those sentinels when the run finishes. A second approval of the
+ * same manifest loses that reservation and does not spawn. The sentinels are not the evidence
+ * files: those are still exclusive-created later, so a held reservation must not be the bundle
+ * directory or the ledger. A crash leaves the sentinels in place; the next run consumes its
+ * approval and then fails the reservation without spawning until the operator removes them.
  */
-import { lstatSync, realpathSync } from 'node:fs';
+import { closeSync, constants as fsConstants, fchmodSync, fsyncSync, lstatSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { RunApprovalError } from '../cli/errors';
+import { O_NOFOLLOW_FLAG } from '../cli/fd-path';
 import { isErrnoCode } from '../cli/run-approval';
 import { isSameOrInside } from '../cli/run-manifest';
 
@@ -90,4 +99,96 @@ export function assertEvidenceDestination(destination: string, context: Evidence
 export function assertEvidenceDestinations(evidence: EvidenceDestinations, context: EvidenceDestinationContext = {}): void {
   assertEvidenceDestination(evidence.bundleDir, context);
   assertEvidenceDestination(evidence.spendLedgerPath, context);
+}
+
+/** Sibling of an evidence path. Not the path itself — the bundle and ledger are created later. */
+const RESERVATION_SUFFIX = '.goal-gen-reserved';
+
+const RESERVATION_BODY = 'yellow-goal/evidence-reservation/v1\n';
+
+/** Sentinels this run created. Only these may be removed; a peer's sentinel must be left alone. */
+export type EvidenceReservation = { readonly sentinels: readonly string[] };
+
+function sentinelPath(destination: string): string {
+  return `${destination}${RESERVATION_SUFFIX}`;
+}
+
+function fsyncDirectorySync(dirPath: string): void {
+  const fd = openSync(dirPath, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | O_NOFOLLOW_FLAG);
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Exclusive-creates one sentinel. On a failure after the create, removes it and rethrows the raw error. */
+function createSentinelSync(sentinel: string): void {
+  const fd = openSync(sentinel, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | O_NOFOLLOW_FLAG, 0o600);
+  try {
+    fchmodSync(fd, 0o600);
+    writeFileSync(fd, RESERVATION_BODY, 'utf8');
+    fsyncSync(fd);
+  } catch (err) {
+    closeSync(fd);
+    try {
+      unlinkSync(sentinel);
+    } catch (cleanupErr) {
+      throw new Error(`write to ${sentinel} failed and the partial file could not be removed`, {
+        cause: new AggregateError([err, cleanupErr]),
+      });
+    }
+    throw err;
+  }
+  closeSync(fd);
+  try {
+    fsyncDirectorySync(path.dirname(sentinel));
+  } catch (err) {
+    try {
+      unlinkSync(sentinel);
+    } catch {
+      // A leftover sentinel fails closed on the next run; the original error still surfaces.
+    }
+    throw err;
+  }
+}
+
+function releaseSentinels(sentinels: readonly string[]): void {
+  for (const sentinel of [...sentinels].reverse()) {
+    try {
+      unlinkSync(sentinel);
+    } catch (err) {
+      if (!isErrnoCode(err, 'ENOENT')) {
+        // Leave the sentinel. The next run fails closed, and release must not mask the outcome.
+      }
+    }
+  }
+}
+
+/**
+ * Holds both destinations before spawn. Lock order is the sorted destination path, so two runs
+ * cannot each take one sentinel and both lose. `EEXIST` / `ELOOP` means another run (or a leftover
+ * sentinel) already holds the path. A partial hold is released before the refusal.
+ */
+export function reserveEvidenceDestinations(evidence: EvidenceDestinations): EvidenceReservation {
+  const destinations = [evidence.bundleDir, evidence.spendLedgerPath].slice().sort();
+  const sentinels: string[] = [];
+  for (const destination of destinations) {
+    const sentinel = sentinelPath(destination);
+    try {
+      createSentinelSync(sentinel);
+    } catch (err) {
+      releaseSentinels(sentinels);
+      const held = isErrnoCode(err, 'EEXIST') || isErrnoCode(err, 'ELOOP');
+      refuse(destination, held ? 'it is reserved by another real run' : `it could not be reserved (${errnoCode(err)})`);
+    }
+    sentinels.push(sentinel);
+  }
+  return { sentinels };
+}
+
+/** Drops a hold this run created. A missing sentinel is already released. Never throws. */
+export function releaseEvidenceReservation(reservation: EvidenceReservation | undefined): void {
+  if (reservation === undefined) return;
+  releaseSentinels(reservation.sentinels);
 }

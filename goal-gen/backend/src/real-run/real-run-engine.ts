@@ -4,8 +4,10 @@
  * approval's consumption:
  *
  *   recompute manifest → verify approval → auth + tool guards → evidence destinations
- *   → consume → seed worktree → one worker run → spend ledger → extract candidate → verify
- *   → outcome, with the scratch worktree removed on every path once it exists.
+ *   → consume → reserve evidence destinations → seed worktree → one worker run → spend ledger
+ *   → extract candidate → verify → outcome, with the reservation and the scratch worktree removed
+ *   on every path once they exist. The reservation is what keeps a second approval of the same
+ *   manifest from spawning while this one still holds the destinations.
  *
  * The worker's exit status and narrative never decide success: only `acceptance verify-candidate`
  * over the allowed-path candidate does, and even then the outcome is `verified` (awaiting a human),
@@ -47,7 +49,14 @@ import { createWorktree, type WorktreeHandle } from '../executors/worktree';
 import type { Action } from '../planner/types';
 import type { AgentRun, AgentRunFailureClass, Executor } from '../types';
 import { buildRealRunCandidate } from './candidate-builder';
-import { assertEvidenceDestination, assertEvidenceDestinations, REAL_RUN_WORKTREE_PREFIX } from './evidence-destinations';
+import {
+  assertEvidenceDestination,
+  assertEvidenceDestinations,
+  releaseEvidenceReservation,
+  reserveEvidenceDestinations,
+  REAL_RUN_WORKTREE_PREFIX,
+  type EvidenceReservation,
+} from './evidence-destinations';
 import { buildFixedAction } from './fixed-goal';
 import type {
   DestinationRefusedEvidence,
@@ -273,6 +282,7 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
 
   // The approval is consumed from here on; every path below ends in exactly one outcome.
   let worktree: WorktreeHandle | undefined;
+  let reservation: EvidenceReservation | undefined;
   const controller = new AbortController();
   let wallClockExpired = false;
   const wallClock = setTimeout(() => {
@@ -297,6 +307,9 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     );
     if (startedError !== undefined) return failed({ reason: 'engine-error', evidence: { stage: 'onStarted', message: startedError } });
     try {
+      // Before spawn, so a concurrent approval of this manifest sees the destinations held and
+      // does not start a second worker. Released in `finally` (not the evidence files themselves).
+      reservation = reserveEvidenceDestinations(manifest.evidence);
       if (input.capture !== undefined) {
         const owner = classifyOwnerWorktreeForSeed({ identity: input.capture.identity, commit: input.capture.commit });
         if (owner === 'dirty' || owner === 'mixed') {
@@ -473,7 +486,9 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     clearTimeout(wallClock);
     input.signal?.removeEventListener('abort', onCallerAbort);
     for (const sig of TERMINATION_SIGNALS) process.off(sig, onCallerAbort);
-    // Teardown is best-effort (`rm --force` of an engine tmpdir); it must not replace the outcome.
+    // Teardown is best-effort; it must not replace the outcome. Release the destination hold
+    // before removing the worktree so a peer is not blocked on cleanup.
+    releaseEvidenceReservation(reservation);
     await worktree?.cleanup().catch(() => undefined);
   }
 }

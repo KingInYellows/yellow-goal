@@ -145,9 +145,14 @@ false. It does not authorize target execution, retries, or a live spend run.
   manifest (canonical absolute paths, covered by `manifestHash`), so the caller cannot redirect
   evidence writes after approval; the engine shall refuse before spawn a destination that is inside
   `target.repository` or the scratch worktree, or that resolves through a symlink, and shall
-  create evidence files with no-follow, exclusive opens. The manifest schema gains these fields
+  create evidence files with no-follow, exclusive opens. After the approval is consumed and before
+  the worker is spawned, the engine shall exclusively create a reservation sentinel beside each
+  evidence destination, in sorted path order, and shall not spawn when a sentinel already exists.
+  Sentinels are removed when the run finishes. Two concurrent approvals of one manifest therefore
+  spawn at most one worker. The manifest schema gains these fields
   when the run path is wired (run-execution shell); approvals minted earlier do not authorize a
   real run.
+  - Acceptance: two concurrent approvals of one manifest spawn exactly one worker.
 - **R9.** A real run shall build a fixed one-action goal from the profile's milestone text and
   shall not invoke the LLM extractor.
   - Acceptance: the fake `claude` records exactly one invocation per successful run.
@@ -365,7 +370,13 @@ false. It does not authorize target execution, retries, or a live spend run.
   parent no longer resolves to itself, is owned by another user or is group/world-writable. The
   check is repeated once the scratch worktree exists and just before each evidence write (a
   failure then is `worker-failed`, the approval already consumed), and the bundle is created
-  through a held parent directory descriptor. A cancel before consumption refuses
+  through a held parent directory descriptor. After consumption and before spawn the engine also
+  exclusively creates `<destination>.goal-gen-reserved` beside each destination (sorted path
+  order) and removes those sentinels when the run finishes. Losing that reservation, or finding a
+  leftover sentinel, is `worker-failed` `evidence-destination-refused` with nothing spawned (the
+  approval is already consumed). A crash leaves the sentinels; the operator deletes them before
+  another approval of those paths can run. Two concurrent approvals of one manifest therefore
+  spawn at most once. A cancel before consumption refuses
   (`RUN_CANCELLED`) and leaves the approval usable.
 - **Out-of-scope changes are evidence only (R17; AGX-R34 probe decision).** `acceptEdits` does
   not confine in-worktree writes, so the worker may leave files outside the allowed paths. They
