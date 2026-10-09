@@ -11,6 +11,7 @@ import * as offlineCommand from '../../backend/src/cli/candidate-offline-command
 import { getCandidateOfflineProfile } from '../../backend/src/cli/candidate-offline-profiles';
 import { mintRunApprovalRecord, writeFileExclusive } from '../../backend/src/cli/run-approval';
 import { manifestFromFlags } from '../../backend/src/cli/run-manifest-command';
+import { reserveEvidenceDestinations } from '../../backend/src/real-run/evidence-destinations';
 import { seedScratchFromCapture, type RealRunInput, type ScratchSeed } from '../../backend/src/real-run/real-run-engine';
 import type { RealRunOutcome } from '../../backend/src/real-run/outcome';
 import {
@@ -198,7 +199,31 @@ describe('real-run engine outcomes (AGX-R19)', () => {
     expect(arrived).toBe(1);
     const verified = outcomes.filter((outcome) => outcome.kind === 'verified');
     expect(verified).toHaveLength(1);
-    expect([firstId, secondId]).toContain(verified[0]?.kind === 'verified' ? verified[0].approvalId : undefined);
+    const winner = verified[0];
+    expect(winner?.kind).toBe('verified');
+    if (winner?.kind !== 'verified') throw new Error('expected a verified winner');
+    expect([firstId, secondId]).toContain(winner.approvalId);
+    const loserId = winner.approvalId === firstId ? secondId : firstId;
+    const loser = outcomes.find((outcome) => outcome.approvalId === loserId);
+    // Losing the reservation is after consumption: the approval is spent, nothing is spawned, and
+    // the refusal is the reservation itself — not a reusable pre-consume refusal or another failure.
+    expect(loser).toMatchObject({
+      kind: 'worker-failed',
+      reason: 'evidence-destination-refused',
+      approvalId: loserId,
+      targetRepositoryHonored: false,
+      evidence: { code: 'EVIDENCE_DESTINATION_REFUSED' },
+    });
+    expect(loser).not.toHaveProperty('spend');
+    if (loser?.kind === 'worker-failed' && loser.reason === 'evidence-destination-refused') {
+      expect(loser.evidence.message).toMatch(/reserved by another real run/);
+    }
+    expect(markerExists(fx, firstId)).toBe(true);
+    expect(markerExists(fx, secondId)).toBe(true);
+    // Sentinels are removed when the run finishes. A leftover would consume the next approval and
+    // then fail closed with no spawn.
+    expect(existsSync(`${fx.bundleDir}.goal-gen-reserved`)).toBe(false);
+    expect(existsSync(`${fx.ledgerPath}.goal-gen-reserved`)).toBe(false);
   });
 });
 
@@ -267,6 +292,45 @@ describe('real-run engine refusals: no spawn, no ledger, no bundle (AGX-R4/R5/R8
     const args = manifestArgs(fx, { allowedTools: ['Edit', 'Read(./**)'] });
     const approvalId = await mintApproval(fx, args);
     await expectRefused(await runEngine(fx, 'success', args), 'TOOLS_UNCONFINED', approvalId);
+  });
+
+  it.each([
+    ['the bundle sentinel is the spend ledger', true],
+    ['the spend-ledger sentinel is the bundle', false],
+  ] as const)('%s: refused before consumption, approval reusable, path never created', async (_label, bundleIsBase) => {
+    const base = path.join(fx.dir, 'out');
+    const aliased = `${base}.goal-gen-reserved`;
+    const bundleDir = bundleIsBase ? base : aliased;
+    const spendLedgerPath = bundleIsBase ? aliased : base;
+    // Reserve must refuse before exclusive-create. Creating the sentinel would be the other
+    // destination; a later release would unlink it and the next approval would burn the same way.
+    expect(() => reserveEvidenceDestinations({ bundleDir, spendLedgerPath })).toThrow(
+      /reservation path .* is the other evidence destination/,
+    );
+    expect(existsSync(base)).toBe(false);
+    expect(existsSync(aliased)).toBe(false);
+    expect(existsSync(`${aliased}.goal-gen-reserved`)).toBe(false);
+
+    const args = manifestArgs(fx, { bundleDir, ledgerPath: spendLedgerPath });
+    const approvalId = await mintApproval(fx, args);
+    const outcome = await runEngine(fx, 'success', args);
+    expect(outcome).toMatchObject({
+      kind: 'refused',
+      code: 'EVIDENCE_DESTINATION_REFUSED',
+      approvalId,
+      message: expect.stringMatching(/reservation path .* is the other evidence destination/) as unknown as string,
+    });
+    expect(markerExists(fx, approvalId)).toBe(false);
+    expect(invocations(fx)).toHaveLength(0);
+    expect(existsSync(base)).toBe(false);
+    expect(existsSync(aliased)).toBe(false);
+
+    const retry = await runEngine(fx, 'success', args);
+    expect(retry).toMatchObject({ kind: 'refused', code: 'EVIDENCE_DESTINATION_REFUSED', approvalId });
+    expect(markerExists(fx, approvalId)).toBe(false);
+    expect(invocations(fx)).toHaveLength(0);
+    expect(existsSync(base)).toBe(false);
+    expect(existsSync(aliased)).toBe(false);
   });
 
   it('EVIDENCE_DESTINATION_REFUSED: the bundle directory already exists', async () => {

@@ -12,8 +12,13 @@
  * (sorted path order) and releases those sentinels when the run finishes. A second approval of the
  * same manifest loses that reservation and does not spawn. The sentinels are not the evidence
  * files: those are still exclusive-created later, so a held reservation must not be the bundle
- * directory or the ledger. A crash leaves the sentinels in place; the next run consumes its
- * approval and then fails the reservation without spawning until the operator removes them.
+ * directory or the ledger. The manifest only rejects equal or nested destinations, so one path
+ * may be the other's `<destination>.goal-gen-reserved` sentinel. That pair is refused before the
+ * approval is consumed and again before any sentinel is created: reserving it would exclusive-create
+ * the other destination, the post-seed check would report that the path already exists, and
+ * releasing the sentinel would unlink it. A retry would otherwise burn another approval and leave
+ * nothing for the operator to inspect. A crash leaves the sentinels in place; the next run consumes
+ * its approval and then fails the reservation without spawning until the operator removes them.
  */
 import { closeSync, constants as fsConstants, fchmodSync, fsyncSync, lstatSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -95,8 +100,9 @@ export function assertEvidenceDestination(destination: string, context: Evidence
   }
 }
 
-/** Refuses unless both destinations are fresh paths under a symlink-free, engine-unrelated parent. */
+/** Refuses unless both destinations are fresh paths under a symlink-free, engine-unrelated parent, and neither reservation path is the other destination. */
 export function assertEvidenceDestinations(evidence: EvidenceDestinations, context: EvidenceDestinationContext = {}): void {
+  assertSentinelDoesNotAliasDestination(evidence);
   assertEvidenceDestination(evidence.bundleDir, context);
   assertEvidenceDestination(evidence.spendLedgerPath, context);
 }
@@ -111,6 +117,21 @@ export type EvidenceReservation = { readonly sentinels: readonly string[] };
 
 function sentinelPath(destination: string): string {
   return `${destination}${RESERVATION_SUFFIX}`;
+}
+
+/**
+ * The manifest rejects equal or nested paths only, so one destination can be named the other's
+ * sentinel. Refuse before creating anything: an exclusive create at that path is the other
+ * evidence file, and releasing the sentinel would unlink it.
+ */
+function assertSentinelDoesNotAliasDestination(evidence: EvidenceDestinations): void {
+  const destinations = new Set([evidence.bundleDir, evidence.spendLedgerPath]);
+  for (const destination of destinations) {
+    const sentinel = sentinelPath(destination);
+    if (destinations.has(sentinel)) {
+      refuse(destination, `its reservation path ${sentinel} is the other evidence destination`);
+    }
+  }
 }
 
 function fsyncDirectorySync(dirPath: string): void {
@@ -168,9 +189,11 @@ function releaseSentinels(sentinels: readonly string[]): void {
 /**
  * Holds both destinations before spawn. Lock order is the sorted destination path, so two runs
  * cannot each take one sentinel and both lose. `EEXIST` / `ELOOP` means another run (or a leftover
- * sentinel) already holds the path. A partial hold is released before the refusal.
+ * sentinel) already holds the path. A partial hold is released before the refusal. A sentinel that
+ * is either destination is refused before any create, so the other evidence path is never written.
  */
 export function reserveEvidenceDestinations(evidence: EvidenceDestinations): EvidenceReservation {
+  assertSentinelDoesNotAliasDestination(evidence);
   const destinations = [evidence.bundleDir, evidence.spendLedgerPath].slice().sort();
   const sentinels: string[] = [];
   for (const destination of destinations) {
