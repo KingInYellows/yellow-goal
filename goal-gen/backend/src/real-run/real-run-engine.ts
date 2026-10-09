@@ -52,6 +52,7 @@ import { buildRealRunCandidate } from './candidate-builder';
 import {
   assertEvidenceDestination,
   assertEvidenceDestinations,
+  assertReservationStillBound,
   releaseEvidenceReservation,
   reserveEvidenceDestinations,
   REAL_RUN_WORKTREE_PREFIX,
@@ -325,6 +326,9 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         worktree = await createWorktree({ seedFiles: profile.baseFiles, prefix: REAL_RUN_WORKTREE_PREFIX });
       }
       assertEvidenceDestinations(manifest.evidence, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
+      // The post-seed check reopens by pathname. The reservation stays on the directory it opened;
+      // a replacement at the approved path must not be spawned into.
+      assertReservationStillBound(reservation);
     } catch (err) {
       if (err instanceof RunApprovalError) return failed({ reason: 'evidence-destination-refused', evidence: destinationRefused(err) });
       return failed({ reason: 'worktree-refused', evidence: { message: errorMessage(err) } });
@@ -381,6 +385,7 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         targetRepository: prepared.targetRepository,
         worktreeRoot: worktree.root,
       });
+      assertReservationStillBound(reservation);
       await writeLedger(spend, run.startedAt, run.endedAt ?? run.startedAt);
     } catch (err) {
       ledgerFailure = writeFailed(manifest.evidence.spendLedgerPath, err);
@@ -461,6 +466,7 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     };
     try {
       assertEvidenceDestination(bundleDir, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
+      assertReservationStillBound(reservation);
     } catch (err) {
       return failed({ reason: 'evidence-destination-refused', evidence: { ...destinationRefused(err), ...unpersisted } }, spend);
     }

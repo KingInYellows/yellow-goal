@@ -55,8 +55,10 @@ for a symlink or made writable by others. A destination whose `<path>.goal-gen-r
 would exceed 255 bytes, or whose own path ends with `.goal-gen-reserved`, is refused before the
 approval is consumed — that name is another run's sentinel. While a run holds the destinations it
 also keeps a `<path>.goal-gen-reserved` file beside each one, created and removed through the held
-parent directory, so a second approval of the same manifest cannot spawn. The file is removed when
-the run finishes. Delete a leftover sentinel before reusing those paths — the next run consumes
+parent directory, so a second approval of the same manifest cannot spawn. Before the worker starts,
+and again before each evidence write, that path must still be the held directory — a new directory
+put at the same path is refused. The file is removed when the run finishes. Delete a leftover
+sentinel before reusing those paths — the next run consumes
 its approval and then stops without a spawn.
 
 Prints `{ manifest, manifestHash }`. Rendering twice with the same inputs yields the

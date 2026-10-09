@@ -4,7 +4,7 @@
  * count, the consumption marker, the spend ledger, the bundle, and that the scratch worktree is gone.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as offlineCommand from '../../backend/src/cli/candidate-offline-command';
@@ -407,6 +407,46 @@ describe('real-run engine refusals: no spawn, no ledger, no bundle (AGX-R4/R5/R8
     expect(invocations(fx)).toHaveLength(0);
     expect(existsSync(bundleDir)).toBe(false);
     expect(existsSync(`${bundleDir}.goal-gen-reserved`)).toBe(false);
+  });
+
+  it('a parent replaced during the worker is not written as evidence', async () => {
+    const parent = path.join(fx.dir, 'evidence');
+    await mkdir(parent);
+    const bundleDir = path.join(parent, 'bundle');
+    const ledgerPath = path.join(parent, 'spend.jsonl');
+    const args = manifestArgs(fx, { bundleDir, ledgerPath });
+    const approvalId = await mintApproval(fx, args);
+    const moved = `${parent}-moved`;
+    const outcome = await runEngine(fx, 'success', args, {
+      executorFactory: (manifest) => {
+        const factory = fakeWorkerFactory(fx, 'success');
+        if (factory === undefined) throw new Error('missing executor factory');
+        const inner = factory(manifest);
+        return {
+          kind: inner.kind,
+          run: async (action, ctx) => {
+            const result = await inner.run(action, ctx);
+            await rename(parent, moved);
+            await mkdir(parent);
+            return result;
+          },
+        };
+      },
+    });
+    expect(outcome).toMatchObject({
+      kind: 'worker-failed',
+      reason: 'evidence-write-failed',
+      approvalId,
+      evidence: { message: expect.stringMatching(/no longer names the directory this run reserved/) as unknown as string },
+    });
+    expect(invocations(fx)).toHaveLength(1);
+    expect(markerExists(fx, approvalId)).toBe(true);
+    expect(existsSync(path.join(parent, 'spend.jsonl'))).toBe(false);
+    expect(existsSync(path.join(parent, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(parent, 'bundle'))).toBe(false);
+    expect(existsSync(path.join(moved, 'spend.jsonl'))).toBe(false);
+    expect(existsSync(path.join(moved, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(moved, 'bundle.goal-gen-reserved'))).toBe(false);
   });
 
   it('EVIDENCE_DESTINATION_REFUSED: the bundle directory already exists', async () => {

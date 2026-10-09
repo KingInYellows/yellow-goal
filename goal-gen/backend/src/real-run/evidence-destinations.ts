@@ -24,10 +24,12 @@
  * is refused before consumption too, so a retry does not spend the approval. The sentinel is created
  * and removed through a parent directory opened `O_DIRECTORY|O_NOFOLLOW` and held until release, the
  * same way the evidence files are written, so swapping an ancestor for a symlink cannot redirect the
- * reservation. A crash leaves the sentinels in place; the next run consumes its approval and then
+ * reservation. The approved path is checked against that held directory again before spawn and
+ * before each evidence write: a replacement directory at the same pathname is not the one reserved,
+ * so this run does not spawn into it or write there. A crash leaves the sentinels in place; the next run consumes its approval and then
  * fails the reservation without spawning until the operator removes them.
  */
-import { closeSync, constants as fsConstants, fchmodSync, fsyncSync, lstatSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants as fsConstants, fchmodSync, fstatSync, fsyncSync, lstatSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { RunApprovalError } from '../cli/errors';
@@ -126,7 +128,12 @@ const RESERVATION_BODY = 'yellow-goal/evidence-reservation/v1\n';
  * One sentinel this run created. `parentFd` is the approved parent, held until release so create
  * and unlink stay on that directory after an ancestor is renamed. Only these may be removed.
  */
-type HeldSentinel = { readonly parentFd: number; readonly parent: string; readonly name: string };
+type HeldSentinel = {
+  readonly parentFd: number;
+  readonly parent: string;
+  readonly name: string;
+  readonly destination: string;
+};
 
 /** Sentinels this run created. A peer's sentinel must be left alone. */
 export type EvidenceReservation = { readonly held: readonly HeldSentinel[] };
@@ -232,7 +239,7 @@ function createSentinelSync(destination: string): HeldSentinel {
       }
       throw err;
     }
-    return { parentFd, parent, name };
+    return { parentFd, parent, name, destination };
   } catch (err) {
     closeQuiet(parentFd);
     throw err;
@@ -276,6 +283,35 @@ export function reserveEvidenceDestinations(evidence: EvidenceDestinations): Evi
     }
   }
   return { held: sentinels };
+}
+
+/**
+ * The held parent must still be the directory at the approved path. A rename plus a new real
+ * directory at that path leaves the sentinel in the old directory while later pathname checks and
+ * writers would use the replacement, so a second approval could reserve it and both workers would
+ * spawn. Call before spawn and before each evidence write.
+ */
+export function assertReservationStillBound(reservation: EvidenceReservation | undefined): void {
+  if (reservation === undefined) throw new Error('evidence reservation is missing');
+  for (const sentinel of reservation.held) {
+    let pathFd: number | undefined;
+    try {
+      pathFd = openSync(sentinel.parent, DIRECTORY_NOFOLLOW_FLAGS);
+      const heldStat = fstatSync(sentinel.parentFd);
+      const pathStat = fstatSync(pathFd);
+      if (heldStat.dev !== pathStat.dev || heldStat.ino !== pathStat.ino) {
+        refuse(sentinel.destination, 'its parent no longer names the directory this run reserved');
+      }
+    } catch (err) {
+      if (err instanceof RunApprovalError) throw err;
+      if (isErrnoCode(err, 'ENOENT') || isErrnoCode(err, 'ELOOP') || isErrnoCode(err, 'ENOTDIR')) {
+        refuse(sentinel.destination, 'its parent no longer names the directory this run reserved');
+      }
+      throw err;
+    } finally {
+      if (pathFd !== undefined) closeQuiet(pathFd);
+    }
+  }
 }
 
 /** Drops a hold this run created. A missing sentinel is already released. Never throws. */

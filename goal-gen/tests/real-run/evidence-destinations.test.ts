@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   REAL_RUN_WORKTREE_PREFIX,
   assertEvidenceDestinations,
+  assertReservationStillBound,
   releaseEvidenceReservation,
   reserveEvidenceDestinations,
 } from '../../backend/src/real-run/evidence-destinations';
@@ -182,6 +183,29 @@ describe('evidence reservation parent descriptor', () => {
     expect(readFileSync(path.join(decoy, 'spend.jsonl.goal-gen-reserved'), 'utf8')).toBe('peer\n');
     expect(existsSync(bundleDir)).toBe(false);
     expect(existsSync(spendLedgerPath)).toBe(false);
+  });
+
+  it('rejects a replacement directory at the reserved parent path', async () => {
+    const parent = path.join(fx.dir, 'evidence');
+    await mkdir(parent);
+    const bundleDir = path.join(parent, 'bundle');
+    const spendLedgerPath = path.join(parent, 'spend.jsonl');
+    const reservation = reserveEvidenceDestinations({ bundleDir, spendLedgerPath });
+    expect(() => assertReservationStillBound(reservation)).not.toThrow();
+
+    const moved = `${parent}-moved`;
+    const replacement = parent;
+    await rename(parent, moved);
+    await mkdir(replacement);
+    expect(() => assertReservationStillBound(reservation)).toThrow(/no longer names the directory this run reserved/);
+    expect(existsSync(path.join(replacement, 'bundle.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(replacement, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(moved, 'bundle.goal-gen-reserved'))).toBe(true);
+
+    releaseEvidenceReservation(reservation);
+    expect(existsSync(path.join(moved, 'bundle.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(moved, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+    expect(existsSync(path.join(replacement, 'bundle.goal-gen-reserved'))).toBe(false);
   });
 });
 

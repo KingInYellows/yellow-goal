@@ -377,7 +377,10 @@ false. It does not authorize target execution, retries, or a live spend run.
   through a held parent directory descriptor. After consumption and before spawn the engine also
   exclusively creates `<destination>.goal-gen-reserved` beside each destination (sorted path
   order) through the parent's held descriptor, and removes those sentinels the same way when the
-  run finishes. Losing that reservation, or finding a
+  run finishes. Before spawn, and again before each evidence write, the approved parent path must
+  still name that held directory. A replacement directory at the pathname is not the reserved one:
+  the run stops with `evidence-destination-refused` (before spawn, nothing spawned; the approval is
+  already consumed) rather than writing into the replacement. Losing that reservation, or finding a
   leftover sentinel, is `worker-failed` `evidence-destination-refused` with nothing spawned (the
   approval is already consumed). A crash leaves the sentinels; the operator deletes them before
   another approval of those paths can run. Two concurrent approvals of one manifest therefore
