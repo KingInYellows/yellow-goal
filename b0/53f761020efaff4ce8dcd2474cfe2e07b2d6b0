@@ -1,0 +1,30 @@
+goal-gen/backend/src/cli/candidate-offline-bundle.ts
+  h_6000354274ce50 147-150,152,154-155,157-159,176
+goal-gen/backend/src/real-run/evidence-destinations.ts
+  h_6000354274ce50 7-8,317-326
+goal-gen/backend/src/real-run/real-run-engine.ts
+  h_6000354274ce50 57,275-287,360-371,402-408,493-496
+goal-gen/backend/src/real-run/spend-ledger.ts
+  h_6000354274ce50 7-11,13,33-47,50,52-53,55,78
+goal-gen/docs/operator-real-run.md
+  h_6000354274ce50 138-140
+goal-gen/plans/specs/approval-gated-real-execution.md
+  h_6000354274ce50 375-378
+goal-gen/tests/real-run/evidence-destinations.test.ts
+  h_6000354274ce50 15,237-257
+goal-gen/tests/real-run/real-run-engine.test.ts
+  h_6000354274ce50 452-483
+goal-gen/tests/real-run/spend-ledger.test.ts
+  h_6000354274ce50 6-7,11,143-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b053f761020efaff4ce8dcd2474cfe2e07b2d6b0",
+  "prompts": {},
+  "humans": {
+    "h_6000354274ce50": {
+      "author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
