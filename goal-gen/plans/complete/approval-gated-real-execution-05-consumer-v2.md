@@ -6,6 +6,10 @@ depends_on: [approval-gated-real-execution-04-protocol-v2-and-release]
 
 # Plan: Consumer v2 (yellow-plugins)
 
+> **Status: SHIPPED** in yellow-plugins #1013 (`da6ccd4`, 2026-10-05): pins goal-gen 0.3.0,
+> moves `/goal:*` to protocol v2, and adds the user-only `/goal:run-real`. This shell was never
+> expanded into an executable plan; this banner (added 2026-10-09) is its completion record.
+
 ## Context
 The paired half of step 6. The yellow-plugins consumer spawns the released engine across a
 process boundary and today always runs `--executor stub --protocol v1`. This shell pins the v2

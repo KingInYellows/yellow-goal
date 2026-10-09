@@ -34,7 +34,7 @@ npm run typecheck
 Locked decisions live in `docs/decisions/` (MADR). Changing one is a **new superseding ADR**, not an edit to an accepted one.
 
 ## Milestones (docs/prd.md §12)
-**M0** planner + dynamic extraction (dry-run) — *done* → **M1** single `claude -p` executor end-to-end *(release bar)* — *done* → **M2** multi-executor + dashboard + container isolation → **M3** pgvector memory. The read-only **Repository Goal Packet Compiler** (contracts, inspector, evidence ledger, pack renderer, packet validator, CLI — see `.claude/specs/packet-compiler.md`) shipped alongside M1 as a separate subsystem.
+**M0** planner + dynamic extraction (dry-run) — *done* → **M1** single `claude -p` executor end-to-end *(release bar)* — *partial: core loop shipped; event pipeline, HTTP API, live view and the live acceptance run open* → **M2** multi-executor + dashboard + container isolation → **M3** pgvector memory. The read-only **Repository Goal Packet Compiler** (contracts, inspector, evidence ledger, pack renderer, packet validator, CLI — see `.claude/specs/packet-compiler.md`) shipped alongside M1 as a separate subsystem.
 
 ## Git / repo root
 The cleanest setup is to version the **whole `GOAL/` project** (research docs + `goal-gen/`) as one repo, so the PRD/spec cross-links to `../docs/01`–`08` keep resolving:
