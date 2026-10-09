@@ -1,0 +1,19 @@
+goal-gen/tests/real-run/real-run-engine.test.ts
+  s_7acef71c5d81d1::t_2f25b18b6a8ff1 158-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f0bb36d37d0ec42c26834e62bf0b4606d1d816d",
+  "prompts": {},
+  "sessions": {
+    "s_7acef71c5d81d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "93619395-9e75-47ca-a284-258645abbf2a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
