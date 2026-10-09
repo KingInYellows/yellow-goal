@@ -4,13 +4,13 @@
  * so its ledger is created with that one entry: exclusive create, no-follow, owner-only, fsynced.
  * A pre-existing file or a symlink at the path is refused rather than appended to.
  *
- * The parent directory is opened and held `O_DIRECTORY|O_NOFOLLOW`, its canonical path is checked
- * against the approved parent through that descriptor, and the file is created relative to the
- * descriptor — so renaming the parent and putting a symlink in its place cannot redirect the write.
- * A same-UID process that swaps the parent after the final check can still race; the approved parent
- * is owner-controlled and not group/world-writable, so only same-UID processes can.
+ * The parent is the reservation's already-held descriptor when the caller has one, and this
+ * function does not close that descriptor. Otherwise the parent is opened `O_DIRECTORY|O_NOFOLLOW`.
+ * Its canonical path is checked through that descriptor, and the file is created relative to it, so
+ * a renamed parent with a new directory at the approved path is not written. A caller-supplied
+ * descriptor fails closed where `/proc/self/fd` is absent rather than reopening the pathname.
  */
-import { closeSync, constants as fsConstants, fchmodSync, fsyncSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, constants as fsConstants, existsSync, fchmodSync, fsyncSync, openSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DIRECTORY_NOFOLLOW_FLAGS, O_NOFOLLOW_FLAG, pathThroughFd } from '../cli/fd-path';
 import type { SpendExitClass } from './outcome';
@@ -30,16 +30,29 @@ export type SpendLedgerEntry = {
   endedAt: string;
 };
 
-/** Creates the ledger holding `entry`. Throws the raw errno error (`EEXIST`, `ELOOP`, …) on failure. */
-export async function createSpendLedger(ledgerPath: string, entry: SpendLedgerEntry): Promise<void> {
-  writeLedgerThroughParent(ledgerPath, `${JSON.stringify(entry)}\n`);
+/**
+ * Creates the ledger holding `entry`. `heldParentFd` is the reservation's parent descriptor and is
+ * not closed here. Throws the raw errno error (`EEXIST`, `ELOOP`, …) on failure.
+ */
+export async function createSpendLedger(ledgerPath: string, entry: SpendLedgerEntry, heldParentFd?: number): Promise<void> {
+  writeLedgerThroughParent(ledgerPath, `${JSON.stringify(entry)}\n`, heldParentFd);
 }
 
-function writeLedgerThroughParent(ledgerPath: string, data: string): void {
+function parentPathForWrite(parentFd: number, parent: string, descriptorRequired: boolean): string {
+  const proc = `/proc/self/fd/${parentFd}`;
+  if (descriptorRequired) {
+    if (!existsSync(proc)) throw new Error(`ledger parent ${parent} cannot be written through its held descriptor`);
+    return proc;
+  }
+  return pathThroughFd(parentFd, parent);
+}
+
+function writeLedgerThroughParent(ledgerPath: string, data: string, heldParentFd?: number): void {
   const parent = path.dirname(ledgerPath);
-  const parentFd = openSync(parent, DIRECTORY_NOFOLLOW_FLAGS);
+  const ownsParent = heldParentFd === undefined;
+  const parentFd = heldParentFd ?? openSync(parent, DIRECTORY_NOFOLLOW_FLAGS);
   try {
-    const parentPath = pathThroughFd(parentFd, parent);
+    const parentPath = parentPathForWrite(parentFd, parent, !ownsParent);
     const held = realpathSync(parentPath);
     if (held !== parent) throw new Error(`ledger parent ${parent} now resolves to ${held}`);
     const target = path.join(parentPath, path.basename(ledgerPath));
@@ -62,6 +75,6 @@ function writeLedgerThroughParent(ledgerPath: string, data: string): void {
     closeSync(fd);
     fsyncSync(parentFd);
   } finally {
-    closeSync(parentFd);
+    if (ownsParent) closeSync(parentFd);
   }
 }

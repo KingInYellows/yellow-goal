@@ -3,11 +3,12 @@
  * spawn's outcome; none for a refusal. The ledger is created exclusively and never follows or
  * appends to an existing path.
  */
-import { lstatSync } from 'node:fs';
-import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { existsSync, lstatSync } from 'node:fs';
+import { mkdir, mkdtemp, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { releaseEvidenceReservation, reservationParentFd, reserveEvidenceDestinations } from '../../backend/src/real-run/evidence-destinations';
 import { createSpendLedger, SpendLedgerSchemaVersion, type SpendLedgerEntry } from '../../backend/src/real-run/spend-ledger';
 import {
   createFixture,
@@ -136,6 +137,28 @@ describe('createSpendLedger', () => {
       await expect(createSpendLedger(path.join(parent, 'ledger.jsonl'), entry)).rejects.toThrow();
       await expect(stat(path.join(real, 'ledger.jsonl'))).rejects.toThrow();
     } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a held parent descriptor is not redirected into a replacement directory', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'goal-gen-ledger-held-'));
+    const parent = path.join(dir, 'evidence');
+    const moved = `${parent}-moved`;
+    const ledgerPath = path.join(parent, 'spend.jsonl');
+    await mkdir(parent);
+    const reservation = reserveEvidenceDestinations({ bundleDir: path.join(parent, 'bundle'), spendLedgerPath: ledgerPath });
+    try {
+      await rename(parent, moved);
+      await mkdir(parent);
+      await expect(createSpendLedger(ledgerPath, entry, reservationParentFd(reservation, ledgerPath))).rejects.toThrow(/now resolves to/);
+      expect(existsSync(path.join(parent, 'spend.jsonl'))).toBe(false);
+      expect(existsSync(path.join(moved, 'spend.jsonl'))).toBe(false);
+      releaseEvidenceReservation(reservation);
+      expect(existsSync(path.join(moved, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+      expect(existsSync(path.join(parent, 'spend.jsonl.goal-gen-reserved'))).toBe(false);
+    } finally {
+      releaseEvidenceReservation(reservation);
       await rm(dir, { recursive: true, force: true });
     }
   });

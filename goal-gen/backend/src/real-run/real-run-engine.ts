@@ -4,8 +4,10 @@
  * approval's consumption:
  *
  *   recompute manifest → verify approval → auth + tool guards → evidence destinations
- *   → consume → seed worktree → one worker run → spend ledger → extract candidate → verify
- *   → outcome, with the scratch worktree removed on every path once it exists.
+ *   → consume → reserve evidence destinations → seed worktree → one worker run → spend ledger
+ *   → extract candidate → verify → outcome, with the reservation and the scratch worktree removed
+ *   on every path once they exist. The reservation is what keeps a second approval of the same
+ *   manifest from spawning while this one still holds the destinations.
  *
  * The worker's exit status and narrative never decide success: only `acceptance verify-candidate`
  * over the allowed-path candidate does, and even then the outcome is `verified` (awaiting a human),
@@ -47,7 +49,16 @@ import { createWorktree, type WorktreeHandle } from '../executors/worktree';
 import type { Action } from '../planner/types';
 import type { AgentRun, AgentRunFailureClass, Executor } from '../types';
 import { buildRealRunCandidate } from './candidate-builder';
-import { assertEvidenceDestination, assertEvidenceDestinations, REAL_RUN_WORKTREE_PREFIX } from './evidence-destinations';
+import {
+  assertEvidenceDestination,
+  assertEvidenceDestinations,
+  assertReservationStillBound,
+  releaseEvidenceReservation,
+  reservationParentFd,
+  reserveEvidenceDestinations,
+  REAL_RUN_WORKTREE_PREFIX,
+  type EvidenceReservation,
+} from './evidence-destinations';
 import { buildFixedAction } from './fixed-goal';
 import type {
   DestinationRefusedEvidence,
@@ -261,18 +272,23 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     ...failure,
     ...(spend === undefined ? {} : { spend }),
   });
-  const writeLedger = (spend: RealRunSpend, startedAt: string, endedAt: string): Promise<void> =>
-    createSpendLedger(manifest.evidence.spendLedgerPath, {
-      schemaVersion: SpendLedgerSchemaVersion,
-      approvalId: verified.approvalId,
-      model: manifest.model,
-      ...spend,
-      startedAt,
-      endedAt,
-    });
+  const writeLedger = (spend: RealRunSpend, startedAt: string, endedAt: string, parentFd: number): Promise<void> =>
+    createSpendLedger(
+      manifest.evidence.spendLedgerPath,
+      {
+        schemaVersion: SpendLedgerSchemaVersion,
+        approvalId: verified.approvalId,
+        model: manifest.model,
+        ...spend,
+        startedAt,
+        endedAt,
+      },
+      parentFd,
+    );
 
   // The approval is consumed from here on; every path below ends in exactly one outcome.
   let worktree: WorktreeHandle | undefined;
+  let reservation: EvidenceReservation | undefined;
   const controller = new AbortController();
   let wallClockExpired = false;
   const wallClock = setTimeout(() => {
@@ -297,6 +313,9 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     );
     if (startedError !== undefined) return failed({ reason: 'engine-error', evidence: { stage: 'onStarted', message: startedError } });
     try {
+      // Before spawn, so a concurrent approval of this manifest sees the destinations held and
+      // does not start a second worker. Released in `finally` (not the evidence files themselves).
+      reservation = reserveEvidenceDestinations(manifest.evidence);
       if (input.capture !== undefined) {
         const owner = classifyOwnerWorktreeForSeed({ identity: input.capture.identity, commit: input.capture.commit });
         if (owner === 'dirty' || owner === 'mixed') {
@@ -312,6 +331,9 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         worktree = await createWorktree({ seedFiles: profile.baseFiles, prefix: REAL_RUN_WORKTREE_PREFIX });
       }
       assertEvidenceDestinations(manifest.evidence, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
+      // The post-seed check reopens by pathname. The reservation stays on the directory it opened;
+      // a replacement at the approved path must not be spawned into.
+      assertReservationStillBound(reservation);
     } catch (err) {
       if (err instanceof RunApprovalError) return failed({ reason: 'evidence-destination-refused', evidence: destinationRefused(err) });
       return failed({ reason: 'worktree-refused', evidence: { message: errorMessage(err) } });
@@ -335,10 +357,18 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
       // attempt is metered as unknown spend rather than left out of the ledger.
       const now = clock().toISOString();
       const spend: RealRunSpend = { costUsd: null, turns: null, durationMs: 0, exitClass: 'engine-error' };
-      const ledgered = await writeLedger(spend, now, now).then(
-        () => true,
-        () => false,
-      );
+      // Same binding check as a resolved result. The ledger is created through the held parent, so a
+      // directory swapped in at the approved path is not written.
+      const ledgered = await Promise.resolve()
+        .then(() => {
+          assertReservationStillBound(reservation);
+          if (reservation === undefined) throw new Error('evidence reservation is missing');
+          return writeLedger(spend, now, now, reservationParentFd(reservation, manifest.evidence.spendLedgerPath));
+        })
+        .then(
+          () => true,
+          () => false,
+        );
       const hookError = observe(() => input.onSpend?.(spend));
       return failed(
         {
@@ -368,7 +398,14 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
         targetRepository: prepared.targetRepository,
         worktreeRoot: worktree.root,
       });
-      await writeLedger(spend, run.startedAt, run.endedAt ?? run.startedAt);
+      assertReservationStillBound(reservation);
+      if (reservation === undefined) throw new Error('evidence reservation is missing');
+      await writeLedger(
+        spend,
+        run.startedAt,
+        run.endedAt ?? run.startedAt,
+        reservationParentFd(reservation, manifest.evidence.spendLedgerPath),
+      );
     } catch (err) {
       ledgerFailure = writeFailed(manifest.evidence.spendLedgerPath, err);
     }
@@ -448,13 +485,15 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     };
     try {
       assertEvidenceDestination(bundleDir, { targetRepository: prepared.targetRepository, worktreeRoot: worktree.root });
+      assertReservationStillBound(reservation);
     } catch (err) {
       return failed({ reason: 'evidence-destination-refused', evidence: { ...destinationRefused(err), ...unpersisted } }, spend);
     }
     try {
-      // Created exclusively through the held parent directory: nothing that appeared since, and no
-      // swapped parent, is written into.
-      persistCandidateBundleExclusive(bundleDir, bundle);
+      // Created exclusively through the reservation's held parent: a pathname opened again here could
+      // be a directory swapped in after the binding check.
+      if (reservation === undefined) throw new Error('evidence reservation is missing');
+      persistCandidateBundleExclusive(bundleDir, bundle, reservationParentFd(reservation, bundleDir));
     } catch (err) {
       return failed({ reason: 'evidence-write-failed', evidence: { ...writeFailed(bundleDir, err), ...unpersisted } }, spend);
     }
@@ -473,7 +512,9 @@ export async function runRealRun(input: RealRunInput): Promise<RealRunOutcome> {
     clearTimeout(wallClock);
     input.signal?.removeEventListener('abort', onCallerAbort);
     for (const sig of TERMINATION_SIGNALS) process.off(sig, onCallerAbort);
-    // Teardown is best-effort (`rm --force` of an engine tmpdir); it must not replace the outcome.
+    // Teardown is best-effort; it must not replace the outcome. Release the destination hold
+    // before removing the worktree so a peer is not blocked on cleanup.
+    releaseEvidenceReservation(reservation);
     await worktree?.cleanup().catch(() => undefined);
   }
 }

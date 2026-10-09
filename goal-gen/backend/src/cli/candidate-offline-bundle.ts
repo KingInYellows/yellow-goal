@@ -144,14 +144,19 @@ export function persistCandidateBundle(dir: string, bundle: CandidateOfflineBund
  * directory must still be the entry named `dir` under the still-approved parent (same dev/ino), so a
  * directory renamed away mid-write is reported rather than silently accepted. Throws on any mismatch.
  *
- * Residual window: a rename after that final check is not detected. The bundle directory is 0700 under
- * an owner-owned, non-group/world-writable approved parent, so only same-UID processes can race it.
+ * `heldParentFd`, when passed, is the reservation's parent descriptor. It is not closed here, and
+ * the directory is created through it, so a replacement at the approved path is not written. That
+ * path fails closed where `/proc/self/fd` is absent. Without a held descriptor the parent is opened
+ * here; a rename after the final in-write check is still not detected.
  */
-export function persistCandidateBundleExclusive(dir: string, bundle: CandidateOfflineBundle): void {
+export function persistCandidateBundleExclusive(dir: string, bundle: CandidateOfflineBundle, heldParentFd?: number): void {
   const parent = path.dirname(dir);
-  const parentFd = openSync(parent, DIRECTORY_NOFOLLOW_FLAGS);
+  const ownsParent = heldParentFd === undefined;
+  const parentFd = heldParentFd ?? openSync(parent, DIRECTORY_NOFOLLOW_FLAGS);
   try {
-    const parentPath = pathThroughFd(parentFd, parent);
+    const proc = `/proc/self/fd/${parentFd}`;
+    if (!ownsParent && !existsSync(proc)) throw new Error(`bundle parent ${parent} cannot be written through its held descriptor`);
+    const parentPath = ownsParent ? pathThroughFd(parentFd, parent) : proc;
     const heldParent = realpathSync(parentPath);
     if (heldParent !== parent) throw new Error(`bundle parent ${parent} now resolves to ${heldParent}`);
     const created = path.join(parentPath, path.basename(dir));
@@ -168,7 +173,7 @@ export function persistCandidateBundleExclusive(dir: string, bundle: CandidateOf
     }
     fsyncSync(parentFd);
   } finally {
-    closeSync(parentFd);
+    if (ownsParent) closeSync(parentFd);
   }
 }
 
