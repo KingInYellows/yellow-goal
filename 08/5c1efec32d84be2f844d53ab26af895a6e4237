@@ -1,0 +1,20 @@
+goal-gen/.claude/specs/dashboard.md
+  s_ab95d5fd5631e3::t_c77096615a365a 3-35,38-39,42-43,51-53
+  s_ab95d5fd5631e3::t_b03dcc25ee5b1b 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "085c1efec32d84be2f844d53ab26af895a6e4237",
+  "prompts": {},
+  "sessions": {
+    "s_ab95d5fd5631e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01a12890-a54d-7ff3-b2be-66939ae86512",
+        "model": "unknown"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
