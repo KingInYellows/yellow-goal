@@ -14,8 +14,10 @@ import {
   createAnalyzeRepository,
   RecordedAnalysisProvider,
   readAnalysisBundle,
+  RESOLVABLE_ORCHESTRATION_PROFILE_IDS,
   resolveDefaultOrchestrationProfile,
   resolveDefaultOrchestrationSpec,
+  resolveOrchestrationProfile,
   type AnalysisProvider,
   type AnalysisProviderInput,
   type AnalysisProviderOutput,
@@ -75,6 +77,37 @@ describe('orchestration-defaults', () => {
     const a = resolveDefaultOrchestrationSpec(resolveDefaultOrchestrationProfile(FIXED_CLOCK));
     const b = resolveDefaultOrchestrationSpec(resolveDefaultOrchestrationProfile(FIXED_CLOCK));
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it('resolves the opt-in @2 profile on 5.5-generation IDs with Haiku evidence mapping', () => {
+    const profile = resolveOrchestrationProfile('claude-fable-opus-sonnet@2', FIXED_CLOCK);
+    expect(profile.id).toBe('claude-fable-opus-sonnet@2');
+    expect(profile.roleBindings.lead.modelId).toBe('claude-fable-5-1');
+    expect(profile.roleBindings.security.modelId).toBe('claude-opus-5-5');
+    expect(profile.roleBindings.implementation.modelId).toBe('claude-sonnet-5-5');
+    expect(profile.roleBindings['evidence-mapping'].modelId).toBe('claude-haiku-5-5');
+
+    const spec = resolveDefaultOrchestrationSpec(profile);
+    expect(spec.profileId).toBe('claude-fable-opus-sonnet@2');
+    expect(spec.lead.modelId).toBe('claude-fable-5-1');
+    const implementation = spec.waves.find((w) => w.name === 'implementation')!;
+    expect(implementation.teammates.map((t) => t.modelId)).toEqual(['claude-sonnet-5-5', 'claude-sonnet-5-5', 'claude-sonnet-5-5']);
+  });
+
+  it('keeps @1 frozen: the default profile still resolves the 5.0-generation IDs', () => {
+    expect(resolveOrchestrationProfile('claude-fable-opus-sonnet@1', FIXED_CLOCK)).toEqual(
+      resolveDefaultOrchestrationProfile(FIXED_CLOCK),
+    );
+  });
+
+  it('throws on an unknown profile id instead of defaulting', () => {
+    expect(() => resolveOrchestrationProfile('made-up-profile@9', FIXED_CLOCK)).toThrow(/unknown orchestration profile/);
+    expect(() => resolveOrchestrationProfile('toString', FIXED_CLOCK)).toThrow(/unknown orchestration profile/);
+  });
+
+  it('resolves exactly the profiles intake accepts', async () => {
+    const { KNOWN_ORCHESTRATION_PROFILES } = await import('../../backend/src/intake/orchestration-profiles');
+    expect([...RESOLVABLE_ORCHESTRATION_PROFILE_IDS].sort()).toEqual([...KNOWN_ORCHESTRATION_PROFILES].sort());
   });
 });
 

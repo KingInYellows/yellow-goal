@@ -21,6 +21,10 @@ describe('orchestration profile policy', () => {
     expect(isKnownOrchestrationProfile('claude-fable-opus-sonnet@1')).toBe(true);
   });
 
+  it('recognizes the opt-in 5.5-generation profile', () => {
+    expect(isKnownOrchestrationProfile('claude-fable-opus-sonnet@2')).toBe(true);
+  });
+
   it('rejects an unknown orchestration profile id', () => {
     expect(isKnownOrchestrationProfile('made-up-profile@9')).toBe(false);
   });

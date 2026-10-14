@@ -5,7 +5,7 @@
  * test (compile twice with the same fixed clock, normalize only declared timestampFields + zip
  * metadata, assert logical equality).
  */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -153,6 +153,32 @@ describe('orchestration golden test', () => {
     expect(byName.verification).toEqual(['claude-opus-5', 'claude-opus-5', 'claude-sonnet-5']);
   });
 
+  it('a request that selects claude-fable-opus-sonnet@2 compiles a packet bound to @2 end to end', async () => {
+    const fixtureCopy = path.join(workDir, 'fixture');
+    await cp(FIXTURE_DIR, fixtureCopy, { recursive: true });
+    const requestPath = path.join(fixtureCopy, 'request.json');
+    const request = JSON.parse(await readFile(requestPath, 'utf8')) as { orchestration?: Record<string, unknown> };
+    request.orchestration = { ...request.orchestration, orchestrationProfile: 'claude-fable-opus-sonnet@2' };
+    await writeFile(requestPath, JSON.stringify(request), 'utf8');
+
+    const result = await runFullPipeline(path.join(workDir, 'out'), fixtureCopy);
+    const packetDirPath = (result as unknown as { packetDirPath: string }).packetDirPath;
+    const orchestration = JSON.parse(await readFile(path.join(packetDirPath, 'contracts', 'orchestration.json'), 'utf8')) as {
+      profileId: string;
+      lead: { modelId: string };
+    };
+    expect(orchestration.profileId).toBe('claude-fable-opus-sonnet@2');
+    expect(orchestration.lead.modelId).toBe('claude-fable-5-1');
+
+    // The manifest's model table comes from the compiler's own profile resolution, so it proves
+    // compile resolved the same profile version analysis did.
+    const manifest = JSON.parse(await readFile(path.join(packetDirPath, 'MANIFEST.json'), 'utf8')) as {
+      resolvedOrchestrationModels: Record<string, string>;
+    };
+    expect(manifest.resolvedOrchestrationModels.lead).toBe('claude-fable-5-1');
+    expect(manifest.resolvedOrchestrationModels['evidence-mapping']).toBe('claude-haiku-5-5');
+  });
+
   it('the generated master prompt proves Fable is sole lead, teammates cannot merge/push, ownership does not overlap, and every model ID is explicit', async () => {
     const result = await runFullPipeline(workDir);
     const packetDirPath = (result as unknown as { packetDirPath: string }).packetDirPath;
@@ -247,6 +273,31 @@ describe('compilePacket — request/bundle identity', () => {
         outputDir: path.join(workDir, 'compiled'),
       }),
     ).rejects.toThrow(/do not describe the same run/);
+  });
+  it('refuses a request whose orchestration profile differs from the assessment bundle', async () => {
+    const analyze = createAnalyzeRepository(new RecordedAnalysisProvider(FIXTURE_DIR), FIXED_CLOCK);
+    const analyzeResult = await analyze({
+      requestPath: path.join(FIXTURE_DIR, 'request.json'),
+      repoProfilePath: path.join(FIXTURE_DIR, 'repository-profile.json'),
+      outputDir: path.join(workDir, 'analysis-profile'),
+    });
+
+    const mismatched = path.join(workDir, 'other-profile-request.json');
+    const original = JSON.parse(await readFile(path.join(FIXTURE_DIR, 'request.json'), 'utf8')) as {
+      orchestration?: Record<string, unknown>;
+    };
+    original.orchestration = { ...(original.orchestration ?? {}), orchestrationProfile: 'claude-fable-opus-sonnet@2' };
+    await writeFile(mismatched, JSON.stringify(original));
+
+    const compile = createCompilePacket({ clock: FIXED_CLOCK, packDirOverride: PACK_DIR });
+    await expect(
+      compile({
+        requestPath: mismatched,
+        assessmentPath: analyzeResult.assessmentPath,
+        pack: 'repository-goal-packet@1',
+        outputDir: path.join(workDir, 'compiled-profile'),
+      }),
+    ).rejects.toThrow(/orchestration profile mismatch/);
   });
 });
 

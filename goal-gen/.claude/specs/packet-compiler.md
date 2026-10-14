@@ -70,6 +70,8 @@ Default profile `claude-fable-opus-sonnet@1` (contracts in `contracts/`; golden 
 - architecture, security, complex-debugging, release-review → `claude-opus-5`
 - implementation, unit-tests, documentation, evidence-mapping → `claude-sonnet-5`
 
+Opt-in profile `claude-fable-opus-sonnet@2` (selected with the request's `orchestration.orchestrationProfile`): the same roles and waves on the 5.5 generation — lead → `claude-fable-5-1`; architecture, security, complex-debugging, release-review → `claude-opus-5-5`; implementation, unit-tests, documentation → `claude-sonnet-5-5`; evidence-mapping → `claude-haiku-5-5`. A published profile version is frozen: rebinding a role means a new version. Analysis resolves the request's profile (default `@1`); compile resolves the profile recorded in the analysis bundle's `orchestration.json` and rejects a request whose profile (absent means `@1`) differs from it, so a packet can never mix versions. An unknown id is rejected at intake and throws at resolution — never defaulted.
+
 Waves: investigation (read-only, ≤3: opus/opus/sonnet) → implementation (plan-approval, ≤3: sonnet×3) → verification (fresh-context read-only, ≤3: opus/opus/sonnet). `teamMode: agent-team-preferred`, `fallbackMode: subagents` — a fallback is recorded in run evidence, never silently claimed as an agent team. Model IDs resolve through the versioned profile — templates carry roles, not raw IDs.
 
 ## Testing

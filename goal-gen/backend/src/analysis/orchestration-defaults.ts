@@ -1,6 +1,7 @@
 /**
- * Deterministic (non-LLM) resolution of the pack's default orchestration profile
- * `claude-fable-opus-sonnet@1` — `.claude/specs/packet-compiler.md` "Orchestration profile".
+ * Deterministic (non-LLM) resolution of the pack's orchestration profiles — the default
+ * `claude-fable-opus-sonnet@1` and the opt-in `claude-fable-opus-sonnet@2` —
+ * `.claude/specs/packet-compiler.md` "Orchestration profile".
  * Orchestration is a fixed policy decision the pack ships, not something the analysis model
  * judges per-repository, so it lives here rather than in an `AnalysisProvider`. Both
  * `analyzeRepository` (to write `orchestration.json` into the analysis bundle) and
@@ -12,37 +13,69 @@ import type { OrchestrationProfile, OrchestrationSpec } from '../contracts';
 
 export const DEFAULT_ORCHESTRATION_PROFILE_ID = 'claude-fable-opus-sonnet@1';
 
-/** `role -> exact model ID`, per the profile's fixed role bindings. */
-const ROLE_MODEL_IDS: Record<keyof OrchestrationProfile['roleBindings'], string> = {
-  lead: 'claude-fable-5',
-  architecture: 'claude-opus-5',
-  security: 'claude-opus-5',
-  'complex-debugging': 'claude-opus-5',
-  implementation: 'claude-sonnet-5',
-  'unit-tests': 'claude-sonnet-5',
-  documentation: 'claude-sonnet-5',
-  'evidence-mapping': 'claude-sonnet-5',
-  'release-review': 'claude-opus-5',
+type RoleModelIds = Record<keyof OrchestrationProfile['roleBindings'], string>;
+
+/** `profile id -> (role -> exact model ID)`. A published profile version is a frozen contract
+ *  (ADR-0015): change a binding by adding a new version, never by editing an existing one. */
+const PROFILE_ROLE_MODEL_IDS: Readonly<Record<string, RoleModelIds>> = {
+  'claude-fable-opus-sonnet@1': {
+    lead: 'claude-fable-5',
+    architecture: 'claude-opus-5',
+    security: 'claude-opus-5',
+    'complex-debugging': 'claude-opus-5',
+    implementation: 'claude-sonnet-5',
+    'unit-tests': 'claude-sonnet-5',
+    documentation: 'claude-sonnet-5',
+    'evidence-mapping': 'claude-sonnet-5',
+    'release-review': 'claude-opus-5',
+  },
+  // The 5.5 generation: same or lower price per role, and Haiku 5.5 for read-only evidence
+  // mapping (extraction from files the investigation wave already found).
+  'claude-fable-opus-sonnet@2': {
+    lead: 'claude-fable-5-1',
+    architecture: 'claude-opus-5-5',
+    security: 'claude-opus-5-5',
+    'complex-debugging': 'claude-opus-5-5',
+    implementation: 'claude-sonnet-5-5',
+    'unit-tests': 'claude-sonnet-5-5',
+    documentation: 'claude-sonnet-5-5',
+    'evidence-mapping': 'claude-haiku-5-5',
+    'release-review': 'claude-opus-5-5',
+  },
 };
 
+/** Profile ids this module can resolve. Intake's `KNOWN_ORCHESTRATION_PROFILES` must match it. */
+export const RESOLVABLE_ORCHESTRATION_PROFILE_IDS: readonly string[] = Object.keys(PROFILE_ROLE_MODEL_IDS);
+
 /**
- * Resolves the profile's role → model bindings. `clock` is injected (never inline `Date.now()`
+ * Resolves a profile's role → model bindings. `clock` is injected (never inline `Date.now()`
  * in an artifact-producing path — `.claude/specs/packet-compiler.md` invariant 7) so tests can
  * pin `resolvedAt` and the determinism test can normalize it via `PacketManifest.timestampFields`.
+ * An unknown id throws: intake rejects unknown profiles fail-closed, so reaching here with one
+ * is a bug, never something to default.
  */
-export function resolveDefaultOrchestrationProfile(clock: () => Date): OrchestrationProfile {
+export function resolveOrchestrationProfile(profileId: string, clock: () => Date): OrchestrationProfile {
+  const roleModelIds = Object.hasOwn(PROFILE_ROLE_MODEL_IDS, profileId) ? PROFILE_ROLE_MODEL_IDS[profileId] : undefined;
+  if (roleModelIds === undefined) {
+    throw new Error(`unknown orchestration profile: ${profileId}`);
+  }
   const roleBindings = Object.fromEntries(
-    Object.entries(ROLE_MODEL_IDS).map(([role, modelId]) => [role, { modelId, provider: 'anthropic' }]),
+    Object.entries(roleModelIds).map(([role, modelId]) => [role, { modelId, provider: 'anthropic' }]),
   ) as OrchestrationProfile['roleBindings'];
 
   return {
     schemaVersion: 'yellow-goal/orchestration-profile/v1',
-    id: DEFAULT_ORCHESTRATION_PROFILE_ID,
+    id: profileId,
     provider: 'anthropic',
     roleBindings,
     resolvedAt: clock().toISOString(),
     docSource: 'Anthropic official model documentation (claude-api skill model table)',
   };
+}
+
+/** The default profile (`claude-fable-opus-sonnet@1`). */
+export function resolveDefaultOrchestrationProfile(clock: () => Date): OrchestrationProfile {
+  return resolveOrchestrationProfile(DEFAULT_ORCHESTRATION_PROFILE_ID, clock);
 }
 
 const STOP_CONDITIONS: readonly string[] = [

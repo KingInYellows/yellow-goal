@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CompileArgs, CompileResult } from '../cli/types';
 import { FindingSchema, type Finding, type RepositoryGoalRequest } from '../contracts';
-import { resolveDefaultOrchestrationProfile } from '../analysis/orchestration-defaults';
+import { DEFAULT_ORCHESTRATION_PROFILE_ID, resolveOrchestrationProfile } from '../analysis/orchestration-defaults';
 import { readAnalysisBundle, type AnalysisBundleData } from '../analysis/bundle';
 import { parseCanonicalRequest } from '../intake';
 import { assertOutputDirNotInsideTarget } from '../paths/output-containment';
@@ -87,6 +87,12 @@ function assertRequestMatchesBundle(request: RepositoryGoalRequest, bundle: Anal
   const profileRef = bundle.repoProfile.target.requestedRef;
   if (requestRef && requestRef !== 'AUTO' && profileRef && profileRef !== 'AUTO' && requestRef !== profileRef) {
     mismatches.push(`ref mismatch: request=${JSON.stringify(requestRef)} bundle=${JSON.stringify(profileRef)}`);
+  }
+  const requestProfile = request.orchestration?.orchestrationProfile ?? DEFAULT_ORCHESTRATION_PROFILE_ID;
+  if (requestProfile !== bundle.orchestration.profileId) {
+    mismatches.push(
+      `orchestration profile mismatch: request=${JSON.stringify(requestProfile)} bundle=${JSON.stringify(bundle.orchestration.profileId)}`,
+    );
   }
   if (mismatches.length > 0) {
     throw new PacketCompilationError(`request and assessment bundle do not describe the same run: ${mismatches.join('; ')}`);
@@ -224,7 +230,9 @@ export async function compilePacketImpl(args: CompileArgs, options: CompilePacke
   const findings = validateFindings(bundle.assessment.findings);
   const findingsSummary = fragments.summarizeFindings(findings);
 
-  const orchestrationProfile = resolveDefaultOrchestrationProfile(clock);
+  // Resolve the profile the analysis bundle was built from, so the packet's profile and its
+  // orchestration spec can never name different profile versions.
+  const orchestrationProfile = resolveOrchestrationProfile(bundle.orchestration.profileId, clock);
 
   const packDir = options.packDirOverride ?? resolvePackDir(args.pack, packsRootFromThisModule());
   const pack = await loadPack(packDir, ENGINE_VERSION);

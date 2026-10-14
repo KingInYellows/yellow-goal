@@ -212,10 +212,31 @@ function stripJsonFence(text: string): string {
 
 type ParseAttempt = { ok: true; output: AnalysisProviderOutput } | { ok: false; errors: string[] };
 
-export class ClaudeCliAnalysisProvider implements AnalysisProvider {
-  readonly providerId = 'claude-sonnet-5';
+/** Default analysis model. Recorded as the bundle's `providerId`, so a run's provenance names the
+ *  model that actually produced it. */
+export const DEFAULT_ANALYSIS_MODEL = 'claude-sonnet-5-5';
 
-  constructor(private readonly invoke: ClaudeInvocation = defaultInvoke) {}
+/** A model alias or ID safe to pass as the `--model` argv value (no leading `-`, no spaces). */
+const MODEL_ID_PATTERN = /^[a-z0-9][a-z0-9.-]*$/;
+
+export interface ClaudeCliAnalysisProviderOptions {
+  /** `--model` for every analysis call. Defaults to `DEFAULT_ANALYSIS_MODEL`. */
+  model?: string;
+}
+
+export class ClaudeCliAnalysisProvider implements AnalysisProvider {
+  readonly providerId: string;
+
+  constructor(
+    private readonly invoke: ClaudeInvocation = defaultInvoke,
+    options: ClaudeCliAnalysisProviderOptions = {},
+  ) {
+    const model = options.model ?? DEFAULT_ANALYSIS_MODEL;
+    if (!MODEL_ID_PATTERN.test(model)) {
+      throw new AnalysisProviderError(`ClaudeCliAnalysisProvider: invalid model: ${JSON.stringify(model)}`);
+    }
+    this.providerId = model;
+  }
 
   async analyze(input: AnalysisProviderInput): Promise<AnalysisProviderOutput> {
     const prompt = buildPrompt(input);

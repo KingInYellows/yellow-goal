@@ -298,3 +298,31 @@ describe('ClaudeCliAnalysisProvider — parse and one bounded repair round', () 
     expect(output.assessment.findings[0]!.classification).toBe('missing_evidence');
   });
 });
+
+describe('ClaudeCliAnalysisProvider — model selection', () => {
+  const okInvoke = (calls: string[][]): ClaudeInvocation => async (argv) => {
+    calls.push([...argv]);
+    return envelopeFor({ assessment: validAssessment('missing_evidence'), goalResolution: validGoalResolution(), milestone: validMilestone() });
+  };
+
+  it('passes claude-sonnet-5-5 by default and records it as the providerId', async () => {
+    const calls: string[][] = [];
+    const provider = new ClaudeCliAnalysisProvider(okInvoke(calls));
+    await provider.analyze(STUB_INPUT);
+    expect(provider.providerId).toBe('claude-sonnet-5-5');
+    expect(calls[0]![calls[0]!.indexOf('--model') + 1]).toBe('claude-sonnet-5-5');
+  });
+
+  it('passes a configured model through to --model and providerId', async () => {
+    const calls: string[][] = [];
+    const provider = new ClaudeCliAnalysisProvider(okInvoke(calls), { model: 'claude-opus-5-5' });
+    await provider.analyze(STUB_INPUT);
+    expect(provider.providerId).toBe('claude-opus-5-5');
+    expect(calls[0]![calls[0]!.indexOf('--model') + 1]).toBe('claude-opus-5-5');
+  });
+
+  it('rejects a model value that could be read as a CLI flag', () => {
+    expect(() => new ClaudeCliAnalysisProvider(okInvoke([]), { model: '--dangerously-skip-permissions' })).toThrow(/invalid model/);
+    expect(() => new ClaudeCliAnalysisProvider(okInvoke([]), { model: '' })).toThrow(/invalid model/);
+  });
+});

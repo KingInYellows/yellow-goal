@@ -12,17 +12,29 @@ import type { RepositoryGoalRequest } from '../contracts';
 import { parseCanonicalRequest } from '../intake';
 import { readInspectionSiblings, readRepoProfile, writeAnalysisBundle } from './bundle';
 import { ClaudeCliAnalysisProvider, type ClaudeInvocation, type ClaudeInvocationResult } from './claude-cli-provider';
-import { resolveDefaultOrchestrationProfile, resolveDefaultOrchestrationSpec } from './orchestration-defaults';
+import {
+  DEFAULT_ORCHESTRATION_PROFILE_ID,
+  resolveOrchestrationProfile,
+  resolveDefaultOrchestrationSpec,
+} from './orchestration-defaults';
 import { assertValidAnalysisOutput } from './output-validation';
 import type { AnalysisProvider } from './types';
 
 export * from './types';
 export { RecordedAnalysisProvider } from './recorded-provider';
-export { ClaudeCliAnalysisProvider, type ClaudeInvocation, type ClaudeInvocationResult } from './claude-cli-provider';
+export {
+  ClaudeCliAnalysisProvider,
+  DEFAULT_ANALYSIS_MODEL,
+  type ClaudeCliAnalysisProviderOptions,
+  type ClaudeInvocation,
+  type ClaudeInvocationResult,
+} from './claude-cli-provider';
 export {
   DEFAULT_ORCHESTRATION_PROFILE_ID,
+  RESOLVABLE_ORCHESTRATION_PROFILE_IDS,
   resolveDefaultOrchestrationProfile,
   resolveDefaultOrchestrationSpec,
+  resolveOrchestrationProfile,
 } from './orchestration-defaults';
 export {
   assertValidAnalysisOutput,
@@ -80,7 +92,12 @@ export function createAnalyzeRepository(
 
     // Orchestration is deterministic pack policy, not model output — resolved here rather than
     // by the AnalysisProvider (see orchestration-defaults.ts doc comment).
-    const orchestrationProfile = resolveDefaultOrchestrationProfile(clock);
+    // Intake has already rejected unknown profile ids and filled in the default, so the fallback
+    // only covers a hand-written request file that predates the field.
+    const orchestrationProfile = resolveOrchestrationProfile(
+      request.orchestration?.orchestrationProfile ?? DEFAULT_ORCHESTRATION_PROFILE_ID,
+      clock,
+    );
     const orchestration = resolveDefaultOrchestrationSpec(orchestrationProfile);
 
     const paths = await writeAnalysisBundle(args.outputDir, {
