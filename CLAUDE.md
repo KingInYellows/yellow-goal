@@ -24,6 +24,11 @@ What sits at this root and why:
   product source of truth) and the specs cross-link to.
 - `HANDOFF-PROMPT.md` — superseded; provenance only.
 
-Never run `npm run runner` or any live executor from CI or an autonomous
-session — it invokes a real coding agent with real spend. The only permitted
-test execution shorthand is `npm run cli -- run <request> --executor stub`.
+Never run a real-spend command from CI or an autonomous session: `npm run
+runner`, `npm run cli -- run approve`, or `run --executor claude-code` /
+`--executor agx-claude-code`. They invoke a real coding agent with real spend.
+The only permitted test execution shorthand is
+`npm run cli -- run <request> --executor stub`. `.claude/settings.json`
+enforces this with deny rules and a PreToolUse guard
+(`.claude/hooks/guard-live-executor.mjs`); its SessionStart hook runs
+`npm install` in `goal-gen/` for cloud sessions.

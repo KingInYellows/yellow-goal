@@ -14,5 +14,6 @@ token to GitHub Release publication. `.github/workflows/claude-code-review.yml`
 runs an automated Claude Code review on PRs touching `goal-gen/**` or the
 workflows, gated on the `CLAUDE_CODE_OAUTH_TOKEN` secret (green no-op without
 it); it never invokes the product's executor. `HANDOFF-PROMPT.md` is superseded. Never
-run `npm run runner` (use `npm run cli -- run <request> --executor stub` only in
-tests) or a live executor from an autonomous session.
+run `npm run runner`, `npm run cli -- run approve`, or `run --executor
+claude-code` / `--executor agx-claude-code` from CI or an autonomous session
+(use `npm run cli -- run <request> --executor stub` only in tests).

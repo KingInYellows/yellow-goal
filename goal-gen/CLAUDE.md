@@ -33,7 +33,7 @@ scripts/              # install-smoke.sh + operator-committed-source-paths.sh + 
 schemas/ · policies/  # vendored JSON Schemas (+ corrections log) and permission policies
 packs/                # repository-goal-packet/v1 pack assets (templates, prompts, scripts)
 frontend/src/         # (future) components/ pages/ lib/
-tests/                # unit + contract + fixture + adversarial + integration + db/ (migration gate) + evals/
+tests/                # unit + contracts/ + fixtures/ (incl. injection) + integration/ + db/ (migration gate) + evals/ + harness/
 ../.github/workflows/ci.yml        # CI lives at the repo root; every step uses working-directory: goal-gen
 ../.github/workflows/release.yml   # annotated v* tag → GitHub Release asset goal-gen-<ver>.tgz
 ```
