@@ -16,7 +16,7 @@ import type { DodConfirmer, PersistenceProvider, WorktreeProvider } from '../../
 import { RunSession } from '../../backend/src/orchestrator/run-session';
 import type { GateKind } from '../../backend/src/orchestrator/run-session';
 import type { Action, GoalSpec, WorldState } from '../../backend/src/planner/types';
-import type { RunConfig, RunStatus, VerifyResult } from '../../backend/src/types';
+import type { Executor, RunConfig, RunStatus, Verifier, VerifyResult } from '../../backend/src/types';
 
 /** Worktree double — the stubs ignore the path, so this never touches the filesystem. */
 const stubWorktree: WorktreeProvider = async (opts) => ({
@@ -468,6 +468,98 @@ describe('orchestrator — replan then recover', () => {
     expect(summary.replans).toBe(1); // one same-pool re-plan
     expect(executor.runs).toHaveLength(4); // 3 failed retries + 1 successful re-run
     expect(verifier.calls).toHaveLength(4);
+  });
+});
+
+describe('orchestrator — abort during an action attempt', () => {
+  const ONE: GoalSpec = {
+    ...TWO_STEP,
+    goalState: { a: true },
+    actions: [action('s1', { a: false }, { a: true }, 'verify-a')],
+  };
+
+  it('does not start another executor attempt or a verify after the verifier aborts the run', async () => {
+    const controller = new AbortController();
+    const extractor = new StubExtractor({ goalSpec: ONE });
+    const executor = new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } });
+    // Each entry is whether that verify call observed the run signal already aborted.
+    const verifyStartedAborted: boolean[] = [];
+    const events: Record<string, unknown>[] = [];
+    const verifier: Verifier = {
+      async run(_command, ctx) {
+        verifyStartedAborted.push(ctx.signal.aborted);
+        if (!ctx.signal.aborted) controller.abort();
+        return { exitCode: 1, stdout: '', stderr: 'fail' };
+      },
+    };
+    const orch = new Orchestrator({
+      extractor,
+      executor,
+      verifier,
+      config: defaultRunConfig({ maxRetriesPerAction: 3 }),
+      confirm: async () => true,
+      worktreeProvider: stubWorktree,
+      signal: controller.signal,
+      onEvent: (event) => events.push(event),
+    });
+
+    const summary = await orch.run({ goalText: 'x' });
+    const verifyStartsAfterAbort = verifyStartedAborted.filter((startedAborted) => startedAborted).length;
+    console.log(
+      `abort-during-verify status=${summary.status} replans=${summary.replans} reextractions=${summary.reextractions} executorInvocations=${executor.runs.length} verifyStartsAfterAbort=${verifyStartsAfterAbort}`,
+    );
+
+    expect(summary.status).toBe('cancelled');
+    expect(summary.replans).toBe(0);
+    expect(summary.reextractions).toBe(0);
+    expect(executor.runs).toHaveLength(1);
+    expect(verifyStartedAborted).toEqual([false]);
+    expect(verifyStartsAfterAbort).toBe(0);
+    expect(events.some((event) => event['ev'] === 'step.fail' || event['ev'] === 'step.pass' || event['ev'] === 'replanned' || event['ev'] === 'reextract')).toBe(false);
+  });
+
+  it('does not start verify when the in-flight executor aborts the run signal', async () => {
+    const controller = new AbortController();
+    const extractor = new StubExtractor({ goalSpec: ONE });
+    const executor = new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } });
+    const abortingExecutor: Executor = {
+      kind: executor.kind,
+      async run(action, ctx) {
+        const agentRun = await executor.run(action, ctx);
+        controller.abort();
+        return agentRun;
+      },
+    };
+    const verifyStartedAborted: boolean[] = [];
+    const events: Record<string, unknown>[] = [];
+    const verifier: Verifier = {
+      async run(_command, ctx) {
+        verifyStartedAborted.push(ctx.signal.aborted);
+        return { exitCode: 1, stdout: '', stderr: 'fail' };
+      },
+    };
+    const orch = new Orchestrator({
+      extractor,
+      executor: abortingExecutor,
+      verifier,
+      config: defaultRunConfig({ maxRetriesPerAction: 3 }),
+      confirm: async () => true,
+      worktreeProvider: stubWorktree,
+      signal: controller.signal,
+      onEvent: (event) => events.push(event),
+    });
+
+    const summary = await orch.run({ goalText: 'x' });
+    console.log(
+      `abort-during-executor status=${summary.status} replans=${summary.replans} reextractions=${summary.reextractions} executorInvocations=${executor.runs.length} verifyStarts=${verifyStartedAborted.length}`,
+    );
+
+    expect(summary.status).toBe('cancelled');
+    expect(summary.replans).toBe(0);
+    expect(summary.reextractions).toBe(0);
+    expect(executor.runs).toHaveLength(1);
+    expect(verifyStartedAborted).toEqual([]);
+    expect(events.some((event) => event['ev'] === 'verify' || event['ev'] === 'step.fail' || event['ev'] === 'step.pass' || event['ev'] === 'replanned' || event['ev'] === 'reextract')).toBe(false);
   });
 });
 

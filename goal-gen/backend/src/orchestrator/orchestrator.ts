@@ -547,13 +547,20 @@ export class Orchestrator {
 
   // ── Execution ────────────────────────────────────────────────────────────────────────────────
 
-  /** Run one action up to `maxRetriesPerAction` times; the verify exit code is the only gate. */
+  /**
+   * Run one action up to `maxRetriesPerAction` times; the verify exit code is the only gate.
+   * An aborted run signal ends the loop before another attempt is provisioned and before a
+   * verify that has not started. The caller classifies that abort as `cancelled` before it
+   * records a failure or enters the replan ladder, so the `failed` shape below is only a vehicle.
+   */
   private async executeStep(state: RunState, action: Action, planId: string): Promise<StepResult> {
     let attempts = 0;
     let stepCost = 0;
     let lastEvidence: FailureEvidence = { actionId: action.id };
+    const abortedAttempt = (): StepResult => ({ kind: 'failed', attempts, costUsd: stepCost, evidence: lastEvidence });
 
     while (attempts < this.config.maxRetriesPerAction) {
+      if (this.signal.aborted) return abortedAttempt();
       if (state.accumulatedCostUsd >= this.config.maxBudgetUsd) {
         return { kind: 'budget', attempts, costUsd: stepCost };
       }
@@ -581,6 +588,8 @@ export class Orchestrator {
           budgetUsdRemaining: Math.max(0, this.config.maxBudgetUsd - state.accumulatedCostUsd),
           gitDir: handle.gitDir,
         };
+        // Provision of this attempt may have overlapped an abort. Do not start the executor then.
+        if (this.signal.aborted) return abortedAttempt();
         const agentRun = await this.executor.run(action, ctx);
         agentRun.planId = planId; // the executor cannot know the plan id; stamp it (spec: AgentRun.planId)
         // Deterministic stepId (planId + the dispatched step's sequence index) — same derivation
@@ -603,14 +612,16 @@ export class Orchestrator {
         // `git diff --cached`, a staged-file linter) must observe the executor's post-run state,
         // not the intent-to-added index. Capture happens after, still inside the try (before the
         // finally's handle.cleanup() destroys the git objects).
+        // The executor call already in progress was allowed to finish. Do not start verify once
+        // the run signal is aborted. Diff capture and the agent-run row still record that attempt.
         const cmd = action.verify.command;
         let passed = false;
-        if (cmd && cmd.trim().length > 0) {
+        if (!this.signal.aborted && cmd && cmd.trim().length > 0) {
           const v = await this.verifier.run(cmd, ctx);
           this.emit({ ev: 'verify', actionId: action.id, attempt: attempts, exitCode: v.exitCode });
           if (v.exitCode === 0) passed = true;
           else lastEvidence = buildEvidence(action, agentRun, v);
-        } else {
+        } else if (!this.signal.aborted) {
           // No verify command ⇒ no ground-truth gate. We NEVER pass on the agent's self-reported
           // status (that would trust a declared effect — invariant #2). The extractor schema requires
           // a command, so this only fires for a hand-built action; record it and let retries exhaust.
@@ -629,6 +640,9 @@ export class Orchestrator {
         if (diffContent !== undefined) agentRun.diffContent = diffContent;
         await this.persistAgentRun(agentRun, state.runId);
 
+        // A verify that aborted the signal (or an executor that aborted before verify) must not
+        // fall through into another attempt. The caller reports `cancelled`, not a verify failure.
+        if (this.signal.aborted) return abortedAttempt();
         if (passed) return { kind: 'passed', attempts, costUsd: stepCost };
       } finally {
         try {
