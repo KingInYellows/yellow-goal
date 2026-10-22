@@ -199,6 +199,7 @@ function startHeldDestMoveIntoSourceWorker(
 ): RaceHandle {
   let flipped = false;
   let flippedAt: number | undefined;
+  let late = false;
   let workerErr: unknown;
   const worker = new Worker(
     `
@@ -229,8 +230,14 @@ function startHeldDestMoveIntoSourceWorker(
         if (destHasPersistChild()) {
           try {
             renameSync(dest, stolen);
+            // Persist writes COMPLETE only through its held dest fd (now naming stolen) and runs its
+            // final caller-path check after that write. COMPLETE absent from stolen after the rename
+            // therefore means the check had not run when dest moved, so persist must reject. COMPLETE
+            // present means the rename may have landed before or after that check; exerciseRace keeps
+            // such a flip when persist rejected and retries it when persist accepted.
+            const late = existsSync(stolen + '/COMPLETE');
             mkdirSync(dest);
-            parentPort.postMessage('flipped:' + Date.now());
+            parentPort.postMessage((late ? 'flipped-late:' : 'flipped:') + Date.now());
           } catch (err) {
             parentPort.postMessage(String(err));
           }
@@ -252,9 +259,10 @@ function startHeldDestMoveIntoSourceWorker(
       resolveReady();
       return;
     }
-    if (msg.startsWith('flipped:')) {
+    if (msg.startsWith('flipped:') || msg.startsWith('flipped-late:')) {
       flipped = true;
-      flippedAt = Number(msg.slice('flipped:'.length));
+      late = msg.startsWith('flipped-late:');
+      flippedAt = Number(msg.slice(msg.indexOf(':') + 1));
       return;
     }
     workerErr = msg;
@@ -269,6 +277,7 @@ function startHeldDestMoveIntoSourceWorker(
     readyWait,
     flipped: () => flipped,
     flippedAt: () => flippedAt,
+    late: () => late,
     err: () => workerErr,
   };
 }
@@ -530,6 +539,8 @@ type RaceHandle = {
   readyWait: Promise<void>;
   flipped: () => boolean;
   flippedAt: () => number | undefined;
+  /** True when the worker saw COMPLETE already written, so the tamper may postdate the final check. */
+  late?: () => boolean;
   err: () => unknown;
 };
 
@@ -542,13 +553,19 @@ async function workerSettled(race: RaceHandle, timeoutMs: number): Promise<void>
 }
 
 const RACE_ATTEMPTS = 5;
+// The move-into-source worker also retries accepted flips that land after COMPLETE, which a starved
+// runner produces often, so its test gets a larger (still bounded) budget.
+const LATE_CLASSIFIED_RACE_ATTEMPTS = 20;
 
 /**
  * Runs `command` while the tamper worker from `start` races it, and returns only an attempt in
- * which the tamper completed before the command returned. A tamper that lands after the command
- * has finished (or never) means the scheduler, not the code under test, decided that attempt:
+ * which the tamper completed before the command returned. A worker that reports `late()` saw its
+ * tamper land after COMPLETE, possibly after the engine's final check: a rejection there is still an
+ * exercised race, but an acceptance is not evidence of a missed detection. A tamper that lands after
+ * the command has finished (or never), or a late tamper the command accepted, means the scheduler,
+ * not the code under test, decided that attempt:
  * `reset` restores the pre-attempt paths and the scenario runs again. Every assertion in the
- * caller then runs against an exercised race; after RACE_ATTEMPTS unexercised attempts the test
+ * caller then runs against an exercised race; after `attempts` unexercised attempts the test
  * fails rather than asserting on one.
  */
 async function exerciseRace(
@@ -557,6 +574,7 @@ async function exerciseRace(
   command: () => Promise<number>,
   reset: () => Promise<void>,
   track: (worker: Worker) => void,
+  attempts = RACE_ATTEMPTS,
 ): Promise<{ race: RaceHandle; code: number }> {
   for (let attempt = 1; ; attempt += 1) {
     const race = start();
@@ -573,10 +591,16 @@ async function exerciseRace(
     const returnedAt = Date.now();
     await workerSettled(race, 2_000);
     const flippedAt = race.flippedAt();
-    if (flippedAt !== undefined && flippedAt < returnedAt) return { race, code };
-    if (attempt === RACE_ATTEMPTS) {
-      const lastErr = race.err() === undefined ? '' : `; last worker error: ${String(race.err())}`;
-      throw new Error(`race not exercised in ${RACE_ATTEMPTS} attempts (${label})${lastErr}`);
+    const acceptedLate = race.late?.() === true && code === 0;
+    if (flippedAt !== undefined && flippedAt < returnedAt && !acceptedLate) return { race, code };
+    if (attempt === attempts) {
+      const lastErr =
+        race.err() !== undefined
+          ? `; last worker error: ${String(race.err())}`
+          : acceptedLate
+            ? '; last flip landed after COMPLETE and the command accepted'
+            : '';
+      throw new Error(`race not exercised in ${attempts} attempts (${label})${lastErr}`);
     }
     await race.worker.terminate();
     await reset();
@@ -7116,6 +7140,40 @@ exec "$real_git" "$@"
     }
   });
 
+  it('classifies a move-into-source flip by whether COMPLETE was already in dest', async () => {
+    // Drives the worker without persist so each ordering is fixed: dest holding only blobs/ is a
+    // flip before COMPLETE (must be rejected), dest already holding COMPLETE is a late flip.
+    const root = await mkdtemp(path.join(tmpdir(), 'cs-dest-moved-classify-'));
+    const workers: Worker[] = [];
+    try {
+      const earlyDest = path.join(root, 'early');
+      mkdirSync(path.join(earlyDest, 'blobs'), { recursive: true });
+      const early = startHeldDestMoveIntoSourceWorker(earlyDest, path.join(root, 'early-stolen'));
+      workers.push(early.worker);
+      await early.readyWait;
+      await workerSettled(early, 5_000);
+      expect(early.err()).toBeUndefined();
+      expect(early.flipped()).toBe(true);
+      expect(early.flippedAt()).toBeTypeOf('number');
+      expect(early.late?.()).toBe(false);
+
+      const lateDest = path.join(root, 'late');
+      mkdirSync(path.join(lateDest, 'blobs'), { recursive: true });
+      writeFileSync(path.join(lateDest, 'COMPLETE'), 'yellow-goal/committed-source-capture/v1\n');
+      const late = startHeldDestMoveIntoSourceWorker(lateDest, path.join(root, 'late-stolen'));
+      workers.push(late.worker);
+      await late.readyWait;
+      await workerSettled(late, 5_000);
+      expect(late.err()).toBeUndefined();
+      expect(late.flipped()).toBe(true);
+      expect(late.flippedAt()).toBeTypeOf('number');
+      expect(late.late?.()).toBe(true);
+    } finally {
+      for (const worker of workers) await worker.terminate();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('rejects capture and overlay persist when dest is moved into the source after dest is opened', async () => {
     const { dir, commit } = await fixtureRepo(coherentFiles);
     const captureDir = await mkdtemp(path.join(tmpdir(), 'cs-dest-moved-cap-'));
@@ -7150,6 +7208,7 @@ exec "$real_git" "$@"
         (worker) => {
           captureWorker = worker;
         },
+        LATE_CLASSIFIED_RACE_ATTEMPTS,
       );
       expect(captureSwap.err()).toBeUndefined();
       expect(captureSwap.flipped()).toBe(true);
@@ -7217,6 +7276,7 @@ exec "$real_git" "$@"
         (worker) => {
           overlayWorker = worker;
         },
+        LATE_CLASSIFIED_RACE_ATTEMPTS,
       );
       expect(overlaySwap.err()).toBeUndefined();
       expect(overlaySwap.flipped()).toBe(true);
@@ -7257,7 +7317,9 @@ exec "$real_git" "$@"
       await rm(honestOverlay, { recursive: true, force: true });
       await rm(work, { recursive: true, force: true });
     }
-  });
+    // Two races of up to LATE_CLASSIFIED_RACE_ATTEMPTS attempts, each of which can wait 2s in
+    // workerSettled, so the bounded failure must not be pre-empted by the 30s default.
+  }, 120_000);
 
   it('rejects capture and overlay persist when dest children are stolen before the dest inode check', async () => {
     const { dir, commit } = await fixtureRepo(coherentFiles);
