@@ -19,8 +19,14 @@
  * A broken stdout pipe (EPIPE) is handled at the stream level by the shared `createStdoutSink`
  * (events/stdout-sink.ts), not by the emitter — see its doc comment.
  *
- *   --yes, -y   auto-confirm the definition-of-done gate (non-interactive; for automation/the
- *               probe). Sign-off is deliberately NOT auto-accepted (see below).
+ *   --yes, -y   auto-confirm the definition-of-done gate. Sign-off is deliberately NOT
+ *               auto-accepted (see below), and --yes never skips the spend confirmation.
+ *
+ * Spend confirmation (RR22): before the extractor or executor is built, the operator types a fresh
+ * random challenge shown on the controlling terminal. A non-TTY invocation (an agent session, CI,
+ * piped stdin) is refused with RUNNER_TTY_REQUIRED and spends nothing; no flag or environment
+ * variable stands in for the terminal. This keeps a missed guard bypass harmless when nobody is
+ * at the keyboard.
  */
 import { pathToFileURL } from 'node:url';
 import { RunEventEmitter } from './events/run-event-emitter';
@@ -33,6 +39,7 @@ import { RUN_WALL_CLOCK_MS, defaultRunConfig } from './orchestrator/guardrails';
 import { Orchestrator } from './orchestrator/orchestrator';
 import type { DodConfirmer } from './orchestrator/orchestrator';
 import { loadRunRequest, requestToRunInputs } from './run/request-to-run';
+import { askChallenge, displayText, isInteractive, newChallenge, openControllingTerminal, type ApprovalTerminal } from './cli/terminal-challenge';
 import type { RepositoryGoalRequest } from './contracts/request';
 import type { RunConfig, RunSummary } from './types';
 
@@ -125,7 +132,49 @@ export function runStartEvent(fields: {
   };
 }
 
-async function run(args: string[], injectedEmitter?: RunEventEmitter): Promise<RunSummary> {
+export type SpendConfirmation = { confirmed: true } | { confirmed: false; code: 'RUNNER_TTY_REQUIRED' | 'RUNNER_DECLINED'; message: string };
+
+/**
+ * RR22: the runner's spend confirmation. Shows the goal and the effective spend caps on the
+ * controlling terminal, then asks for a fresh challenge. Anything but the exact challenge — a
+ * wrong answer, EOF, a non-TTY seam — declines, and nothing has been spent. `terminal` is the
+ * test seam; production binds `/dev/tty` exactly like `run approve`.
+ */
+export async function confirmRealSpend(
+  fields: { goalText: string; runConfig: RunConfig; autoConfirm: boolean },
+  terminal?: ApprovalTerminal,
+): Promise<SpendConfirmation> {
+  const controlling = terminal === undefined ? openControllingTerminal() : null;
+  const seam = terminal ?? controlling?.terminal;
+  if (!isInteractive(seam)) {
+    return {
+      confirmed: false,
+      code: 'RUNNER_TTY_REQUIRED',
+      message: 'the M1 runner spends real money and must be confirmed by a human at a terminal (stdin and stderr must be TTYs); nothing was run',
+    };
+  }
+  const challenge = newChallenge();
+  try {
+    const { runConfig } = fields;
+    seam.output.write(
+      'The M1 runner invokes real claude -p (real spend).\n' +
+        `goal:         ${displayText(fields.goalText)}\n` +
+        `model:        ${displayText(runConfig.model)}\n` +
+        `budget cap:   $${runConfig.maxBudgetUsd} · ${RUN_WALL_CLOCK_MS / 60_000}-min wall-clock · ${runConfig.maxReplans} replans\n` +
+        `DoD gate:     ${fields.autoConfirm ? 'auto-confirmed (--yes)' : 'interactive'}\n` +
+        `challenge:    ${challenge}\n\n`,
+    );
+    const answer = await askChallenge(seam, 'Type the challenge to start the run (anything else declines): ');
+    if (answer === null || answer.trim() !== challenge) {
+      return { confirmed: false, code: 'RUNNER_DECLINED', message: 'challenge not confirmed; nothing was run' };
+    }
+    return { confirmed: true };
+  } finally {
+    controlling?.close();
+  }
+}
+
+async function run(args: string[], injectedEmitter?: RunEventEmitter, terminal?: ApprovalTerminal): Promise<RunSummary> {
   // Best-effort running spend total from every envelope carrying a numeric costUsd — feeds the
   // defensive fallback summary so an unexpected throw after real spend never reports $0. An
   // injected emitter (tests) bypasses the tally; the real entry always goes through it.
@@ -187,6 +236,13 @@ async function run(args: string[], injectedEmitter?: RunEventEmitter): Promise<R
     goalText = parsed.goalText;
     config = defaultRunConfig();
     autoConfirm = parsed.autoConfirm;
+  }
+
+  // RR22: nothing below may spend until a human at the terminal confirms. --yes does not skip this.
+  const spend = await confirmRealSpend({ goalText, runConfig: config, autoConfirm }, terminal);
+  if (!spend.confirmed) {
+    emitter.handle({ ev: 'error', message: spend.message, code: spend.code });
+    return failedSummary(spend.message, goalText);
   }
 
   // Audit envelope (RR18/RR19): effective spend configuration, consent flag and target disclosure

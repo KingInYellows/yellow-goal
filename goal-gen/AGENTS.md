@@ -19,7 +19,7 @@ Self-hosted GOAL generator: plain-English goal → LLM action-graph extraction �
 - Run: `npm run cli -- run <request.json> --executor stub|claude-code` (`stub` only from tests/CI)
 - Real-run approval (ADR-0020 / ADR-0021): `npm run cli -- run manifest <request.json> …` (offline, zero spend) and `npm run cli -- run approve … --out <path>` (TTY-only human ceremony; never from CI or an autonomous session; not a Protocol v1 capability). Runbook: `docs/operator-real-run.md`.
 - Install gate: `bash scripts/install-smoke.sh` · Operator recipe: `npm run test:operator-recipe` (= `bash scripts/operator-committed-source-paths.sh`; ADR-0019 CI gate) · Real-run rehearsal: `npm run test:operator-recipe:real-run` (fake worker, zero spend) · Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (the migration gate `tests/db/migrations.test.ts` fails otherwise)
-- Test-only zero-spend run: `npm run cli -- run <request.json> --executor stub`. The M1 runner (`npm run runner -- [--yes] "<goal>"` or `--request <file>`) is human-only: it can invoke real `claude -p`; never copy it into CI or an autonomous session.
+- Test-only zero-spend run: `npm run cli -- run <request.json> --executor stub`. The M1 runner (`npm run runner -- [--yes] "<goal>"` or `--request <file>`) is human-only: it can invoke real `claude -p`; never copy it into CI or an autonomous session. It refuses to start until the operator types a fresh challenge at a TTY, and `--yes` does not skip that (RR22).
 - Lint/format: `TBD` (not configured yet)
 Always run tests + the eval set before declaring a planner or prompt change done.
 

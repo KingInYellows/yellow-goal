@@ -196,6 +196,15 @@ oversight needs consent expressed on the command line, not in the file.
   acceptance gate FAILS LOUDLY rather than auto-deciding — 'reject' would trigger the
   remediation loop's real spend with nobody at the keyboard. (Mechanics shipped in the PR #18
   review pass; recorded here as policy.)
+- **RR22 — runner spend confirmation.** The M1 runner always uses the real executor, so before
+  it builds the extractor or executor (and before `run.start`) it shows the goal, model and
+  spend caps on the controlling terminal and asks the operator to type a fresh random
+  challenge — the same terminal seam as `run approve` (AGX-R2). Stdin and stderr must be TTYs;
+  otherwise the run is refused with an `error` event coded `RUNNER_TTY_REQUIRED`, any other
+  answer or EOF is `RUNNER_DECLINED`, and both end with a failed `run.summary` at `costUsd: 0`.
+  `--yes` does not skip it, and no flag or environment variable stands in for the terminal. It
+  backs up the agent-session guard (`.claude/hooks/guard-live-executor.mjs`): a bypass the
+  guard misses is refused here when nobody is at the keyboard.
 
 ### Known conflations / deferred mappings (recorded, not resolved here)
 
