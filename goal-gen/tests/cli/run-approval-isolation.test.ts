@@ -20,6 +20,7 @@ const approvalFiles = [
   'run-approval.ts',
   'run-approval-command.ts',
   'run-approval-verifier.ts',
+  'terminal-challenge.ts',
 ].map((file) => path.join(packageRoot, 'backend/src/cli', file));
 
 const forbiddenModules = [

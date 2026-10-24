@@ -80,7 +80,7 @@ tests/                # unit + contracts/ + fixtures/ (incl. injection) + integr
 - Install gate: `bash scripts/install-smoke.sh` (packs the tarball, installs it in a scratch dir, drives the `goal-gen` bin as a process — safe locally)
 - Operator recipe: `npm run test:operator-recipe` (= `bash scripts/operator-committed-source-paths.sh`; ADR-0019 CI gate; documented Path A / Path B fences plus Pack→Install state analog; temporary fixtures only)
 - Migrations: `npm run db:generate` after any `backend/src/db/schema.ts` change (writes the SQL + journal + snapshot that `tests/db/migrations.test.ts` replays) · `npm run db:migrate`
-- Test-only zero-spend run: `npm run cli -- run <request.json> --executor stub`. The M1 runner (`npm run runner -- [--yes] "<goal>"` or `npm run runner -- [--yes] --request <file>`) is human-only: it can invoke real `claude -p`; never copy it into CI or an autonomous session.
+- Test-only zero-spend run: `npm run cli -- run <request.json> --executor stub`. The M1 runner (`npm run runner -- [--yes] "<goal>"` or `npm run runner -- [--yes] --request <file>`) is human-only: it can invoke real `claude -p`; never copy it into CI or an autonomous session. It refuses to start until the operator types a fresh challenge at a TTY, and `--yes` does not skip that (RR22).
 - Lint/format: `TBD` (not configured yet)
 
 ## Process contract & CI (ADR-0016)

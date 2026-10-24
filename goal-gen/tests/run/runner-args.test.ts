@@ -6,11 +6,13 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { PassThrough } from 'node:stream';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ApprovalTerminal } from '../../backend/src/cli/terminal-challenge';
 import { RunEventSchema, type RunEvent } from '../../backend/src/contracts/run-event';
 import { RunEventEmitter } from '../../backend/src/events/run-event-emitter';
 import { defaultRunConfig } from '../../backend/src/orchestrator/guardrails';
-import { parseRunnerArgs, run, runStartEvent } from '../../backend/src/runner';
+import { confirmRealSpend, parseRunnerArgs, run, runStartEvent } from '../../backend/src/runner';
 import { requestSample } from '../contracts/support/samples';
 
 describe('parseRunnerArgs (RR5)', () => {
@@ -160,5 +162,120 @@ describe('runStartEvent — the runner\'s audit envelope matches the run verb', 
     expect(event).not.toHaveProperty('targetRepository');
     expect(event).not.toHaveProperty('targetRepositoryHonored');
     expect(event.allowGuardrailOverride).toBe(false);
+  });
+});
+
+/** A fake terminal that answers once the prompt appears, or ends input when `answer` is null. */
+function fakeTerminal(
+  answer: string | null | ((shown: string) => string),
+  tty: { stdin: boolean; output: boolean } = { stdin: true, output: true },
+) {
+  const stdin = Object.assign(new PassThrough(), { isTTY: tty.stdin });
+  const output = Object.assign(new PassThrough(), { isTTY: tty.output });
+  let text = '';
+  output.on('data', (chunk: Buffer) => {
+    text += chunk.toString('utf8');
+    if (text.includes('Type the challenge') && !stdin.writableEnded) {
+      const shown = /^challenge:\s+(\S+)$/m.exec(text)?.[1] ?? '';
+      if (answer === null) stdin.end();
+      else stdin.end(`${typeof answer === 'function' ? answer(shown) : answer}\n`);
+    }
+  });
+  const terminal: ApprovalTerminal = { stdin, output };
+  return { terminal, text: () => text };
+}
+
+const spendFields = { goalText: 'fix the build', runConfig: defaultRunConfig(), autoConfirm: true };
+
+describe('confirmRealSpend (RR22)', () => {
+  it('confirms only when the operator types the challenge it showed', async () => {
+    const { terminal, text } = fakeTerminal((shown) => shown);
+    await expect(confirmRealSpend(spendFields, terminal)).resolves.toEqual({ confirmed: true });
+    expect(text()).toContain('real spend');
+    expect(text()).toContain('goal:         "fix the build"');
+    expect(text()).toContain('DoD gate:     auto-confirmed (--yes)');
+  });
+
+  it('shows every spend/time cap and flags a request target as not honored', async () => {
+    const { terminal, text } = fakeTerminal(null);
+    await confirmRealSpend({ ...spendFields, targetRepository: 'owner/repo' }, terminal);
+    const config = defaultRunConfig();
+    expect(text()).toContain(`$${config.maxBudgetUsd}`);
+    expect(text()).toContain(`${config.maxReplans} replans · ${config.maxReextractions} re-extractions · ${config.maxRetriesPerAction} retries/action`);
+    expect(text()).toContain('target:       "owner/repo" (not honored');
+  });
+
+  it('declines at once when stdin has already ended', async () => {
+    const { terminal } = fakeTerminal('unused');
+    const stdin = terminal.stdin as PassThrough;
+    stdin.end();
+    stdin.resume();
+    await new Promise((resolve) => stdin.once('end', resolve));
+    await expect(confirmRealSpend(spendFields, terminal)).resolves.toMatchObject({ confirmed: false, code: 'RUNNER_DECLINED' });
+  });
+
+  it('shows a fresh challenge each time', async () => {
+    const first = fakeTerminal(null);
+    const second = fakeTerminal(null);
+    await confirmRealSpend(spendFields, first.terminal);
+    await confirmRealSpend(spendFields, second.terminal);
+    const challenge = (t: string) => /^challenge:\s+(\S+)$/m.exec(t)?.[1];
+    expect(challenge(first.text())).toMatch(/^[0-9a-f]{4}-[0-9a-f]{4}$/);
+    expect(challenge(first.text())).not.toBe(challenge(second.text()));
+  });
+
+  it.each([
+    ['a wrong answer', '0000-0000'],
+    ['--yes typed at the prompt', 'yes'],
+    ['end of input', null],
+  ])('declines on %s', async (_label, answer) => {
+    const { terminal } = fakeTerminal(answer);
+    await expect(confirmRealSpend(spendFields, terminal)).resolves.toMatchObject({ confirmed: false, code: 'RUNNER_DECLINED' });
+  });
+
+  it.each([
+    ['stdin', { stdin: false, output: true }],
+    ['terminal output', { stdin: true, output: false }],
+  ])('refuses without writing when %s is not a TTY', async (_label, tty) => {
+    const { terminal } = fakeTerminal((shown) => shown, tty);
+    const writes = vi.spyOn(terminal.output, 'write');
+    await expect(confirmRealSpend(spendFields, terminal)).resolves.toMatchObject({ confirmed: false, code: 'RUNNER_TTY_REQUIRED' });
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it('refuses under the test process itself (no controlling terminal is bound)', async () => {
+    // vitest workers have no TTY stdin, which is exactly an agent session's shape.
+    await expect(confirmRealSpend(spendFields)).resolves.toMatchObject({ confirmed: false, code: 'RUNNER_TTY_REQUIRED' });
+  });
+});
+
+describe('runner spend gate (RR22)', () => {
+  it.each([
+    ['--yes with no terminal', ['--yes', 'fix the build'], fakeTerminal((shown) => shown, { stdin: false, output: false }).terminal, 'RUNNER_TTY_REQUIRED'],
+    ['a declined challenge', ['--yes', 'fix the build'], fakeTerminal('0000-0000').terminal, 'RUNNER_DECLINED'],
+  ])('stops before run.start and executor construction on %s', async (_label, args, terminal, code) => {
+    const output: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ runId: 'runner-gate', sink: (event) => output.push(event) });
+
+    const summary = await run(args, emitter, terminal);
+
+    expect(summary).toMatchObject({ status: 'failed', goalText: 'fix the build', costUsd: 0 });
+    expect(output.map((event) => event.type)).toEqual(['error', 'run.summary']);
+    expect(output[0]).toMatchObject({ payload: { code } });
+  });
+
+  it('still ends with run.summary when the confirmation itself throws', async () => {
+    const { terminal } = fakeTerminal('unused');
+    terminal.output.write = () => {
+      throw new Error('terminal gone');
+    };
+    const output: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ runId: 'runner-gate-throw', sink: (event) => output.push(event) });
+
+    const summary = await run(['fix the build'], emitter, terminal);
+
+    expect(summary).toMatchObject({ status: 'failed', costUsd: 0 });
+    expect(output.map((event) => event.type)).toEqual(['error', 'run.summary']);
+    expect(output[0]).toMatchObject({ payload: { code: 'RUNNER_DECLINED', message: expect.stringContaining('terminal gone') } });
   });
 });
