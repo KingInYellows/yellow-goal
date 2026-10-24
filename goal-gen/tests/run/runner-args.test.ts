@@ -196,6 +196,24 @@ describe('confirmRealSpend (RR22)', () => {
     expect(text()).toContain('DoD gate:     auto-confirmed (--yes)');
   });
 
+  it('shows every spend/time cap and flags a request target as not honored', async () => {
+    const { terminal, text } = fakeTerminal(null);
+    await confirmRealSpend({ ...spendFields, targetRepository: 'owner/repo' }, terminal);
+    const config = defaultRunConfig();
+    expect(text()).toContain(`$${config.maxBudgetUsd}`);
+    expect(text()).toContain(`${config.maxReplans} replans · ${config.maxReextractions} re-extractions · ${config.maxRetriesPerAction} retries/action`);
+    expect(text()).toContain('target:       "owner/repo" (not honored');
+  });
+
+  it('declines at once when stdin has already ended', async () => {
+    const { terminal } = fakeTerminal('unused');
+    const stdin = terminal.stdin as PassThrough;
+    stdin.end();
+    stdin.resume();
+    await new Promise((resolve) => stdin.once('end', resolve));
+    await expect(confirmRealSpend(spendFields, terminal)).resolves.toMatchObject({ confirmed: false, code: 'RUNNER_DECLINED' });
+  });
+
   it('shows a fresh challenge each time', async () => {
     const first = fakeTerminal(null);
     const second = fakeTerminal(null);
@@ -244,5 +262,20 @@ describe('runner spend gate (RR22)', () => {
     expect(summary).toMatchObject({ status: 'failed', goalText: 'fix the build', costUsd: 0 });
     expect(output.map((event) => event.type)).toEqual(['error', 'run.summary']);
     expect(output[0]).toMatchObject({ payload: { code } });
+  });
+
+  it('still ends with run.summary when the confirmation itself throws', async () => {
+    const { terminal } = fakeTerminal('unused');
+    terminal.output.write = () => {
+      throw new Error('terminal gone');
+    };
+    const output: RunEvent[] = [];
+    const emitter = new RunEventEmitter({ runId: 'runner-gate-throw', sink: (event) => output.push(event) });
+
+    const summary = await run(['fix the build'], emitter, terminal);
+
+    expect(summary).toMatchObject({ status: 'failed', costUsd: 0 });
+    expect(output.map((event) => event.type)).toEqual(['error', 'run.summary']);
+    expect(output[0]).toMatchObject({ payload: { code: 'RUNNER_DECLINED', message: expect.stringContaining('terminal gone') } });
   });
 });

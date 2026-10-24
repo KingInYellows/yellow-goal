@@ -191,20 +191,24 @@ oversight needs consent expressed on the command line, not in the file.
   the CLI `--yes` can. An ignored request-file ask is surfaced in-stream
   (`gate.requestAutoConfirmIgnored`), never silently dropped. The zero-spend stub engine
   honors `autoConfirmDod` as-is.
-- **RR20 — non-interactive gate policy.** Gate prompts go to stderr (stdout is the protocol
-  stream). On closed/dead stdin: the DoD/reconfirm gate DECLINES (costs nothing); the
-  acceptance gate FAILS LOUDLY rather than auto-deciding — 'reject' would trigger the
-  remediation loop's real spend with nobody at the keyboard. (Mechanics shipped in the PR #18
-  review pass; recorded here as policy.)
+- **RR20 — non-interactive gate policy.** DoD/reconfirm/acceptance gate prompts go to stderr
+  (stdout is the protocol stream); RR22's spend confirmation uses the controlling terminal. On
+  closed/dead stdin: the DoD/reconfirm gate DECLINES (costs nothing); the acceptance gate FAILS
+  LOUDLY rather than auto-deciding — 'reject' would trigger the remediation loop's real spend
+  with nobody at the keyboard. (Mechanics shipped in the PR #18 review pass; recorded here as
+  policy.)
 - **RR22 — runner spend confirmation.** The M1 runner always uses the real executor, so before
-  it builds the extractor or executor (and before `run.start`) it shows the goal, model and
-  spend caps on the controlling terminal and asks the operator to type a fresh random
-  challenge — the same terminal seam as `run approve` (AGX-R2). Stdin and stderr must be TTYs;
-  otherwise the run is refused with an `error` event coded `RUNNER_TTY_REQUIRED`, any other
-  answer or EOF is `RUNNER_DECLINED`, and both end with a failed `run.summary` at `costUsd: 0`.
-  `--yes` does not skip it, and no flag or environment variable stands in for the terminal. It
-  backs up the agent-session guard (`.claude/hooks/guard-live-executor.mjs`): a bypass the
-  guard misses is refused here when nobody is at the keyboard.
+  it builds the extractor or executor (and before `run.start`) it shows the goal, model, every
+  spend/time cap and the (not honored) request target on the controlling terminal and asks the
+  operator to type a fresh random challenge — the same terminal seam as `run approve` (AGX-R2).
+  Stdin and stderr must be TTYs; otherwise the run is refused with an `error` event coded
+  `RUNNER_TTY_REQUIRED`, any other answer or EOF is `RUNNER_DECLINED`, and both end with a
+  failed `run.summary` at `costUsd: 0`. `--yes` does not skip it, and no flag or environment
+  variable stands in for the terminal. It backs up the agent-session guard
+  (`.claude/hooks/guard-live-executor.mjs`): a bypass the guard misses is refused here when
+  nobody is at the keyboard. Like `run approve`, it is consent, not authentication: a caller
+  that drives its own PTY, or imports `run()` with a scripted terminal, is a deliberate
+  bypass and out of scope under the guard freeze (GOAL-33).
 
 ### Known conflations / deferred mappings (recorded, not resolved here)
 

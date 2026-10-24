@@ -141,7 +141,7 @@ export type SpendConfirmation = { confirmed: true } | { confirmed: false; code: 
  * test seam; production binds `/dev/tty` exactly like `run approve`.
  */
 export async function confirmRealSpend(
-  fields: { goalText: string; runConfig: RunConfig; autoConfirm: boolean },
+  fields: { goalText: string; runConfig: RunConfig; autoConfirm: boolean; targetRepository?: string },
   terminal?: ApprovalTerminal,
 ): Promise<SpendConfirmation> {
   const controlling = terminal === undefined ? openControllingTerminal() : null;
@@ -160,7 +160,12 @@ export async function confirmRealSpend(
       'The M1 runner invokes real claude -p (real spend).\n' +
         `goal:         ${displayText(fields.goalText)}\n` +
         `model:        ${displayText(runConfig.model)}\n` +
-        `budget cap:   $${runConfig.maxBudgetUsd} · ${RUN_WALL_CLOCK_MS / 60_000}-min wall-clock · ${runConfig.maxReplans} replans\n` +
+        `budget cap:   $${runConfig.maxBudgetUsd} · ${RUN_WALL_CLOCK_MS / 60_000}-min wall-clock\n` +
+        `limits:       ${runConfig.maxReplans} replans · ${runConfig.maxReextractions} re-extractions · ` +
+        `${runConfig.maxRetriesPerAction} retries/action · ${runConfig.actionTimeoutMs / 1000}s/action\n` +
+        (fields.targetRepository !== undefined
+          ? `target:       ${displayText(fields.targetRepository)} (not honored: runs in a scratch worktree)\n`
+          : '') +
         `DoD gate:     ${fields.autoConfirm ? 'auto-confirmed (--yes)' : 'interactive'}\n` +
         `challenge:    ${challenge}\n\n`,
     );
@@ -239,7 +244,15 @@ async function run(args: string[], injectedEmitter?: RunEventEmitter, terminal?:
   }
 
   // RR22: nothing below may spend until a human at the terminal confirms. --yes does not skip this.
-  const spend = await confirmRealSpend({ goalText, runConfig: config, autoConfirm }, terminal);
+  let spend: SpendConfirmation;
+  try {
+    spend = await confirmRealSpend(
+      { goalText, runConfig: config, autoConfirm, ...(request !== undefined ? { targetRepository: request.target.repository } : {}) },
+      terminal,
+    );
+  } catch (e) {
+    spend = { confirmed: false, code: 'RUNNER_DECLINED', message: `spend confirmation failed: ${e instanceof Error ? e.message : String(e)}; nothing was run` };
+  }
   if (!spend.confirmed) {
     emitter.handle({ ev: 'error', message: spend.message, code: spend.code });
     return failedSummary(spend.message, goalText);

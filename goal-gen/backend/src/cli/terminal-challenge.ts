@@ -47,6 +47,9 @@ export function isInteractive(terminal: ApprovalTerminal | undefined): terminal 
  * closed). The abort in `finally` settles a still-pending question; the race has already won.
  */
 export async function askChallenge(terminal: ApprovalTerminal, prompt: string): Promise<string | null> {
+  // A stream that already ended never emits `close` to a new interface, so the question would hang.
+  const input = terminal.stdin as NodeJS.ReadableStream & { readableEnded?: boolean; destroyed?: boolean };
+  if (input.readableEnded === true || input.destroyed === true) return null;
   const rl = createInterface({ input: terminal.stdin, output: terminal.output, terminal: false });
   const abort = new AbortController();
   const onStdinError = () => rl.close();
