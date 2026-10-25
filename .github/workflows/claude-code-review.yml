@@ -81,3 +81,6 @@ jobs:
           # --comment is required for the plugin to post findings; without it the review runs
           # but writes only to the Actions log.
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment'
+          # Pin a full model ID, not an alias, so the action's default (or an alias moving to a new
+          # release) cannot shift the review onto a pricier model and drain the token's limits.
+          claude_args: '--model claude-sonnet-5-5'

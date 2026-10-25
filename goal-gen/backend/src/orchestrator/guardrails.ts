@@ -31,7 +31,12 @@ export const MAX_WALL_CLOCK_MS = RUN_WALL_CLOCK_MS;
  */
 export const REAL_RUN_ACTION_TIMEOUT_MS = 120_000;
 export const REAL_RUN_WALL_CLOCK_MS = 600_000;
-/** Default executor model alias — `haiku` keeps the per-action context floor (~$0.08) low (spike §4). */
+/**
+ * Default model alias, shared by the executor and the LLM extractor until GOAL-32 splits them.
+ * `haiku` now resolves to Haiku 5.5. The ~$0.08 per-action floor in spike §4 was measured on
+ * Haiku 4.5 (`claude-haiku-4-5-20251001`, non-`--bare`) and is mostly context cache creation, so
+ * treat it as an estimate for the current model until a live run re-measures it.
+ */
 export const DEFAULT_MODEL = 'haiku';
 
 /**
