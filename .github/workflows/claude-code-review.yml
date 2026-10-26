@@ -67,7 +67,17 @@ jobs:
 
       - name: Run Claude Code Review
         # Third-party action with write scopes: pin to a commit, not the mutable v1 tag.
-        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
+        uses: anthropics/claude-code-action@6fed3ca145920b639991cb756090506e1bcaf515 # v1.0.245
+        # --model below pins only the parent session. The code-review plugin launches its own
+        # haiku, sonnet and opus subagents by family alias, so pin what each alias resolves to.
+        # The action forwards exactly these three variables to the Claude CLI. v1.0.245 installs
+        # Claude Code 2.1.293, the first release that knows all three 5.5 IDs. Do not use
+        # CLAUDE_CODE_SUBAGENT_MODEL: it would put every subagent on one model and collapse the
+        # plugin's tiering.
+        env:
+          ANTHROPIC_DEFAULT_OPUS_MODEL: claude-opus-5-5
+          ANTHROPIC_DEFAULT_SONNET_MODEL: claude-sonnet-5-5
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: claude-haiku-5-5
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use the job's GITHUB_TOKEN so the permissions block above governs what the review
