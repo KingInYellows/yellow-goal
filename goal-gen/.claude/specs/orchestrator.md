@@ -22,6 +22,7 @@ Execute a `Plan`: walk the dependency graph, dispatch ready action nodes (in par
 - `maxReplans`, `maxReextractions`, `maxBudgetUsd`, `maxWallClock`, `maxRetriesPerAction`, `maxConcurrency`.
 - **Defaults (v1, overridable per-run):** $20 budget · 5 replans · ≤ 2 re-extractions · 60-min wall-clock · 3 retries/action · concurrency 1.
 - **Loop detection:** the same action failing the same way twice → stop and escalate to operator.
+- **Per-role models (GOAL-32, overridable per-run):** the extractor runs on `sonnet`; an action's first attempt runs on `haiku` and every retry after a failed attempt on `sonnet` (`RunConfig.extractorModel` / `model` / `retryModel`). A request's `execution.model` pins all three. Retries stay within `maxRetriesPerAction`; escalation adds no attempts. The approval-gated real run is unaffected: its manifest fixes one model and the executor refuses any per-attempt override.
 - **On a cap trip:** stop dispatching new work, mark the run paused/blocked, and surface to the operator to raise the cap, resume, or cancel (budget exhaustion → `budget-exhausted`).
 - All caps enforced centrally; a forced-loop test must terminate (PRD §8 no-runaway).
 

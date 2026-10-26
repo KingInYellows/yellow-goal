@@ -30,6 +30,12 @@ export interface RunContext {
    * resolves it itself before spawning.
    */
   gitDir?: string;
+  /**
+   * Executor model for this attempt, set by the orchestrator when it escalates a retry
+   * (`RunConfig.retryModel`). Absent: the executor's configured model. A real run refuses any
+   * value other than its approved model.
+   */
+  model?: string;
 }
 
 export type AgentRunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -180,8 +186,12 @@ export interface RunConfig {
   maxRetriesPerAction: number;
   maxSameSubgoalFailures: number;
   actionTimeoutMs: number;
-  /** Claude model alias passed to the executor (`--model`). */
+  /** Claude model alias passed to the executor (`--model`) for an action's first attempt. */
   model: string;
+  /** Executor model for every retry after a failed attempt. Equal to `model`: no escalation. */
+  retryModel: string;
+  /** Claude model alias the LLM extractor uses for extraction, repair and re-extraction. */
+  extractorModel: string;
   /** Activity-oracle noise filter: worktree paths to ignore when deciding "agent changed something". */
   noiseFilterPaths: string[];
 }

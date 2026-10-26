@@ -29,8 +29,18 @@ describe('requestToRunInputs (RR3)', () => {
         maxRetriesPerAction: 2,
         actionTimeoutMs: 120_000,
         model: 'haiku',
+        retryModel: 'haiku',
+        extractorModel: 'haiku',
       }),
     );
+  });
+
+  it('a pinned request model pins every role; without one the per-role defaults apply (GOAL-32)', () => {
+    const pinned = requestToRunInputs(executableRequest()).runConfig;
+    expect(pinned).toMatchObject({ model: 'haiku', retryModel: 'haiku', extractorModel: 'haiku' });
+    const unpinned = executableRequest();
+    delete unpinned.orchestration!.execution!.model;
+    expect(requestToRunInputs(unpinned).runConfig).toMatchObject({ model: 'haiku', retryModel: 'sonnet', extractorModel: 'sonnet' });
   });
 
   it('preserves the goal text verbatim — no trimming or rewriting', () => {

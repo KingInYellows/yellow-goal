@@ -53,7 +53,8 @@ verbs/events later — nothing in this spec may depend on an HTTP server existin
 - **RR3 — one mapping path.** `backend/src/run/request-to-run.ts` maps a validated request to
   run inputs `{ goalText, runConfig, autoConfirm }`: `goalText` is `intent.goal` **verbatim**
   (the compiler's goal-preservation invariant applies to the run path too); `runConfig` is
-  `defaultRunConfig(guardrail + model overrides)`; `autoConfirm` from
+  `defaultRunConfig(guardrail + model overrides)` (a request `model` pins the executor,
+  retry and extractor models alike, GOAL-32); `autoConfirm` from
   `execution.autoConfirmDod` (default false). Everything that turns a request into a run goes
   through this module — the CLI `run` verb and the M1 runner may not derive run inputs
   anywhere else.

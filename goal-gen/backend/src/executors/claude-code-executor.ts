@@ -24,7 +24,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from '
 import path from 'node:path';
 import { z } from 'zod';
 import { RunApprovalError } from '../cli/errors';
-import { ACTION_TIMEOUT_MS, DEFAULT_MODEL, DEFAULT_NOISE_FILTER_PATHS, MAX_BUDGET_USD } from '../orchestrator/guardrails';
+import { ACTION_TIMEOUT_MS, DEFAULT_EXECUTOR_MODEL, DEFAULT_NOISE_FILTER_PATHS, MAX_BUDGET_USD } from '../orchestrator/guardrails';
 import type { Action, ExecutorKind } from '../planner/types';
 import type { AgentRun, AgentRunFailureClass, AgentRunStatus, Executor, RunContext } from '../types';
 import {
@@ -807,7 +807,7 @@ export class ClaudeCodeExecutor implements Executor {
   private seq = 0;
 
   constructor(opts: ClaudeCodeExecutorOptions = {}) {
-    this.model = opts.model ?? DEFAULT_MODEL;
+    this.model = opts.model ?? DEFAULT_EXECUTOR_MODEL;
     this.timeoutMs = opts.timeoutMs ?? ACTION_TIMEOUT_MS;
     this.noiseFilterPaths = opts.noiseFilterPaths ?? DEFAULT_NOISE_FILTER_PATHS;
     this.maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
@@ -849,6 +849,12 @@ export class ClaudeCodeExecutor implements Executor {
       pinnedDir = preflight.gitDir;
     }
     const runGit = (args: readonly string[]): GitResult => pinnedGit(args, ctx.worktreePath, pinnedDir);
+
+    // The approved manifest fixes a real run's model; a per-attempt override cannot change it.
+    if (this.realRun && ctx.model !== undefined && ctx.model !== this.model) {
+      return refuse(`[executor] rejected attempt model '${ctx.model}' (real run: the approved model is fixed)`, 'mode-rejected');
+    }
+    const model = ctx.model ?? this.model;
 
     // Ground-truth baseline (CLAUDE.md #2): never trust a run whose baseline we cannot read.
     const baseline = runGit(['rev-parse', 'HEAD']);
@@ -894,7 +900,7 @@ export class ClaudeCodeExecutor implements Executor {
       '--permission-mode',
       permissionMode,
       '--model',
-      this.model,
+      model,
       '--max-turns',
       String(this.maxTurns),
       ...(this.realRun ? realRunArgv(this.realRun) : []),

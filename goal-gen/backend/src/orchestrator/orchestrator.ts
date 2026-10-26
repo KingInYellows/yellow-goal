@@ -587,6 +587,9 @@ export class Orchestrator {
           signal: this.signal,
           budgetUsdRemaining: Math.max(0, this.config.maxBudgetUsd - state.accumulatedCostUsd),
           gitDir: handle.gitDir,
+          // GOAL-32: the first attempt runs on the executor model; every retry after a failed
+          // attempt escalates to the retry model. No override when the two are the same.
+          ...(attempts > 1 && this.config.retryModel !== this.config.model ? { model: this.config.retryModel } : {}),
         };
         // Provision of this attempt may have overlapped an abort. Do not start the executor then.
         if (this.signal.aborted) return abortedAttempt();

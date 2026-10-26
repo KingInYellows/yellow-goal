@@ -79,7 +79,7 @@ function stubEngine(goalText: string): EngineDeps {
  *  including the executor's single deliberate bypass opt-in) to backend/src/runner.ts. */
 function claudeCodeEngine(config: RunConfig, onEvent: (event: Record<string, unknown>) => void): EngineDeps {
   return {
-    extractor: new LlmExtractorImpl(new ClaudeLlmClient({ model: config.model }), { onEvent }),
+    extractor: new LlmExtractorImpl(new ClaudeLlmClient({ model: config.extractorModel }), { onEvent }),
     executor: new ClaudeCodeExecutor({
       model: config.model,
       timeoutMs: config.actionTimeoutMs,

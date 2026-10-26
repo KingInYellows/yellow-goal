@@ -32,12 +32,16 @@ export const MAX_WALL_CLOCK_MS = RUN_WALL_CLOCK_MS;
 export const REAL_RUN_ACTION_TIMEOUT_MS = 120_000;
 export const REAL_RUN_WALL_CLOCK_MS = 600_000;
 /**
- * Default model alias, shared by the executor and the LLM extractor until GOAL-32 splits them.
+ * Per-role model aliases (GOAL-32). The executor runs an action's first attempt on Haiku and
+ * every retry after a failed attempt on Sonnet; the extractor authors the goal spec on Sonnet,
+ * because a weak action graph costs more downstream than the extraction call itself.
  * `haiku` now resolves to Haiku 5.5. The ~$0.08 per-action floor in spike §4 was measured on
  * Haiku 4.5 (`claude-haiku-4-5-20251001`, non-`--bare`) and is mostly context cache creation, so
  * treat it as an estimate for the current model until a live run re-measures it.
  */
-export const DEFAULT_MODEL = 'haiku';
+export const DEFAULT_EXECUTOR_MODEL = 'haiku';
+export const DEFAULT_RETRY_MODEL = 'sonnet';
+export const DEFAULT_EXTRACTOR_MODEL = 'sonnet';
 
 /**
  * Worktree paths the activity oracle ignores: agent-environment side-effects (hooks/plugins/MCP),
@@ -54,7 +58,9 @@ export function defaultRunConfig(overrides: Partial<RunConfig> = {}): RunConfig 
     maxRetriesPerAction: MAX_RETRIES_PER_ACTION,
     maxSameSubgoalFailures: MAX_SAME_SUBGOAL_FAILURES,
     actionTimeoutMs: ACTION_TIMEOUT_MS,
-    model: DEFAULT_MODEL,
+    model: DEFAULT_EXECUTOR_MODEL,
+    retryModel: DEFAULT_RETRY_MODEL,
+    extractorModel: DEFAULT_EXTRACTOR_MODEL,
     noiseFilterPaths: [...DEFAULT_NOISE_FILTER_PATHS],
     ...overrides,
   };

@@ -200,9 +200,12 @@ export async function runProviderV1(
       return 'reject';
     };
     const configuredConfirm = options.confirmFactory?.(confirm) ?? confirm;
+    // The v1 stream is frozen byte-for-byte (tests/golden/provider-v1/), so run.start keeps the
+    // v1 runConfig shape: the GOAL-32 per-role models stay out of it. This stub path never spawns.
+    const { retryModel: _retryModel, extractorModel: _extractorModel, ...v1RunConfig } = inputs.runConfig;
     events.next('run.start', {
       goalText: inputs.goalText, executor: 'stub', autoConfirm, allowGuardrailOverride: invocation.allowGuardrailOverride,
-      runConfig: inputs.runConfig, targetRepository: request.target.repository, targetRepositoryHonored: false,
+      runConfig: v1RunConfig, targetRepository: request.target.repository, targetRepositoryHonored: false,
       protocolVersion: invocation.protocol === 'v2' ? ProviderProtocolV2 : ProviderProtocolVersion, stubScenario: invocation.scenario, simulation: true,
     });
     if (!transportFailed && activeWriter.failure === undefined) {

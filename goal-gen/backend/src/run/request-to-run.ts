@@ -117,7 +117,10 @@ export function requestToRunInputs(request: RepositoryGoalRequest, options: RunM
   const execution = request.orchestration?.execution;
   const overrides: Partial<RunConfig> = {
     ...(execution?.guardrails ?? {}),
-    ...(execution?.model !== undefined ? { model: execution.model } : {}),
+    // A pinned request model pins every role: no extractor split and no retry escalation.
+    ...(execution?.model !== undefined
+      ? { model: execution.model, retryModel: execution.model, extractorModel: execution.model }
+      : {}),
   };
 
   if (options.allowGuardrailOverride !== true) {

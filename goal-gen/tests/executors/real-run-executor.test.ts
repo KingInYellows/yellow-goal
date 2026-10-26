@@ -444,3 +444,28 @@ describe('permission mode is only ever acceptEdits (AGX-R11, exhaustive)', () =>
     },
   );
 });
+
+describe('per-attempt model override (GOAL-32)', () => {
+  it('the legacy executor runs its configured model and takes an escalated attempt model from ctx', async () => {
+    const exec = new ClaudeCodeExecutor();
+    await exec.run(action(), ctx());
+    expect(flagValues(spawnedArgv(), '--model')).toEqual(['haiku']);
+    spawnMock.mockClear();
+    await exec.run(action(), { ...ctx(), model: 'sonnet' });
+    expect(flagValues(spawnedArgv(), '--model')).toEqual(['sonnet']);
+  });
+
+  it('a real run refuses an attempt model other than the approved one without spawning', async () => {
+    const run = await createRealRunExecutor(manifest()).run(action(), { ...ctx(), model: 'haiku' });
+    expect(run.status).toBe('failed');
+    expect(run.failureClass).toBe('mode-rejected');
+    expect(run.stderr).toContain("rejected attempt model 'haiku'");
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('a real run accepts an attempt model equal to the approved one', async () => {
+    const run = await createRealRunExecutor(manifest()).run(action(), { ...ctx(), model: 'sonnet' });
+    expect(run.status).toBe('succeeded');
+    expect(flagValues(spawnedArgv(), '--model')).toEqual(['sonnet']);
+  });
+});

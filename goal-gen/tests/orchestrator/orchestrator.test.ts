@@ -379,6 +379,42 @@ describe('orchestrator — per-action retries', () => {
   });
 });
 
+describe('orchestrator — retry model escalation (GOAL-32)', () => {
+  const ONE: GoalSpec = { ...TWO_STEP, goalState: { a: true }, actions: [action('s1', { a: false }, { a: true }, 'verify-a')] };
+  const FAIL = { exitCode: 1, stdout: '', stderr: 'nope' };
+
+  async function attemptModels(config: Partial<RunConfig>): Promise<Array<string | undefined>> {
+    const models: Array<string | undefined> = [];
+    const stub = new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } });
+    const executor: Executor = {
+      kind: stub.kind,
+      async run(a, ctx) {
+        models.push(ctx.model);
+        return stub.run(a, ctx);
+      },
+    };
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: ONE }),
+      executor,
+      verifier: new StubVerifier({ byCommand: { 'verify-a': [FAIL, FAIL, { exitCode: 0, stdout: '', stderr: '' }] } }),
+      config: defaultRunConfig(config),
+      confirm: async () => true,
+      worktreeProvider: stubWorktree,
+    });
+    expect((await orch.run({ goalText: 'x' })).status).toBe('succeeded');
+    return models;
+  }
+
+  it('runs the first attempt on the executor model and every retry on the retry model', async () => {
+    expect(defaultRunConfig()).toMatchObject({ model: 'haiku', retryModel: 'sonnet', extractorModel: 'sonnet' });
+    expect(await attemptModels({})).toEqual([undefined, 'sonnet', 'sonnet']);
+  });
+
+  it('sets no override when the retry model equals the executor model', async () => {
+    expect(await attemptModels({ model: 'opus', retryModel: 'opus' })).toEqual([undefined, undefined, undefined]);
+  });
+});
+
 describe('orchestrator — WorldState update rule', () => {
   it('applies a non-empty successPredicate (not effects) on a verify pass', async () => {
     const spec: GoalSpec = {

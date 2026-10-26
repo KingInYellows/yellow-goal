@@ -14,7 +14,7 @@ import { z } from 'zod';
 import type { RepositoryGoalRequest } from '../contracts/request';
 import {
   ACTION_TIMEOUT_MS,
-  DEFAULT_MODEL,
+  DEFAULT_EXECUTOR_MODEL,
   MAX_BUDGET_USD,
   REAL_RUN_ACTION_TIMEOUT_MS,
   REAL_RUN_WALL_CLOCK_MS,
@@ -146,7 +146,7 @@ export type RunManifestInputs = {
  * (AGX-R4) — goes through `buildRunManifest`, so a default can never differ between them.
  */
 export const RUN_MANIFEST_DEFAULTS = {
-  model: DEFAULT_MODEL,
+  model: DEFAULT_EXECUTOR_MODEL,
   disallowedTools: [] as readonly string[],
   actionTimeoutMs: REAL_RUN_ACTION_TIMEOUT_MS,
   runWallClockMs: REAL_RUN_WALL_CLOCK_MS,

@@ -159,7 +159,8 @@ export async function confirmRealSpend(
     seam.output.write(
       'The M1 runner invokes real claude -p (real spend).\n' +
         `goal:         ${displayText(fields.goalText)}\n` +
-        `model:        ${displayText(runConfig.model)}\n` +
+        `model:        ${displayText(runConfig.model)} (retries: ${displayText(runConfig.retryModel)}) · ` +
+        `extractor ${displayText(runConfig.extractorModel)}\n` +
         `budget cap:   $${runConfig.maxBudgetUsd} · ${RUN_WALL_CLOCK_MS / 60_000}-min wall-clock\n` +
         `limits:       ${runConfig.maxReplans} replans · ${runConfig.maxReextractions} re-extractions · ` +
         `${runConfig.maxRetriesPerAction} retries/action · ${runConfig.actionTimeoutMs / 1000}s/action\n` +
@@ -275,7 +276,7 @@ async function run(args: string[], injectedEmitter?: RunEventEmitter, terminal?:
       reason: "request asked for autoConfirmDod, but the runner is a real executor — only the operator's CLI --yes can skip the DoD gate (RR19)",
     });
   }
-  const extractor = new LlmExtractorImpl(new ClaudeLlmClient({ model: config.model }), { onEvent: emitter.handle });
+  const extractor = new LlmExtractorImpl(new ClaudeLlmClient({ model: config.extractorModel }), { onEvent: emitter.handle });
   const executor = new ClaudeCodeExecutor({
     model: config.model,
     timeoutMs: config.actionTimeoutMs,

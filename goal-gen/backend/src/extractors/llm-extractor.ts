@@ -10,7 +10,7 @@
  * rather than ever passing junk to `plan()`.
  */
 import { spawn } from 'node:child_process';
-import { DEFAULT_MODEL } from '../orchestrator/guardrails';
+import { DEFAULT_EXTRACTOR_MODEL } from '../orchestrator/guardrails';
 import type { Action, GoalSpec, WorldState } from '../planner/types';
 import type { ExtractRequest, FailureEvidence, LlmExtractor } from '../types';
 import { expandPrompt, extractionPrompt, repairPrompt } from './prompts';
@@ -163,7 +163,7 @@ export class ClaudeLlmClient implements LlmClient {
   private readonly timeoutMs: number;
 
   constructor(opts: ClaudeLlmClientOptions = {}) {
-    this.model = opts.model ?? DEFAULT_MODEL;
+    this.model = opts.model ?? DEFAULT_EXTRACTOR_MODEL;
     this.timeoutMs = opts.timeoutMs ?? EXTRACT_TIMEOUT_MS;
   }
 
