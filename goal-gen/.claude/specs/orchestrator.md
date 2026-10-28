@@ -23,6 +23,7 @@ Execute a `Plan`: walk the dependency graph, dispatch ready action nodes (in par
 - **Defaults (v1, overridable per-run):** $20 budget · 5 replans · ≤ 2 re-extractions · 60-min wall-clock · 3 retries/action · concurrency 1.
 - **Loop detection:** the same action failing the same way twice → stop and escalate to operator.
 - **Per-role models (GOAL-32, overridable per-run):** the extractor runs on `sonnet`; an action's first attempt runs on `haiku` and every retry after a failed attempt on `sonnet` (`RunConfig.extractorModel` / `model` / `retryModel`). A request's `execution.model` pins all three. Retries stay within `maxRetriesPerAction`; escalation adds no attempts. The approval-gated real run is unaffected: its manifest fixes one model and the executor refuses any per-attempt override.
+- **Attempt model on `agent.run` (GOAL-41):** each legacy-stream `agent.run` event carries `model`, the model that attempt ran on (the retry override, else `RunConfig.model`). It is omitted when the attempt was refused before any worker spawned (`auth-mode-mismatch`, `worktree-refused`, `mode-rejected`). The provider protocol stream sets `OrchestratorDeps.attemptModelInEvents: false`, so its `agent.run` payload keeps the frozen v1 shape.
 - **On a cap trip:** stop dispatching new work, mark the run paused/blocked, and surface to the operator to raise the cap, resume, or cancel (budget exhaustion → `budget-exhausted`).
 - All caps enforced centrally; a forced-loop test must terminate (PRD §8 no-runaway).
 

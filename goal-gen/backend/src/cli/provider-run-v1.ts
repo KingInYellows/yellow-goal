@@ -219,6 +219,8 @@ export async function runProviderV1(
           const orchestrator = new Orchestrator({
             ...engine, config: inputs.runConfig, events, confirm: configuredConfirm, acceptanceGate,
             signal: controller.signal, terminationReason: () => causes.current(),
+            // Frozen v1 payloads (and v2 stub parity, AGX-R23): agent.run keeps its pre-GOAL-41 shape.
+            attemptModelInEvents: false,
           });
           const summary = await orchestrator.run({ goalText: inputs.goalText });
           // Defensive against an internal return that failed to mint its terminal.

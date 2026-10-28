@@ -26,6 +26,7 @@ import type { Action, CompletionPolicy, GoalSpec, Plan, PlanStep, WorldState } f
 import type {
   ActionOutcome,
   AgentRun,
+  AgentRunFailureClass,
   Executor,
   ExtractRequest,
   FailureEvidence,
@@ -41,6 +42,9 @@ import type {
 import { defaultRunConfig } from './guardrails';
 import { AsyncLatch } from './async-gate';
 import type { RunEventEmitter } from '../events/run-event-emitter';
+
+/** Executor failure classes that mean no worker process was ever started (mirrors real-run-engine). */
+const NOT_SPAWNED: ReadonlySet<AgentRunFailureClass> = new Set(['auth-mode-mismatch', 'worktree-refused', 'mode-rejected']);
 
 type PersistedRunStatus = RunStatus | 'running';
 
@@ -121,6 +125,9 @@ export interface OrchestratorDeps {
   signal?: AbortSignal;
   /** Optional protocol cancellation-cause reader. Legacy summaries stay unchanged without it. */
   terminationReason?: () => RunTerminationReason | undefined;
+  /** GOAL-41: whether `agent.run` events carry the attempt's executor `model` (default true). The
+   *  provider protocol stream sets false to keep its frozen payload shape (tests/golden/provider-v1/). */
+  attemptModelInEvents?: boolean;
   /** Optional persistence seam (R1-R6); defaults to a no-op. */
   persistence?: PersistenceProvider;
   /** Pause/resume latch (R26/R27), checked at the top of the run loop; defaults to a fresh,
@@ -212,6 +219,7 @@ export class Orchestrator {
   private eventsClaimed = false;
   private readonly signal: AbortSignal;
   private readonly terminationReason: (() => RunTerminationReason | undefined) | undefined;
+  private readonly attemptModelInEvents: boolean;
   private readonly persistence: PersistenceProvider;
   private readonly pauseLatch: AsyncLatch;
 
@@ -228,6 +236,7 @@ export class Orchestrator {
     this.emit = events !== undefined ? (event) => void events.handle(event) : deps.onEvent ?? (() => {});
     this.signal = deps.signal ?? new AbortController().signal;
     this.terminationReason = deps.terminationReason;
+    this.attemptModelInEvents = deps.attemptModelInEvents ?? true;
     this.persistence = deps.persistence ?? noopPersistence;
     this.pauseLatch = deps.pauseLatch ?? new AsyncLatch();
   }
@@ -605,6 +614,11 @@ export class Orchestrator {
           ev: 'agent.run',
           actionId: action.id,
           attempt: attempts,
+          // GOAL-41: the model this attempt ran on, so spend and outcomes attribute per model. An
+          // attempt refused before any worker spawned (e.g. a real run's `mode-rejected`) ran on none.
+          ...(this.attemptModelInEvents && !NOT_SPAWNED.has(agentRun.failureClass ?? 'error-result')
+            ? { model: ctx.model ?? this.config.model }
+            : {}),
           status: agentRun.status,
           costUsd: spent,
           diffRef: agentRun.diffRef ?? null,

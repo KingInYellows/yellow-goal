@@ -8,6 +8,9 @@ Decision: [ADR-0017](../../docs/decisions/0017-provider-protocol-v1-stdio.md).
 > [ADR-0020](../../docs/decisions/0020-approval-gated-real-execution.md) and
 > [`approval-gated-real-execution.md`](approval-gated-real-execution.md) (AGX-R22–R27). This v1
 > contract is unchanged and stays byte-identical (`tests/golden/provider-v1/`).
+> The legacy run stream's `agent.run.model` (GOAL-41) is not part of this contract: the provider
+> stub path passes `attemptModelInEvents: false` to the orchestrator, so v1 and v2 stub `agent.run`
+> payloads keep their original fields.
 
 ## Evidence and scope
 

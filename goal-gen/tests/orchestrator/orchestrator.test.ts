@@ -413,6 +413,62 @@ describe('orchestrator — retry model escalation (GOAL-32)', () => {
   it('sets no override when the retry model equals the executor model', async () => {
     expect(await attemptModels({ model: 'opus', retryModel: 'opus' })).toEqual([undefined, undefined, undefined]);
   });
+
+  async function agentRunEvents(config: Partial<RunConfig>, attemptModelInEvents?: boolean): Promise<Array<Record<string, unknown>>> {
+    const events: Array<Record<string, unknown>> = [];
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: ONE }),
+      executor: new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } }),
+      verifier: new StubVerifier({ byCommand: { 'verify-a': [FAIL, FAIL, { exitCode: 0, stdout: '', stderr: '' }] } }),
+      config: defaultRunConfig(config),
+      confirm: async () => true,
+      worktreeProvider: stubWorktree,
+      onEvent: (e) => events.push(e),
+      ...(attemptModelInEvents === undefined ? {} : { attemptModelInEvents }),
+    });
+    expect((await orch.run({ goalText: 'x' })).status).toBe('succeeded');
+    return events.filter((e) => e.ev === 'agent.run');
+  }
+
+  it('records each attempt\'s model on its agent.run event (GOAL-41)', async () => {
+    expect((await agentRunEvents({})).map((e) => e.model)).toEqual(['haiku', 'sonnet', 'sonnet']);
+    expect((await agentRunEvents({ model: 'opus', retryModel: 'opus' })).map((e) => e.model)).toEqual(['opus', 'opus', 'opus']);
+  });
+
+  it('omits the model from agent.run for an attempt refused before any worker spawned', async () => {
+    const events: Array<Record<string, unknown>> = [];
+    const stub = new StubExecutor({ default: { status: 'succeeded', costUsd: 0 } });
+    const executor: Executor = {
+      kind: stub.kind,
+      async run(a, ctx) {
+        const run = await stub.run(a, ctx);
+        return ctx.model === undefined ? run : { ...run, status: 'failed', failureClass: 'mode-rejected' };
+      },
+    };
+    const orch = new Orchestrator({
+      extractor: new StubExtractor({ goalSpec: ONE }),
+      executor,
+      verifier: new StubVerifier({ byCommand: { 'verify-a': [FAIL, FAIL, FAIL] } }),
+      config: defaultRunConfig(),
+      confirm: async () => true,
+      worktreeProvider: stubWorktree,
+      onEvent: (e) => events.push(e),
+    });
+    await orch.run({ goalText: 'x' });
+    const runs = events.filter((e) => e.ev === 'agent.run');
+    // First attempts run on haiku; every refused retry (attempt > 1) records no model.
+    expect(runs.some((e) => (e.attempt as number) > 1)).toBe(true);
+    for (const e of runs) {
+      if (e.attempt === 1) expect(e).toMatchObject({ model: 'haiku' });
+      else expect(e).not.toHaveProperty('model');
+    }
+  });
+
+  it('omits the model from agent.run when attemptModelInEvents is false', async () => {
+    const events = await agentRunEvents({}, false);
+    expect(events).toHaveLength(3);
+    for (const e of events) expect(e).not.toHaveProperty('model');
+  });
 });
 
 describe('orchestrator — WorldState update rule', () => {
