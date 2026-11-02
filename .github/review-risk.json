@@ -10,20 +10,24 @@
     },
     {
       "tier": "high",
-      "why": "real-run engine, executors and orchestration that spend or run agents",
+      "why": "real-run engine, executors, orchestration and the run/approval CLI that spend or run agents",
       "paths": [
         "goal-gen/backend/src/real-run/*",
         "goal-gen/backend/src/executors/*",
         "goal-gen/backend/src/orchestrator/*",
-        "goal-gen/backend/src/runner.ts"
+        "goal-gen/backend/src/runner.ts",
+        "goal-gen/backend/src/cli/run-approval*",
+        "goal-gen/backend/src/cli/run-command.ts",
+        "goal-gen/backend/src/cli/provider-run-v2-real.ts"
       ]
     },
     {
       "tier": "high",
-      "why": "permission policies, vendored schemas and database migrations",
+      "why": "permission policies, vendored schemas, the database schema and migrations",
       "paths": [
         "goal-gen/policies/*",
         "goal-gen/schemas/*",
+        "goal-gen/backend/src/db/schema.ts",
         "goal-gen/backend/src/db/migrations/*"
       ]
     },
