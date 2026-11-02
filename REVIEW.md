@@ -3,8 +3,10 @@
 These rules apply to every pull request review in this repository: the
 yellow-review `review-gate` workflow, `/review:pr`, and any other reviewer
 that reads this file. They add to `CLAUDE.md`, `goal-gen/CLAUDE.md` and the
-component specs under `goal-gen/.claude/specs/`. Reviews read this file from
-the base branch, so a pull request cannot change how it is reviewed.
+component specs under `goal-gen/.claude/specs/`. Reviewers must read this
+file from the base branch, not the pull request's head, so a pull request
+cannot change how it is reviewed. The yellow-review `review-gate` workflow
+does this; any other reviewer should too.
 
 ## What Important means here
 
@@ -34,8 +36,10 @@ Report at most five Nits per review. Pick the five that matter most.
 
 ## Do not report
 
-- Anything CI already enforces: `npm run typecheck`, `npm test`,
-  `npm run eval`, the install smoke and the operator recipe.
+- Failures CI already reports: type errors (`npm run typecheck`), failing
+  tests (`npm test`), eval regressions (`npm run eval`), the install smoke and
+  the operator recipe. A green run does not cover a test, fixture or `verify`
+  weakened to pass; that is still Important.
 - Vendored JSON Schemas under `goal-gen/schemas/` except where the
   corrections log says they were changed on purpose.
 - The content of `docs/01`–`08`, `goal-gen/docs/brainstorms/` and

@@ -18,6 +18,7 @@
         "goal-gen/backend/src/runner.ts",
         "goal-gen/backend/src/cli/run-approval*",
         "goal-gen/backend/src/cli/run-command.ts",
+        "goal-gen/backend/src/cli/protocol-run-options.ts",
         "goal-gen/backend/src/cli/provider-run-v2-real.ts"
       ]
     },
