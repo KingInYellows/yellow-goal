@@ -20,6 +20,14 @@ What sits at this root and why:
   no-op. It never invokes the product's executor or runner. Not a required
   status check.
 - `.graphite.yml`, `.github/pull_request_template.md` — repo-level PR conventions.
+- `REVIEW.md` — review-only rules (what counts as Important, the Nit cap, what
+  not to report). Reviewers should read it from the base branch.
+- `.github/review-risk.json` — path rules that set a PR's review risk tier
+  (low, medium, high) for yellow-review's `classify-risk`, also read from the
+  base branch. Today the tier is only reported. Planned, once the review-gate
+  and merge-gate land: low needs no human approval, medium and high need the
+  owner's approval on the head commit, and high adds automated checks. Design:
+  yellow-plugins `plans/risk-tiered-review-pipeline.md`.
 - `docs/01`–`08` — research knowledge base that `goal-gen/docs/prd.md` (the
   product source of truth) and the specs cross-link to.
 - `HANDOFF-PROMPT.md` — superseded; provenance only.

@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "default_tier": "medium",
+  "low_max_lines": 300,
+  "rules": [
+    {
+      "tier": "high",
+      "why": "CI, release and repository automation",
+      "paths": [".github/workflows/*", ".claude/*", ".graphite.yml"]
+    },
+    {
+      "tier": "high",
+      "why": "real-run engine, executors, orchestration and the run/approval CLI that spend or run agents",
+      "paths": [
+        "goal-gen/backend/src/real-run/*",
+        "goal-gen/backend/src/executors/*",
+        "goal-gen/backend/src/orchestrator/*",
+        "goal-gen/backend/src/runner.ts",
+        "goal-gen/backend/src/cli/run-approval*",
+        "goal-gen/backend/src/cli/run-command.ts",
+        "goal-gen/backend/src/cli/protocol-run-options.ts",
+        "goal-gen/backend/src/cli/provider-run-v2-real.ts"
+      ]
+    },
+    {
+      "tier": "high",
+      "why": "permission policies, vendored schemas, the database schema and migrations",
+      "paths": [
+        "goal-gen/policies/*",
+        "goal-gen/schemas/*",
+        "goal-gen/backend/src/db/schema.ts",
+        "goal-gen/backend/src/db/migrations/*"
+      ]
+    },
+    {
+      "tier": "high",
+      "why": "package, release and install scripts",
+      "paths": [
+        "goal-gen/package.json",
+        "goal-gen/package-lock.json",
+        "goal-gen/bin/*",
+        "goal-gen/scripts/*"
+      ]
+    },
+    {
+      "tier": "low",
+      "why": "documentation and plans",
+      "paths": [
+        "README.md",
+        "*/README.md",
+        "CHANGELOG.md",
+        "*/CHANGELOG.md",
+        "HANDOFF-PROMPT.md",
+        "docs/*",
+        "goal-gen/docs/*",
+        "goal-gen/plans/*"
+      ]
+    }
+  ]
+}
