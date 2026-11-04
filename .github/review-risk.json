@@ -10,6 +10,17 @@
     },
     {
       "tier": "high",
+      "why": "instructions and config that reviewers and review tooling follow",
+      "paths": [
+        "CLAUDE.md",
+        "AGENTS.md",
+        "goal-gen/CLAUDE.md",
+        "goal-gen/AGENTS.md",
+        "yellow-plugins.local.md"
+      ]
+    },
+    {
+      "tier": "high",
       "why": "real-run engine, executors, orchestration and the run/approval CLI that spend or run agents",
       "paths": [
         "goal-gen/backend/src/real-run/*",

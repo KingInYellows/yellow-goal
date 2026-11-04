@@ -28,6 +28,10 @@ What sits at this root and why:
   and merge-gate land: low needs no human approval, medium and high need the
   owner's approval on the head commit, and high adds automated checks. Design:
   yellow-plugins `plans/risk-tiered-review-pipeline.md`.
+- `yellow-plugins.local.md` — yellow-plugins per-project config. It sets
+  `review_pipeline: workflow`, so `/review:pr` also runs yellow-review's
+  `review-gate` workflow in shadow mode and only compares its findings in the
+  report (pipeline phase 1). Tracked on purpose so cloud sessions get it.
 - `docs/01`–`08` — research knowledge base that `goal-gen/docs/prd.md` (the
   product source of truth) and the specs cross-link to.
 - `HANDOFF-PROMPT.md` — superseded; provenance only.
