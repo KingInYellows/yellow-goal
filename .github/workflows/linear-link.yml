@@ -1,0 +1,61 @@
+# Warns (never fails) on a pull request that is not linked to a Linear issue in the yellow-goal team.
+# Linear's "link or create issues on merge" setting guesses a team for unlinked
+# PRs (it has been putting them in yellow-plugins); a PR that names a GOAL issue
+# (or GOAL-NEW) is never guessed.
+name: linear-link
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  linear-link:
+    name: linear-link
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check for a GOAL issue reference
+        env:
+          # PR fields go through env, never inline expressions, to avoid
+          # script injection from branch names, titles or bodies.
+          TEAM_KEY: GOAL
+          PR_BRANCH: ${{ github.head_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          team_lower=$(printf '%s' "$TEAM_KEY" | tr '[:upper:]' '[:lower:]')
+          # Exact, case-sensitive key on word boundaries: GOAL-123 or GOAL-NEW.
+          ref_re="(^|[^A-Za-z0-9_])${TEAM_KEY}-([0-9]+|NEW)([^A-Za-z0-9_]|\$)"
+          # Linear's "Copy git branch name" uses the lowercase key: goal-123-some-title.
+          branch_re="(^|[^A-Za-z0-9_])${team_lower}-[0-9]+([^A-Za-z0-9_]|\$)"
+
+          found=""
+          if printf '%s\n' "$PR_BRANCH" | grep -Eq -e "$ref_re" -e "$branch_re"; then
+            found="branch name"
+          elif printf '%s\n' "$PR_TITLE" | grep -Eq -e "$ref_re"; then
+            found="PR title"
+          elif printf '%s\n' "$PR_BODY" | grep -Eq -e "$ref_re"; then
+            found="PR description"
+          fi
+
+          if [ -n "$found" ]; then
+            echo "Linked to a ${TEAM_KEY} Linear issue (found in the ${found})."
+            exit 0
+          fi
+
+          # Advisory only: a yellow warning annotation, never a failed check.
+          echo "::warning title=No ${TEAM_KEY} Linear issue linked::This PR does not reference a ${TEAM_KEY} Linear issue. See the job summary for how to fix it."
+          {
+            echo "This PR does not reference a Linear issue in the ${TEAM_KEY} team."
+            echo
+            echo "Fix it by editing the PR description (this check re-runs on edit):"
+            echo "  - Existing issue:            add the line  Fixes ${TEAM_KEY}-123"
+            echo "  - Partial work on an issue:  add the line  Refs ${TEAM_KEY}-123"
+            echo "  - No issue yet:              add the line  Fixes ${TEAM_KEY}-NEW"
+            echo
+            echo "Or name the branch with Linear's \"Copy git branch name\" (e.g. feature/${team_lower}-123-short-title)."
+            echo "The key must be exactly ${TEAM_KEY} (uppercase) in the title or description."
+          } | tee -a "$GITHUB_STEP_SUMMARY"

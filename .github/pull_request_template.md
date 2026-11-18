@@ -13,3 +13,8 @@
 ## Notes for reviewers
 
 <!-- Anything the author wants to call attention to -->
+
+## Linear
+
+<!-- Replace with an existing issue: "Fixes GOAL-123", or "Refs GOAL-123" for partial work. Keep "Fixes GOAL-NEW" only if no issue exists yet. -->
+Fixes GOAL-NEW
