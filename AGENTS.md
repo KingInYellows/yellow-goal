@@ -17,3 +17,15 @@ it); it never invokes the product's executor. `HANDOFF-PROMPT.md` is superseded.
 run `npm run runner`, `npm run cli -- run approve`, or `run --executor
 claude-code` / `--executor agx-claude-code` from CI or an autonomous session
 (use `npm run cli -- run <request> --executor stub` only in tests).
+
+## Linear linking
+
+Every branch and pull request in this repo must reference a Linear issue in the
+**yellow-goal** team (key `GOAL`). The advisory `linear-link` check warns on PRs that don't.
+
+- Existing work: use Linear's "Copy git branch name" for the branch, or put
+  `Fixes GOAL-123` in the PR description (`Refs GOAL-123` for partial work).
+- New work with no issue yet: put `Fixes GOAL-NEW` in the PR description.
+- Never reference another team's key unless the work genuinely belongs there.
+- If Linear links the wrong issue, add `Ignore <ID>` (for example
+  `Ignore CLAUDE-123`) to the PR description.

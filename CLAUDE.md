@@ -44,3 +44,15 @@ The only permitted test execution shorthand is
 enforces this with deny rules and a PreToolUse guard
 (`.claude/hooks/guard-live-executor.mjs`); its SessionStart hook runs
 `npm install` in `goal-gen/` for cloud sessions.
+
+## Linear linking
+
+Every branch and pull request in this repo must reference a Linear issue in the
+**yellow-goal** team (key `GOAL`). The advisory `linear-link` check warns on PRs that don't.
+
+- Existing work: use Linear's "Copy git branch name" for the branch, or put
+  `Fixes GOAL-123` in the PR description (`Refs GOAL-123` for partial work).
+- New work with no issue yet: put `Fixes GOAL-NEW` in the PR description.
+- Never reference another team's key unless the work genuinely belongs there.
+- If Linear links the wrong issue, add `Ignore <ID>` (for example
+  `Ignore CLAUDE-123`) to the PR description.
