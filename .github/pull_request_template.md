@@ -16,5 +16,5 @@
 
 ## Linear
 
-<!-- Replace with an existing issue: "Fixes GOAL-123", or "Refs GOAL-123" for partial work. Keep "Fixes GOAL-NEW" only if no issue exists yet. -->
+<!-- Replace the placeholder below with an existing issue key, or keep it only if no issue exists yet. Use "Refs" instead of "Fixes" for partial work. -->
 Fixes GOAL-NEW

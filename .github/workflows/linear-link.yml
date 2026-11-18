@@ -32,12 +32,17 @@ jobs:
           # Linear's "Copy git branch name" uses the lowercase key: goal-123-some-title.
           branch_re="(^|[^A-Za-z0-9_])${team_lower}-[0-9]+([^A-Za-z0-9_]|\$)"
 
+          # Drop HTML comments so the PR template's guidance text never counts as a link.
+          body_text=$(perl -0pe 's/<!--.*?-->//gs' <<<"$PR_BODY")
+
+          # Here-strings, not printf | grep -q: with pipefail, grep -q exiting early
+          # can SIGPIPE printf on a large body and turn a match into a miss.
           found=""
-          if printf '%s\n' "$PR_BRANCH" | grep -Eq -e "$ref_re" -e "$branch_re"; then
+          if grep -Eq -e "$ref_re" -e "$branch_re" <<<"$PR_BRANCH"; then
             found="branch name"
-          elif printf '%s\n' "$PR_TITLE" | grep -Eq -e "$ref_re"; then
+          elif grep -Eq -e "$ref_re" <<<"$PR_TITLE"; then
             found="PR title"
-          elif printf '%s\n' "$PR_BODY" | grep -Eq -e "$ref_re"; then
+          elif grep -Eq -e "$ref_re" <<<"$body_text"; then
             found="PR description"
           fi
 
