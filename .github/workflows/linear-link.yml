@@ -27,8 +27,10 @@ jobs:
         run: |
           set -euo pipefail
           team_lower=$(printf '%s' "$TEAM_KEY" | tr '[:upper:]' '[:lower:]')
-          # Exact, case-sensitive key on word boundaries: GOAL-123 or GOAL-NEW.
-          ref_re="(^|[^A-Za-z0-9_])${TEAM_KEY}-([0-9]+|NEW)([^A-Za-z0-9_]|\$)"
+          # Exact, case-sensitive key on word boundaries: KEY-123 anywhere.
+          ref_re="(^|[^A-Za-z0-9_])${TEAM_KEY}-[0-9]+([^A-Za-z0-9_]|\$)"
+          # KEY-NEW only creates an issue from the PR description, so it counts only there.
+          new_re="(^|[^A-Za-z0-9_])${TEAM_KEY}-NEW([^A-Za-z0-9_]|\$)"
           # Linear's "Copy git branch name" uses the lowercase key: goal-123-some-title.
           branch_re="(^|[^A-Za-z0-9_])${team_lower}-[0-9]+([^A-Za-z0-9_]|\$)"
 
@@ -42,7 +44,7 @@ jobs:
             found="branch name"
           elif grep -Eq -e "$ref_re" <<<"$PR_TITLE"; then
             found="PR title"
-          elif grep -Eq -e "$ref_re" <<<"$body_text"; then
+          elif grep -Eq -e "$ref_re" -e "$new_re" <<<"$body_text"; then
             found="PR description"
           fi
 
