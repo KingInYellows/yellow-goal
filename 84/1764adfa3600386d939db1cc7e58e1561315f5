@@ -1,0 +1,22 @@
+goal-gen/backend/src/real-run/evidence-destinations.ts
+  h_6000354274ce50 20-28,34,110,125-132,141-145,149,155-160,167,170-171,175-178,180,182-183,188-190,192-208,210-222,224-237,242,245-246,251-252,259-262,267,270,273,278,284
+goal-gen/docs/operator-real-run.md
+  h_6000354274ce50 55-60,126-127,196
+goal-gen/plans/specs/approval-gated-real-execution.md
+  h_6000354274ce50 372-374,379-380
+goal-gen/tests/real-run/evidence-destinations.test.ts
+  h_6000354274ce50 6,10-15,150-187
+goal-gen/tests/real-run/real-run-engine.test.ts
+  h_6000354274ce50 380-411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "841764adfa3600386d939db1cc7e58e1561315f5",
+  "prompts": {},
+  "humans": {
+    "h_6000354274ce50": {
+      "author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
