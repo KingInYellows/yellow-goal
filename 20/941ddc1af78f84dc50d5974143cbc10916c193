@@ -1,0 +1,23 @@
+AGENTS.md
+  s_314caac26ae194::t_0e921d265a9c69 24-25,29
+CLAUDE.md
+  s_314caac26ae194::t_6cfe138e0923a5 48-49,53
+scripts/check-merge-ready.py
+  s_314caac26ae194::t_e10b0fefdf6141 6,16-35,74,112-113,115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20941ddc1af78f84dc50d5974143cbc10916c193",
+  "prompts": {},
+  "sessions": {
+    "s_314caac26ae194": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20989-8616-7aa2-9fc4-0f915705a36b",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
