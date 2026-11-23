@@ -1,0 +1,21 @@
+scripts/check-merge-ready.py
+  s_314caac26ae194::t_581a244b9ac194 81-82
+scripts/test_merge_ready.py
+  s_314caac26ae194::t_9ca3c5d3a9ec3a 45-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f298946cdcc9e5a0fa90361eb7426bc19c6ccb2b",
+  "prompts": {},
+  "sessions": {
+    "s_314caac26ae194": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20989-8616-7aa2-9fc4-0f915705a36b",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "KingInYellow18 <KingInYellow18@proton.me>"
+    }
+  }
+}
