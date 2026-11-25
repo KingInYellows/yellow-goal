@@ -24,14 +24,11 @@ What sits at this root and why:
   not to report). Reviewers should read it from the base branch.
 - `.github/review-risk.json` — path rules that set a PR's review risk tier
   (low, medium, high) for yellow-review's `classify-risk`, also read from the
-  base branch. Today the tier is only reported. Planned, once the review-gate
-  and merge-gate land: low needs no human approval, medium and high need the
-  owner's approval on the head commit, and high adds automated checks. Design:
-  yellow-plugins `plans/risk-tiered-review-pipeline.md`.
-- `yellow-plugins.local.md` — yellow-plugins per-project config. It sets
-  `review_pipeline: workflow`, so `/review:pr` also runs yellow-review's
-  `review-gate` workflow in shadow mode and only compares its findings in the
-  report (pipeline phase 1). Tracked on purpose so cloud sessions get it.
+  base branch. Use the repository merge check below before each merge.
+- `yellow-plugins.example.md` shows the per-checkout setup for yellow-review.
+  Copy it to the ignored `yellow-plugins.local.md` when provisioning a review
+  checkout and verify the approver login. The cloud SessionStart hook seeds
+  the Phase 1 shadow setting only when no local config exists.
 - `docs/01`–`08` — research knowledge base that `goal-gen/docs/prd.md` (the
   product source of truth) and the specs cross-link to.
 - `HANDOFF-PROMPT.md` — superseded; provenance only.
@@ -44,6 +41,23 @@ The only permitted test execution shorthand is
 enforces this with deny rules and a PreToolUse guard
 (`.claude/hooks/guard-live-executor.mjs`); its SessionStart hook runs
 `npm install` in `goal-gen/` for cloud sessions.
+
+## Merge approval
+
+Run the following from a trusted checkout of the default branch immediately
+before merging with yellow-review 4.0.0 or newer enabled in the Claude Code
+plugin cache. The check combines the shared merge-readiness
+report with this repository's human approval policy.
+
+```sh
+python3 scripts/check-merge-ready.py PR_NUMBER
+```
+
+Low risk needs no human label. For medium or high risk, KingInYellow18 must
+manually add `merge-approved` to the current head. If the head changes,
+remove and re-add the label. GitHub timestamps have one-second precision,
+so a label in the same second as the push also needs re-adding. Only the owner performs that action. Merge the
+verified head only. The local check is separate from GitHub branch protection.
 
 ## Linear linking
 

@@ -19,3 +19,6 @@ entities.json
 # OS / editor noise
 .DS_Store
 Thumbs.db
+
+# Operator-owned approval settings for yellow-review
+/yellow-plugins.local.md

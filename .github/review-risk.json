@@ -16,6 +16,7 @@
         "AGENTS.md",
         "goal-gen/CLAUDE.md",
         "goal-gen/AGENTS.md",
+        "scripts/check-merge-ready.py",
         "yellow-plugins.local.md"
       ]
     },

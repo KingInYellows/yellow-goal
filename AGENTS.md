@@ -18,6 +18,23 @@ run `npm run runner`, `npm run cli -- run approve`, or `run --executor
 claude-code` / `--executor agx-claude-code` from CI or an autonomous session
 (use `npm run cli -- run <request> --executor stub` only in tests).
 
+## Merge approval
+
+Run the following from a trusted checkout of the default branch immediately
+before merging with yellow-review 4.0.0 or newer enabled in the Claude Code
+plugin cache. The check combines the shared merge-readiness
+report with this repository's human approval policy.
+
+```sh
+python3 scripts/check-merge-ready.py PR_NUMBER
+```
+
+Low risk needs no human label. For medium or high risk, KingInYellow18 must
+manually add `merge-approved` to the current head. If the head changes,
+remove and re-add the label. GitHub timestamps have one-second precision,
+so a label in the same second as the push also needs re-adding. Only the owner performs that action. Merge the
+verified head only. The local check is separate from GitHub branch protection.
+
 ## Linear linking
 
 Every branch and pull request in this repo must reference a Linear issue in the
