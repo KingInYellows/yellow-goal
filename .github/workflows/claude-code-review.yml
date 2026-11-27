@@ -60,14 +60,14 @@ jobs:
       # persist-credentials: false — otherwise actions/checkout writes the job's GITHUB_TOKEN
       # into .git/config, where it stays readable to every later step/process in this job.
       - name: Checkout repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Run Claude Code Review
         # Third-party action with write scopes: pin to a commit, not the mutable v1 tag.
-        uses: anthropics/claude-code-action@6fed3ca145920b639991cb756090506e1bcaf515 # v1.0.245
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         # --model below pins only the parent session. The code-review plugin launches its own
         # haiku, sonnet and opus subagents by family alias, so pin what each alias resolves to.
         # The action forwards exactly these three variables to the Claude CLI. v1.0.245 installs
