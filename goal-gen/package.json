@@ -43,7 +43,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22.10.0",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.20.0",
     "@types/yauzl": "^2.10.3",
     "@types/yazl": "^2.4.6",
