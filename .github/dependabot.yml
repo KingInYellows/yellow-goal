@@ -6,9 +6,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # Minor and patch bumps share one PR; a major bump opens its own.
     groups:
       actions:
         patterns: ['*']
+        update-types: [minor, patch]
     commit-message:
       prefix: chore
       include: scope
