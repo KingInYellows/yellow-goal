@@ -67,7 +67,7 @@ jobs:
 
       - name: Run Claude Code Review
         # Third-party action with write scopes: pin to a commit, not the mutable v1 tag.
-        uses: anthropics/claude-code-action@6fed3ca145920b639991cb756090506e1bcaf515 # v1.0.245
+        uses: anthropics/claude-code-action@eb56b6666facdbd501035f4a0269d8caee2e7a8b # v1.0.289
         # --model below pins only the parent session. The code-review plugin launches its own
         # haiku, sonnet and opus subagents by family alias, so pin what each alias resolves to.
         # The action forwards exactly these three variables to the Claude CLI. v1.0.245 installs
